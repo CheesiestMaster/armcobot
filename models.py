@@ -1,8 +1,11 @@
-from sqlalchemy import Column, Integer, String, Enum, ForeignKey, PickleType, event
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, Enum, ForeignKey, PickleType, Boolean, event
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.declarative import declarative_base
 from enum import Enum as PyEnum
-#from customclient import CustomClient
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 Base = declarative_base()
 
@@ -33,36 +36,64 @@ class UnitStatus(PyEnum):
     KIA = "3"
     PROPOSED = "4"
 
+# Listeners
+
+def after_insert(mapper, connection, target):
+    logger.debug("Inserting target into queue")
+    from customclient import CustomClient
+    queue = CustomClient().queue
+    queue.put_nowait((0, target))
+
+def after_update(mapper, connection, target):
+    logger.debug("Updating target in queue")
+    from customclient import CustomClient
+    queue = CustomClient().queue
+    queue.put_nowait((1, target))
+
+def after_delete(mapper, connection, target):
+    logger.debug("Deleting target from queue")
+    from customclient import CustomClient
+    queue = CustomClient().queue
+    queue.put_nowait((2, target))
+# Models
+
 class Unit(Base):
     __tablename__ = "units"
     # columns
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String(255), index=True)
     player_id = Column(Integer, ForeignKey("players.id"))
-    unit_type = Enum(UnitType)
-    status = Enum(UnitStatus, default=UnitStatus.PROPOSED)
+    unit_type = Column(Enum(UnitType))
+    status = Column(Enum(UnitStatus), default=UnitStatus.PROPOSED)
     
     # relationships
     player = relationship("Player", back_populates="units")
-    upgrades = relationship("Upgrade", back_populates="unit")
+    upgrades = relationship("Upgrade", back_populates="unit", cascade="all, delete-orphan")
+    active_unit = relationship("ActiveUnit", back_populates="unit", cascade="all, delete-orphan")
 
-@event.listens_for(Unit, "after_insert")
-def after_insert(mapper, connection, target):
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((0, target))
-
-@event.listens_for(Unit, "after_update")
-def after_update(mapper, connection, target):
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((1, target))
-
-@event.listens_for(Unit, "after_delete")
-def after_delete(mapper, connection, target):
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((2, target))
+class ActiveUnit(Base):
+    __tablename__ = "active_units"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    # columns
+    player_id = Column(Integer, ForeignKey("players.id"))
+    unit_id = Column(Integer, ForeignKey("units.id"))
+    force_strength = Column(Integer, default=0)
+    range = Column(Integer, default=0)
+    speed = Column(Integer, default=0)
+    defense = Column(Integer, default=0)
+    armor = Column(Integer, default=0)
+    north_south = Column(Integer, default=0)
+    east_west = Column(Integer, default=0)
+    facing = Column(Integer, default=0)
+    area_operation = Column(String(30), default="ARMCO")
+    supply = Column(Integer, default=0)
+    immobilized = Column(Boolean, default=False)
+    disarmed = Column(Boolean, default=False)
+    transport_id = Column(Integer, ForeignKey("active_units.id"))
+    # relationships
+    player = relationship("Player", back_populates="active_units")
+    unit = relationship("Unit", back_populates="active_unit")
+    transport = relationship("ActiveUnit", remote_side=[id], backref=backref("passengers", lazy="dynamic"))
 
 class Player(Base):
     __tablename__ = "players"
@@ -74,28 +105,10 @@ class Player(Base):
     rec_points = Column(Integer, default=0)
     bonus_pay = Column(Integer, default=0)
     # relationships
-    units = relationship("Unit", back_populates="player")
-    dossier = relationship("Dossier", back_populates="player")
-    statistic = relationship("Statistic", back_populates="player")
-
-@event.listens_for(Player, "after_insert")
-def after_insert(mapper, connection, target):
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((0, target))
-
-
-@event.listens_for(Player, "after_update")
-def after_update(mapper, connection, target):
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((1, target))
-
-@event.listens_for(Player, "after_delete")
-def after_delete(mapper, connection, target):
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((2, target))
+    units = relationship("Unit", back_populates="player", cascade="all, delete-orphan")
+    active_units = relationship("ActiveUnit", back_populates="player", cascade="all, delete-orphan")
+    dossier = relationship("Dossier", back_populates="player", cascade="all, delete-orphan")
+    statistic = relationship("Statistic", back_populates="player", cascade="all, delete-orphan")
 
 class Upgrade(Base):
     __tablename__ = "upgrades"
@@ -105,24 +118,6 @@ class Upgrade(Base):
     unit_id = Column(Integer, ForeignKey("units.id"))
     # relationships
     unit = relationship("Unit", back_populates="upgrades")
-
-@event.listens_for(Upgrade, "after_insert")
-def after_insert(mapper, connection, target):
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((0, target))
-
-@event.listens_for(Upgrade, "after_update")
-def after_update(mapper, connection, target):
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((1, target))
-
-@event.listens_for(Upgrade, "after_delete")
-def after_delete(mapper, connection, target):
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((2, target))
 
 class Dossier(Base):
     __tablename__ = "dossiers"
@@ -146,5 +141,12 @@ class Config(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     key = Column(String(255), index=True)
     value = Column(PickleType)
+
+# Unit, ActiveUnit, Upgrade need all 3 listeners
+# Dossier and Statistic need only after_delete
+
+[event.listen(model, "after_insert", after_insert) for model in [Player, Unit, ActiveUnit, Upgrade]]
+[event.listen(model, "after_update", after_update) for model in [Player, Unit, ActiveUnit, Upgrade]]
+[event.listen(model, "after_delete", after_delete) for model in [Unit, ActiveUnit, Upgrade, Dossier, Statistic]]
 
 create_all = Base.metadata.create_all
