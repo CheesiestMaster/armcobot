@@ -36,6 +36,34 @@ class UnitStatus(PyEnum):
     KIA = "3"
     PROPOSED = "4"
 
+class LegacyUnitStatus(PyEnum):
+    MIA = "2"
+    KIA = "3"
+    LEGACY = "5"
+
+class LegacyUnitType(PyEnum):
+    INFANTRY = "0.0"
+    MEDIC = "0.1"
+    ENGINEER = "0.2"
+    LOGISTIC = "1.0"
+    LIGHT_VEHICLE = "1.1"
+    INFANTRY_VEHICLE = "1.2"
+    MAIN_TANK = "1.3"
+    ARTILLERY = "2.0"
+    FIGHTER = "3.0"
+    BOMBER = "3.1"
+    VTOL = "3.2"
+    HVTOL = "3.3"
+    HAT = "3.4"
+    LIGHT_MECH = "4.0"
+    MEDIUM_MECH = "4.1"
+    HEAVY_MECH = "4.2"
+    CORVETTE = "5.0"
+    CRUISER = "5.1"
+    DESTROYER = "5.2"
+    BATTLESHIP = "5.3"
+    V1_CARRIER = "5.4"
+
 # Listeners
 
 def after_insert(mapper, connection, target):
@@ -61,8 +89,8 @@ class Unit(Base):
     __tablename__ = "units"
     # columns
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    name = Column(String(255), index=True)
-    player_id = Column(Integer, ForeignKey("players.id"))
+    name = Column(String(30), index=True)
+    player_id = Column(Integer, ForeignKey("players.id"), index=True)
     unit_type = Column(Enum(UnitType))
     status = Column(Enum(UnitStatus), default=UnitStatus.PROPOSED)
     
@@ -75,8 +103,9 @@ class ActiveUnit(Base):
     __tablename__ = "active_units"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     # columns
-    player_id = Column(Integer, ForeignKey("players.id"))
-    unit_id = Column(Integer, ForeignKey("units.id"))
+    player_id = Column(Integer, ForeignKey("players.id"), unique=True, index=True)
+    call_sign = Column(String(8), default="", index=True, unique=True)
+    unit_id = Column(Integer, ForeignKey("units.id"), unique=True, index=True)
     force_strength = Column(Integer, default=0)
     range = Column(Integer, default=0)
     speed = Column(Integer, default=0)
@@ -123,7 +152,7 @@ class Dossier(Base):
     __tablename__ = "dossiers"
     # columns
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    player_id = Column(Integer, ForeignKey("players.id"))
+    player_id = Column(Integer, ForeignKey("players.id"), unique=True, index=True)
     message_id = Column(String(255), index=True)
     # relationships
     player = relationship("Player", back_populates="dossier")
@@ -131,7 +160,7 @@ class Dossier(Base):
 class Statistic(Base):
     __tablename__ = "statistics"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    player_id = Column(Integer, ForeignKey("players.id"))
+    player_id = Column(Integer, ForeignKey("players.id"), unique=True, index=True)
     message_id = Column(String(255), index=True)
     # relationships
     player = relationship("Player", back_populates="statistic")
@@ -139,9 +168,17 @@ class Statistic(Base):
 class Config(Base):
     __tablename__ = "configs"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    key = Column(String(255), index=True)
+    key = Column(String(255), index=True, unique=True)
     value = Column(PickleType)
 
+class LegacyUnit(Base):
+    __tablename__ = "legacy_units"
+    # almost identical to Unit, but uses a different pair of Enums for status and type
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String(255), index=True)
+    player_id = Column(Integer, ForeignKey("players.id"), index=True)
+    unit_type = Column(Enum(LegacyUnitType))
+    status = Column(Enum(LegacyUnitStatus))
 # Unit, ActiveUnit, Upgrade need all 3 listeners
 # Dossier and Statistic need only after_delete
 

@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Base, Unit, Player, Upgrade, UnitType, UpgradeType
+from models import Base
 from dotenv import load_dotenv
 import os
 from customclient import CustomClient
@@ -38,8 +38,9 @@ logger.info("Bot created successfully.")
 # start the bot
 logger.info("starting bot")
 asyncio.run(bot.start())
-logger.info("Bot started successfully.")
+logger.info("Bot terminated")
 
 # close the session
+session.commit()
 session.close()
 logger.info("Session closed successfully.")
