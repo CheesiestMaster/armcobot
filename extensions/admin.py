@@ -34,7 +34,7 @@ class Admin(GroupCog):
         logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
         await interaction.response.send_message(f"{player.name} now has {player.rec_points} requisition points", ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="bulk recpoint", description="Give or remove a number of requisition points from a set of players")
+    @ac.command(name="bulk_recpoint", description="Give or remove a number of requisition points from a set of players")
     @ac.describe(points="The number of points to give or remove")
     @ac.describe(status="Status of the unit (Inactive = 0, Active = 1, MIA = 2, KIA = 3)")
     async def bulk_recpoint(self, interaction: Interaction, status: str, points: int):
@@ -65,7 +65,7 @@ class Admin(GroupCog):
         logger.debug(f"User {player.name} now has {player.bonus_pay} bonus pay")
         await interaction.response.send_message(f"{player.name} now has {player.bonus_pay} bonus pay", ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="bulk bonuspay", description="Give or remove a number of bonus pay from a set of players")
+    @ac.command(name="bulk_bonuspay", description="Give or remove a number of bonus pay from a set of players")
     @ac.describe(points="The number of bonus pay to give or remove")
     @ac.describe(status="Status of the unit (Inactive = 0, Active = 1, MIA = 2, KIA = 3)")
     async def bulk_bonus_pay(self, interaction: Interaction, status: str, points: int):
@@ -149,6 +149,7 @@ async def setup(_bot: Bot):
     bot = _bot
     logger.info("Setting up Admin cog")
     await bot.add_cog(Admin(bot))
+    await bot.tree.sync()
 
 async def teardown():
     logger.info("Tearing down Admin cog")

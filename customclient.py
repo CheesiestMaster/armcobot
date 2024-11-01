@@ -28,12 +28,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         DEFAULTS = {"command_prefix":"\0", "intents":Intents.default()}
         kwargs = {**DEFAULTS, **kwargs} # merge DEFAULTS and kwargs, kwargs takes precedence
         super().__init__(**kwargs)
-        self.owner_ids = {533009808501112881}
+        self.owner_ids = {533009808501112881, 126747253342863360}
         self.session = session
         self.queue = asyncio.Queue()
         _Config = self.session.query(Config).filter(Config.key == "BOT_CONFIG").first()
         if not _Config:
-            _Config = Config(key="BOT_CONFIG", value={})
+            _Config = Config(key="BOT_CONFIG", value={"EXTENSIONS":[]})
             self.session.add(_Config)
             self.session.commit()
         self.config:dict = _Config.value
@@ -247,7 +247,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             await interaction.response.send_message(f"Pong! I was last restarted at {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}, {datetime.now() - self.start_time} ago")
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
-        await self.load_extensions(["extensions.configuration", "extensions.admin", "extensions.companies", "extensions.units", "extensions.shop"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
+        await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
         
         logger.debug("Syncing slash commands")
         await self.tree.sync()

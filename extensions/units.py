@@ -51,7 +51,8 @@ class Unit(GroupCog):
             await interaction.response.send_message("Please select the unit type and enter the unit name", view=view, ephemeral=CustomClient().use_ephemeral)
 
     @ac.command(name="activate", description="Activate a unit")
-    async def activateunit(self, interaction: Interaction):
+    @ac.describe(callsign="The callsign of the unit to activate, must be globally unique")
+    async def activateunit(self, interaction: Interaction, callsign: str):
         # get the list of units for the author
         logger.debug(f"Activating unit for {interaction.user.id}")
         player: Player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
@@ -61,6 +62,14 @@ class Unit(GroupCog):
         units = self.session.query(Unit_model).filter(Unit_model.player_id == player.id).all()
         if not units:
             await interaction.response.send_message("You don't have any units", ephemeral=CustomClient().use_ephemeral)
+            return
+        active_unit = self.session.query(ActiveUnit).filter(ActiveUnit.player_id == player.id).first()
+        if active_unit:
+            await interaction.response.send_message("You already have an active unit", ephemeral=CustomClient().use_ephemeral)
+            return
+        # check if the callsign is already taken
+        if self.session.query(ActiveUnit).filter(ActiveUnit.callsign == callsign).first():
+            await interaction.response.send_message("That callsign is already taken", ephemeral=CustomClient().use_ephemeral)
             return
         # create a dropdown for the units
         class UnitSelect(ui.Select):
@@ -73,7 +82,7 @@ class Unit(GroupCog):
                 # create an ActiveUnit object for the unit, for now just set the player_id and unit_id
                 unit: Unit_model = self.session.query(Unit_model).filter(Unit_model.name == self.values[0]).first()
                 logger.debug(f"Activating unit {unit.name}")
-                active_unit = ActiveUnit(player_id=player.id, unit_id=unit.id)
+                active_unit = ActiveUnit(player_id=player.id, unit_id=unit.id, callsign=callsign)
                 self.session.add(active_unit)
                 self.session.commit()
                 await interaction.response.send_message(f"Unit {unit.name} activated", ephemeral=CustomClient().use_ephemeral)

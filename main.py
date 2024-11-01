@@ -9,6 +9,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Changed from INFO to DEBUG for more detailed logging
+
+# add a file handler to the root logger
+file_handler = logging.FileHandler("armco.log")
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
+
 load_dotenv()
 
 # delete the database

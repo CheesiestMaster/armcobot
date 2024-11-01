@@ -15,7 +15,7 @@ class Debug(GroupCog):
         self.extensions = [f.stem for f in Path("extensions").glob("*.py") if f.stem != "__init__"]
 
     async def autocomplete_extensions(self, interaction: Interaction, current: str):
-        return [ac.Choice(name=extension, value=extension) for extension in self.extensions if current.lower() in extension.lower()]
+        return [ac.Choice(name=extension, value=extension) for extension in self.extensions if current.lower() in extension.lower() and not extension.startswith("template")]
 
     async def is_owner(self, interaction: Interaction):
         valid = interaction.user.id in self.bot.owner_ids
@@ -56,6 +56,9 @@ class Debug(GroupCog):
         logger.info(f"Load command invoked for {extension}")
         await interaction.response.send_message(f"Loading {extension} ")
         await self.bot.load_extension(extension)
+        if not self.bot.config.get("EXTENSIONS"):
+            self.bot.config["EXTENSIONS"] = []
+        self.bot.config["EXTENSIONS"].append(extension)
         await self.bot.tree.sync()
     # unload cannot have "debug" as it's argument, as that would cause a deadlock
     @ac.command(name="unload", description="Unload an extension")
@@ -69,6 +72,8 @@ class Debug(GroupCog):
         logger.info(f"Unload command invoked for {extension}")
         await interaction.response.send_message(f"Unloading {extension}")
         await self.bot.unload_extension(extension)
+        self.bot.config["EXTENSIONS"].remove(extension)
+        await self.bot.tree.sync()
 
     @ac.command(name="query", description="Run a SQL query")
     @ac.describe(query="SQL query to run")

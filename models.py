@@ -105,7 +105,7 @@ class ActiveUnit(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     # columns
     player_id = Column(Integer, ForeignKey("players.id"), unique=True, index=True)
-    call_sign = Column(String(8), default="", index=True, unique=True)
+    callsign = Column(String(8), index=True, unique=True)
     unit_id = Column(Integer, ForeignKey("units.id"), unique=True, index=True)
     force_strength = Column(Integer, default=0)
     range = Column(Integer, default=0)
