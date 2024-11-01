@@ -1,3 +1,14 @@
+import logging
+import sys
+# add a file handler to the root logger
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler("armco.log"),
+                        logging.StreamHandler(sys.stdout)
+                    ],
+                    force=True) # needed to delete the default stderr handler
+# rest of the imports
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models import Base
@@ -5,16 +16,8 @@ from dotenv import load_dotenv
 import os
 from customclient import CustomClient
 import asyncio
-import logging
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  # Changed from INFO to DEBUG for more detailed logging
-
-# add a file handler to the root logger
-file_handler = logging.FileHandler("armco.log")
-file_handler.setLevel(logging.DEBUG)
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-logger.addHandler(file_handler)
 
 load_dotenv()
 
