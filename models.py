@@ -28,6 +28,7 @@ class UnitType(PyEnum):
 class UpgradeType(PyEnum):
     UPGRADE = "0.0"
     WEAPON = "1.0"
+    SPECIAL = "2.0"
 
 class UnitStatus(PyEnum):
     ACTIVE = "1"
@@ -138,12 +139,13 @@ class Player(Base):
     active_units = relationship("ActiveUnit", back_populates="player", cascade="all, delete-orphan")
     dossier = relationship("Dossier", back_populates="player", cascade="all, delete-orphan")
     statistic = relationship("Statistic", back_populates="player", cascade="all, delete-orphan")
-
+    medals = relationship("Medals", back_populates="player", cascade="all, delete-orphan")
 class Upgrade(Base):
     __tablename__ = "upgrades"
     # columns
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     type = Column(Enum(UpgradeType))
+    name = Column(String(30), index=True)
     unit_id = Column(Integer, ForeignKey("units.id"))
     # relationships
     unit = relationship("Unit", back_populates="upgrades")
@@ -175,10 +177,18 @@ class LegacyUnit(Base):
     __tablename__ = "legacy_units"
     # almost identical to Unit, but uses a different pair of Enums for status and type
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    name = Column(String(255), index=True)
+    name = Column(String(30), index=True)
     player_id = Column(Integer, ForeignKey("players.id"), index=True)
-    unit_type = Column(Enum(LegacyUnitType))
-    status = Column(Enum(LegacyUnitStatus))
+    unit_type = Column(String(30), index=True)
+    status = Column(String(30), index=True)
+
+class Medals(Base):
+    __tablename__ = "medals"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String(30), index=True)
+    player_id = Column(Integer, ForeignKey("players.id"), index=True)
+    # relationships
+    player = relationship("Player", back_populates="medals")
 # Unit, ActiveUnit, Upgrade need all 3 listeners
 # Dossier and Statistic need only after_delete
 

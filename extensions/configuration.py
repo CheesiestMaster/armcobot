@@ -75,9 +75,9 @@ bot: Bot = None
 async def setup(_bot: Bot):
     global bot
     bot = _bot
-    logger.info("Setting up configuration cog")
+    logger.info("Setting up Configuration cog")
     await bot.add_cog(Config(bot))
 
 async def teardown():
-    logger.info("Tearing down configuration cog")
+    logger.info("Tearing down Configuration cog")
     bot.remove_cog(Config.__name__) # remove_cog takes a string, not a class

@@ -32,8 +32,18 @@ class Shop(GroupCog):
 
         select.callback = select_callback
 
+        bonus_button = ui.Button(label="Convert 10 BP to 1 RP", style=ButtonStyle.success, disabled=player.bonus_pay < 10)
+        async def bonus_button_callback(interaction: Interaction):
+            player.bonus_pay -= 10
+            player.rec_points += 1
+            self.session.commit()
+            bonus_button.disabled = player.bonus_pay < 10
+            await interaction.response.send_message("You have converted 10 BP to 1 RP", ephemeral=CustomClient().use_ephemeral)
+        bonus_button.callback = bonus_button_callback
+
         view = ui.View()
         view.add_item(select)
+        view.add_item(bonus_button)
         await interaction.response.send_message("Please select a unit to buy upgrades for", view=view, ephemeral=CustomClient().use_ephemeral)
 
     async def shop_view_factory(self, unit: Unit, player: Player):
@@ -74,7 +84,9 @@ bot: Bot = None
 async def setup(_bot: Bot):
     global bot
     bot = _bot
+    logger.info("Setting up Shop cog")
     await bot.add_cog(Shop(bot))
 
 async def teardown():
+    logger.info("Tearing down Shop cog")
     bot.remove_cog(Shop.__name__) # remove_cog takes a string, not a class

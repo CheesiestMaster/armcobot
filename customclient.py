@@ -37,6 +37,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             self.session.add(_Config)
             self.session.commit()
         self.config:dict = _Config.value
+        _Medal_Emotes = self.session.query(Config).filter(Config.key == "MEDAL_EMOTES").first()
+        if not _Medal_Emotes:
+            _Medal_Emotes = Config(key="MEDAL_EMOTES", value={})
+            self.session.add(_Medal_Emotes)
+            self.session.commit()
+        self.medal_emotes:dict = _Medal_Emotes.value
         self.use_ephemeral = use_ephemeral
 
     async def queue_consumer(self):
@@ -48,6 +54,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 if self.config.get("dossier_channel_id"):
                     if isinstance(task[1], Player):
                         player = task[1]
+                        medals = self.session.query(Medals).filter(Medals.player_id == player.id).all()
+                        medal_block = "" # TODO: format medals
                         dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(templates.Dossier.format(player=player))
                         dossier = Dossier(player_id=player.id, message_id=dossier_message.id)
                         self.session.add(dossier)
@@ -225,6 +233,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     async def on_ready(self):
         logger.info(f"Logged in as {self.user}")
         await self.set_bot_nick("Meta Campaign Bot")
+        test = self.get_emoji(":database:1301575474899714078")
         asyncio.create_task(self.queue_consumer())
 
     async def close(self):

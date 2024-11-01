@@ -1,6 +1,6 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, Member, TextStyle
+from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji
 from discord.ui import Modal, TextInput
 from models import Player, Unit, ActiveUnit
 logger = getLogger(__name__)
@@ -87,6 +87,30 @@ class Admin(GroupCog):
         modal.on_submit = modal_callback
                 
         await interaction.response.send_modal(modal)
+
+    @ac.command(name="create_medal", description="Create a medal")
+    @ac.describe(name="The name of the medal")
+    @ac.describe(left_emote="The emote to use for the left side of the medal")
+    @ac.describe(center_emote="The emote to use for the center of the medal")
+    @ac.describe(right_emote="The emote to use for the right side of the medal")
+    async def create_medal(self, interaction: Interaction, name: str, left_emote: str, center_emote: str, right_emote: str):
+        # check if the emotes are valid
+        _left_emote = self.bot.get_emoji(left_emote)
+        _center_emote = self.bot.get_emoji(center_emote)
+        _right_emote = self.bot.get_emoji(right_emote)
+        if not (_left_emote and _center_emote and _right_emote):
+            await interaction.response.send_message("Invalid emote", ephemeral=self.bot.use_ephemeral)
+            return
+        # create the medal
+        self.bot.medal_emotes[name] = [left_emote, center_emote, right_emote]
+        await interaction.response.send_message(f"Medal {name} created", ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="refresh_stats", description="Refresh the statistics and dossiers for all players")
+    async def refresh_stats(self, interaction: Interaction):
+        await interaction.response.send_message("Refreshing statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
+        for player in self.session.query(Player).all():
+            await self.bot.queue.put((1, player)) # make the bot think the player was edited
+        await interaction.followup.send("Refreshed statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
 
 bot: Bot = None
 async def setup(_bot: Bot):
