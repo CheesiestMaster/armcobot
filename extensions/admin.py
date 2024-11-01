@@ -2,7 +2,8 @@ from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji
 from discord.ui import Modal, TextInput
-from models import Player, Unit, ActiveUnit
+from models import Player, Unit, ActiveUnit, UnitStatus
+
 logger = getLogger(__name__)
 
 class Admin(GroupCog):
@@ -33,6 +34,21 @@ class Admin(GroupCog):
         logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
         await interaction.response.send_message(f"{player.name} now has {player.rec_points} requisition points", ephemeral=self.bot.use_ephemeral)
 
+    @ac.command(name="bulk recpoint", description="Give or remove a number of requisition points from a set of players")
+    @ac.describe(points="The number of points to give or remove")
+    @ac.describe(status="Status of the unit (Inactive = 0, Active = 1, MIA = 2, KIA = 3)")
+    async def bulk_recpoint(self, interaction: Interaction, status: str, points: int):
+        # Find all units with corresponding Enum status
+        status_enum = UnitStatus(status)
+        units = self.session.query(Unit).filter(Unit.status == status_enum).all()
+        for unit in units:
+            # Find player of each unit and update their recpoints
+            player = unit.player
+            player.rec_points += points
+            logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
+        self.session.commit()
+        await interaction.response.send_message(f"Players of units of the status {status} have received {points} requisition points", ephemeral=self.bot.use_ephemeral)
+
     @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
     @ac.describe(player="The player to give or remove bonus pay from")
     @ac.describe(points="The number of bonus pay to give or remove")
@@ -48,6 +64,21 @@ class Admin(GroupCog):
         self.session.commit()
         logger.debug(f"User {player.name} now has {player.bonus_pay} bonus pay")
         await interaction.response.send_message(f"{player.name} now has {player.bonus_pay} bonus pay", ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="bulk bonuspay", description="Give or remove a number of bonus pay from a set of players")
+    @ac.describe(points="The number of bonus pay to give or remove")
+    @ac.describe(status="Status of the unit (Inactive = 0, Active = 1, MIA = 2, KIA = 3)")
+    async def bulk_bonus_pay(self, interaction: Interaction, status: str, points: int):
+        # Find all units with corresponding Enum status
+        status_enum = UnitStatus(status)
+        units = self.session.query(Unit).filter(Unit.status == status_enum).all()
+        for unit in units:
+            # Find player of each unit and update their bonuspay
+            player = unit.player
+            player.bonus_pay += points
+            logger.debug(f"User {player.name} now has {player.bonus_pay} requisition points")
+        self.session.commit()
+        await interaction.response.send_message(f"Players of units of the status {status} have received {points} bonus pay", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="activateunits", description="Activate multiple units")
     async def activateunits(self, interaction: Interaction):
