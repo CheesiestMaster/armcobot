@@ -2,7 +2,7 @@ from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji
 from discord.ui import Modal, TextInput
-from models import Player, Unit, ActiveUnit, UnitStatus
+from models import Player, Unit, ActiveUnit, UnitStatus, Upgrade
 
 logger = getLogger(__name__)
 
@@ -153,6 +153,30 @@ class Admin(GroupCog):
             self.bot.queue.put_nowait((1, player)) # make the bot think the player was edited, using nowait to avoid yielding control
         await interaction.followup.send("Refreshed statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
 
+    @ac.command(name="specialupgrade", description="Give a player a one-off or relic item")
+    @ac.describe(player="The player to give the item to")
+    @ac.describe(name="The name of the item")
+    async def specialupgrade(self, interaction: Interaction, player: Member, name: str):
+        _player = self.session.query(Player).filter(Player.discord_id == player.id).first()
+        if not _player:
+            await interaction.response.send_message("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
+            return
+        _active_unit = self.session.query(ActiveUnit).filter(ActiveUnit.player_id == _player.id).first()
+        if not _active_unit:
+            await interaction.response.send_message("Player does not have an active unit", ephemeral=self.bot.use_ephemeral)
+            return
+        _unit = self.session.query(Unit).filter(Unit.id == _active_unit.unit_id).first()
+        if not _unit:
+            await interaction.response.send_message("Player's unit does not exist, please contact the Quartermaster", ephemeral=self.bot.use_ephemeral)
+            return
+        # create an Upgrade with the given name, type "SPECIAL", and the unit as the parent
+        if len(name) > 30:
+            await interaction.response.send_message("Name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)
+            return
+        upgrade = Upgrade(name=name, type="SPECIAL", unit_id=_unit.id)
+        self.session.add(upgrade)
+        self.session.commit()
+        await interaction.response.send_message(f"Special upgrade {name} given to {_player.name}", ephemeral=self.bot.use_ephemeral)
 bot: Bot = None
 async def setup(_bot: Bot):
     global bot
