@@ -1,8 +1,9 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, ui, TextStyle
+from discord import Interaction, app_commands as ac, ui, TextStyle, Member
 from models import Player
 from customclient import CustomClient
+import templates
 
 logger = getLogger(__name__)
 
@@ -53,6 +54,21 @@ class Company(GroupCog):
 
         modal = EditCompanyModal(player)
         await interaction.response.send_modal(modal)
+
+    @ac.command(name="show", description="Displays a Players Meta Campaign company")
+    @ac.describe(member="The players Meta Campaign company to show")
+    async def show(self, interaction: Interaction, member: Member):
+        player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
+        if not player:
+            await interaction.response.send_message(f"{member.display_name} doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            return
+
+        # Generate the info message strings
+        dossier_message = templates.Dossier.format(player=player)
+        unit_message = CustomClient().generate_unit_message(player=player)
+        statistic_message = templates.Statistics_Player.format(player=player, units=unit_message)
+
+        await interaction.response.send_message(f"{dossier_message}\n{statistic_message}", ephemeral=self.bot.use_ephemeral)
 
 bot: Bot = None
 async def setup(_bot: Bot):
