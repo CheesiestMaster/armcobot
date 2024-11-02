@@ -232,7 +232,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
     async def on_ready(self):
         logger.info(f"Logged in as {self.user}")
-        await self.set_bot_nick("Meta Campaign Bot")
+        await self.set_bot_nick("S.A.M.")
         test = self.get_emoji(":database:1301575474899714078")
         asyncio.create_task(self.queue_consumer())
 
