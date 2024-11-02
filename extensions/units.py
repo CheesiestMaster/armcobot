@@ -2,7 +2,7 @@ from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOption
 from discord.ui import View
-from models import Player, Unit as Unit_model, UnitType, ActiveUnit
+from models import Player, Unit as Unit_model, UnitType, ActiveUnit, UnitStatus
 from customclient import CustomClient
 
 logger = getLogger(__name__)
@@ -37,7 +37,12 @@ class Unit(GroupCog):
                     if not player:
                         await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
                         return
-                    
+
+                    # Check for 3 proposed Unit limit
+                    units = self.session.query(Unit_model).filter(Unit_model.player_id == interaction.user.id, Unit_model.status == UnitStatus.PROPOSED).all()
+                    if len(units) >= 3:
+                        await interaction.response.send_message("You already have 3 proposed Units, which is the maximum allowed", ephemeral=CustomClient().use_ephemeral)
+                        return
                     # create the unit in the database
                     unit_type = self.children[1].values[0]
                     logger.debug(f"Unit type selected: {unit_type}")
