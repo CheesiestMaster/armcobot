@@ -2,7 +2,7 @@ from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOption
 from discord.ui import View
-from models import Player, Unit as Unit_model, UnitType, ActiveUnit, UnitStatus
+from models import Player, Unit as Unit_model, ActiveUnit, UnitStatus
 from customclient import CustomClient
 
 logger = getLogger(__name__)
@@ -18,7 +18,7 @@ class Unit(GroupCog):
             # we need to make a modal for this, as we need a dropdown for the unit type
             class UnitSelect(ui.Select):
                 def __init__(self):
-                    options = [SelectOption(label=unit_type.name, value=unit_type.name) for unit_type in UnitType]
+                    options = [SelectOption(label=unit_type, value=unit_type) for unit_type in bot.config["unit_types"]]
                     super().__init__(placeholder="Select the type of unit to create", options=options)
 
                 async def callback(self, interaction: Interaction):
@@ -39,7 +39,8 @@ class Unit(GroupCog):
                         return
 
                     # Check for 3 proposed Unit limit
-                    units = self.session.query(Unit_model).filter(Unit_model.player_id == interaction.user.id, Unit_model.status == UnitStatus.PROPOSED).all()
+                    units = self.session.query(Unit_model).filter(Unit_model.player_id == interaction.user.id, Unit_model.status == "PROPOSED").all()
+                    logger.debug(f"Number of proposed units: {len(units)}")
                     if len(units) >= 3:
                         await interaction.response.send_message("You already have 3 proposed Units, which is the maximum allowed", ephemeral=CustomClient().use_ephemeral)
                         return
@@ -86,6 +87,9 @@ class Unit(GroupCog):
             async def callback(self, interaction: Interaction):
                 # create an ActiveUnit object for the unit, for now just set the player_id and unit_id
                 unit: Unit_model = self.session.query(Unit_model).filter(Unit_model.name == self.values[0]).first()
+                if not unit.status == UnitStatus.INACTIVE:
+                    await interaction.response.send_message("That unit is not inactive", ephemeral=CustomClient().use_ephemeral)
+                    return
                 logger.debug(f"Activating unit {unit.name}")
                 active_unit = ActiveUnit(player_id=player.id, unit_id=unit.id, callsign=callsign)
                 self.session.add(active_unit)

@@ -136,11 +136,21 @@ class Admin(GroupCog):
         self.bot.medal_emotes[name] = [left_emote, center_emote, right_emote]
         await interaction.response.send_message(f"Medal {name} created", ephemeral=self.bot.use_ephemeral)
 
+    @ac.command(name="create_unit_type", description="Create a new unit type")
+    @ac.describe(name="The name of the unit type")
+    async def create_unit_type(self, interaction: Interaction, name: str):
+        if not self.bot.config.get("unit_types"):
+            self.bot.config["unit_types"] = [name]
+        else:
+            self.bot.config["unit_types"].append(name)
+        await interaction.response.send_message(f"Unit type {name} created", ephemeral=self.bot.use_ephemeral)
+
     @ac.command(name="refresh_stats", description="Refresh the statistics and dossiers for all players")
     async def refresh_stats(self, interaction: Interaction):
         await interaction.response.send_message("Refreshing statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
+        self.session.expire_all()
         for player in self.session.query(Player).all():
-            await self.bot.queue.put((1, player)) # make the bot think the player was edited
+            self.bot.queue.put_nowait((1, player)) # make the bot think the player was edited, using nowait to avoid yielding control
         await interaction.followup.send("Refreshed statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
 
 bot: Bot = None

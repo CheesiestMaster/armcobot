@@ -9,22 +9,6 @@ logger.setLevel(logging.INFO)
 
 Base = declarative_base()
 
-class UnitType(PyEnum):
-    INFANTRY = "0.0"
-    MEDIC = "0.1"
-    ENGINEER = "0.2"
-    LOGISTIC = "1.0"
-    LIGHT_VEHICLE = "1.1"
-    INFANTRY_VEHICLE = "1.2"
-    MAIN_TANK = "1.3"
-    ARTILLERY = "2.0"
-    FIGHTER = "3.0"
-    BOMBER = "3.1"
-    VTOL = "3.2"
-    HVTOL = "3.3"
-    HAT = "3.4"
-    LIGHT_MECH = "4.0"
-
 class UpgradeType(PyEnum):
     UPGRADE = "0.0"
     WEAPON = "1.0"
@@ -41,29 +25,6 @@ class LegacyUnitStatus(PyEnum):
     MIA = "2"
     KIA = "3"
     LEGACY = "5"
-
-class LegacyUnitType(PyEnum):
-    INFANTRY = "0.0"
-    MEDIC = "0.1"
-    ENGINEER = "0.2"
-    LOGISTIC = "1.0"
-    LIGHT_VEHICLE = "1.1"
-    INFANTRY_VEHICLE = "1.2"
-    MAIN_TANK = "1.3"
-    ARTILLERY = "2.0"
-    FIGHTER = "3.0"
-    BOMBER = "3.1"
-    VTOL = "3.2"
-    HVTOL = "3.3"
-    HAT = "3.4"
-    LIGHT_MECH = "4.0"
-    MEDIUM_MECH = "4.1"
-    HEAVY_MECH = "4.2"
-    CORVETTE = "5.0"
-    CRUISER = "5.1"
-    DESTROYER = "5.2"
-    BATTLESHIP = "5.3"
-    V1_CARRIER = "5.4"
 
 # Listeners
 
@@ -92,8 +53,8 @@ class Unit(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String(30), index=True)
     player_id = Column(Integer, ForeignKey("players.id"), index=True)
-    unit_type = Column(Enum(UnitType))
-    status = Column(Enum(UnitStatus), default=UnitStatus.PROPOSED)
+    unit_type = Column(String(15))
+    status = Column(Enum(UnitStatus), default=UnitStatus.PROPOSED) # status is still an enum, but type is a string now
     
     # relationships
     player = relationship("Player", back_populates="units")
@@ -102,8 +63,8 @@ class Unit(Base):
 
 class ActiveUnit(Base):
     __tablename__ = "active_units"
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     # columns
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     player_id = Column(Integer, ForeignKey("players.id"), unique=True, index=True)
     callsign = Column(String(8), index=True, unique=True)
     unit_id = Column(Integer, ForeignKey("units.id"), unique=True, index=True)
@@ -120,10 +81,22 @@ class ActiveUnit(Base):
     immobilized = Column(Boolean, default=False)
     disarmed = Column(Boolean, default=False)
     transport_id = Column(Integer, ForeignKey("active_units.id"))
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"))
     # relationships
     player = relationship("Player", back_populates="active_units")
     unit = relationship("Unit", back_populates="active_unit")
     transport = relationship("ActiveUnit", remote_side=[id], backref=backref("passengers", lazy="dynamic"))
+    campaign = relationship("Campaign", back_populates="active_units")
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+    # columns
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String(30), index=True)
+    active = Column(Boolean, default=True)
+    open = Column(Boolean, default=False)
+    # relationships
+    active_units = relationship("ActiveUnit", back_populates="campaign")
 
 class Player(Base):
     __tablename__ = "players"
@@ -140,6 +113,7 @@ class Player(Base):
     dossier = relationship("Dossier", back_populates="player", cascade="all, delete-orphan")
     statistic = relationship("Statistic", back_populates="player", cascade="all, delete-orphan")
     medals = relationship("Medals", back_populates="player", cascade="all, delete-orphan")
+
 class Upgrade(Base):
     __tablename__ = "upgrades"
     # columns

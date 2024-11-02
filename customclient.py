@@ -12,7 +12,7 @@ import asyncio
 import templates
 import logging
 
-use_ephemeral = True
+use_ephemeral = False
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -167,19 +167,19 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 break # graceful termination signal
 
     stats_map = {
-        UnitType.INFANTRY: templates.Infantry_Stats,
-        UnitType.MEDIC: templates.Non_Combat_Stats,
-        UnitType.ENGINEER: templates.Non_Combat_Stats,
-        UnitType.ARTILLERY: templates.Artillery_Stats,
-        UnitType.MAIN_TANK: templates.Armor_Stats,
-        UnitType.LIGHT_VEHICLE: templates.Armor_Stats,
-        UnitType.LOGISTIC: templates.Armor_Stats,
-        UnitType.BOMBER: templates.Air_Stats,
-        UnitType.FIGHTER: templates.Air_Stats,
-        UnitType.VTOL: templates.Air_Stats,
-        UnitType.HVTOL: templates.Air_Stats,
-        UnitType.HAT: templates.Air_Stats,
-        UnitType.LIGHT_MECH: templates.Armor_Stats
+        "INFANTRY": templates.Infantry_Stats,
+        "MEDIC": templates.Non_Combat_Stats,
+        "ENGINEER": templates.Non_Combat_Stats,
+        "ARTILLERY": templates.Artillery_Stats,
+        "MAIN_TANK": templates.Armor_Stats,
+        "LIGHT_VEHICLE": templates.Armor_Stats,
+        "LOGISTIC": templates.Armor_Stats,
+        "BOMBER": templates.Air_Stats,
+        "FIGHTER": templates.Air_Stats,
+        "VTOL": templates.Air_Stats,
+        "HVTOL": templates.Air_Stats,
+        "HAT": templates.Air_Stats,
+        "LIGHT_MECH": templates.Armor_Stats
     }
     def generate_unit_message(self, player):
         """
@@ -211,7 +211,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         for unit in inactive_units:
             upgrades = self.session.query(Upgrade).filter(Upgrade.unit_id == unit.id).all()
             upgrade_list = ", ".join([upgrade.name for upgrade in upgrades])
-            logger.debug(f"Inactive unit {unit.name} of type {unit.unit_type.name} has status {unit.status.name}")
+            logger.debug(f"Inactive unit {unit.name} of type {unit.unit_type} has status {unit.status.name}")
             logger.debug(f"Inactive unit {unit.id} has upgrades: {upgrade_list}")
             unit_messages.append(templates.Statistics_Unit.format(unit=unit, upgrades=upgrade_list))
 
@@ -244,7 +244,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
         @self.tree.command(name="ping", description="Ping the bot")
         async def ping(interaction: Interaction):
-            await interaction.response.send_message(f"Pong! I was last restarted at {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}, {datetime.now() - self.start_time} ago")
+            await interaction.response.send_message(f"Pong! I was last restarted at <t:{int(self.start_time.timestamp())}:F>, <t:{int(self.start_time.timestamp())}:R>")
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
         await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped

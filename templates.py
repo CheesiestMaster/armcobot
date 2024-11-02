@@ -10,10 +10,10 @@ Bonus Pay: {player.bonus_pay}
 Units:
 {units}"""
 
-Statistics_Unit = """### {unit.name} ({unit.unit_type.name}) {unit.status.name}
+Statistics_Unit = """### {unit.name} ({unit.unit_type}) {unit.status.name}
 {upgrades}"""
 
-Statistics_Unit_Active = """### {unit.name} ({unit.unit_type.name}) {unit.status.name}
+Statistics_Unit_Active = """### {unit.name} ({unit.unit_type}) {unit.status.name}
 {upgrades}
 {stats}"""
 
