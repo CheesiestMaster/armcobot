@@ -39,7 +39,7 @@ class Unit(GroupCog):
                         return
 
                     # Check for 3 proposed Unit limit
-                    units = self.session.query(Unit_model).filter(Unit_model.player_id == interaction.user.id, Unit_model.status == "PROPOSED").all()
+                    units = self.session.query(Unit_model).filter(Unit_model.player_id == player.id).filter(Unit_model.status == "PROPOSED").all()
                     logger.debug(f"Number of proposed units: {len(units)}")
                     if len(units) >= 3:
                         await interaction.response.send_message("You already have 3 proposed Units, which is the maximum allowed", ephemeral=CustomClient().use_ephemeral)

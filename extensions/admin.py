@@ -140,9 +140,10 @@ class Admin(GroupCog):
     @ac.describe(name="The name of the unit type")
     async def create_unit_type(self, interaction: Interaction, name: str):
         if not self.bot.config.get("unit_types"):
-            self.bot.config["unit_types"] = [name]
+            self.bot.config["unit_types"] = {name}
         else:
-            self.bot.config["unit_types"].append(name)
+            self.bot.config["unit_types"].add(name) # unit_types is a set, so we can just append
+        await self.bot.resync_config()
         await interaction.response.send_message(f"Unit type {name} created", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="refresh_stats", description="Refresh the statistics and dossiers for all players")

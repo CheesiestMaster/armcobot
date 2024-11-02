@@ -41,9 +41,7 @@ class Config(GroupCog):
             await interaction.response.send_message("This command can only be used in a text channel", ephemeral=self.bot.use_ephemeral)
             return
         self.bot.config["dossier_channel_id"] = interaction.channel.id
-        _Config = self.session.query(Config_model).filter(Config_model.key == "BOT_CONFIG").first()
-        _Config.value = self.bot.config
-        self.session.commit()
+        await self.bot.resync_config()
         logger.info(f"Dossier channel set to {interaction.channel.name}")
         old_dossiers = self.session.query(Dossier).all()
         for dossier in old_dossiers:
@@ -59,9 +57,7 @@ class Config(GroupCog):
             await interaction.response.send_message("This command can only be used in a text channel", ephemeral=self.bot.use_ephemeral)
             return
         self.bot.config["statistics_channel_id"] = interaction.channel.id
-        _Config = self.session.query(Config_model).filter(Config_model.key == "BOT_CONFIG").first()
-        _Config.value = self.bot.config
-        self.session.commit()
+        await self.bot.resync_config()
         logger.info(f"Statistics channel set to {interaction.channel.name}")
         old_statistics = self.session.query(Statistic).all()
         for statistic in old_statistics:

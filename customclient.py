@@ -45,6 +45,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self.medal_emotes:dict = _Medal_Emotes.value
         self.use_ephemeral = use_ephemeral
 
+    async def resync_config(self):
+        _Config = self.session.query(Config).filter(Config.key == "BOT_CONFIG").first()
+        _Config.value = self.config
+        self.session.commit()
+        logger.debug(f"Resynced config: {self.config}")
+
     async def queue_consumer(self):
         logger.info("queue consumer started")
         while True:
@@ -238,6 +244,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
     async def close(self):
         await self.queue.put((4, None))
+        await self.resync_config()
         await super().close()
 
     async def setup_hook(self):
