@@ -132,12 +132,13 @@ class Unit(GroupCog):
                 logger.debug(f"Removing unit {unit.name}")
                 self.session.delete(unit)
                 self.session.commit()
-                self.session.queue.put_nowait((1, player)) # make the bot think the player was edited, using nowait to avoid yielding control
+                CustomClient().queue.put_nowait((1, player))
                 await interaction.response.send_message(f"Unit {unit.name} activated", ephemeral=CustomClient().use_ephemeral)
 
         view = View()
         view.add_item(UnitSelect())
         await interaction.response.send_message("Please select the unit to remove", view=view, ephemeral=CustomClient().use_ephemeral)
+
 bot: Bot = None
 async def setup(_bot: Bot):
     global bot
