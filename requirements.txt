@@ -3,13 +3,20 @@ aiohttp==3.10.10
 aiosignal==1.3.1
 async-timeout==4.0.3
 attrs==24.2.0
-discord.py==2.4.0
+discord.py @ git+https://github.com/Rapptz/discord.py@af75985730528fa76f9949ea768ae90fd2a50c75
 frozenlist==1.5.0
 greenlet==3.1.1
 idna==3.10
 multidict==6.1.0
+mysqlclient==2.2.5
+numpy==2.1.3
+pandas==2.2.3
 propcache==0.2.0
+python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
+pytz==2024.2
+six==1.16.0
 SQLAlchemy==2.0.36
 typing_extensions==4.12.2
+tzdata==2024.2
 yarl==1.15.2
