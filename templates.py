@@ -1,6 +1,8 @@
 Dossier = """# {player.name}
 
-{player.lore}"""
+{player.lore}
+
+{medals}"""
 
 Statistics_Player = """## {player.name}
 
