@@ -108,6 +108,36 @@ class Unit(GroupCog):
         view.add_item(UnitSelect())
         await interaction.response.send_message("Please select the unit to activate", view=view, ephemeral=CustomClient().use_ephemeral)
 
+    @ac.command(name="remove_unit", description="Remove a proposed unit from your company")
+    async def remove_unit(self, interaction: Interaction):
+
+        player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
+        if not player:
+            await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            return
+        units = self.session.query(Unit_model).filter(Unit_model.player_id == player.id).filter(Unit_model.status == UnitStatus.PROPOSED).all()
+        if not units:
+            await interaction.response.send_message("You don't have any proposed units", ephemeral=CustomClient().use_ephemeral)
+            return
+        # create a dropdown for the units
+        class UnitSelect(ui.Select):
+            def __init__(self):
+                options = [SelectOption(label=unit.name, value=unit.name) for unit in units]
+                self.session = CustomClient().session
+                super().__init__(placeholder="Select the unit to remove", options=options)
+
+            async def callback(self, interaction: Interaction):
+                # create an ActiveUnit object for the unit, for now just set the player_id and unit_id
+                unit: Unit_model = self.session.query(Unit_model).filter(Unit_model.name == self.values[0]).first()
+                logger.debug(f"Removing unit {unit.name}")
+                self.session.delete(unit)
+                self.session.commit()
+                self.session.queue.put_nowait((1, player)) # make the bot think the player was edited, using nowait to avoid yielding control
+                await interaction.response.send_message(f"Unit {unit.name} activated", ephemeral=CustomClient().use_ephemeral)
+
+        view = View()
+        view.add_item(UnitSelect())
+        await interaction.response.send_message("Please select the unit to remove", view=view, ephemeral=CustomClient().use_ephemeral)
 bot: Bot = None
 async def setup(_bot: Bot):
     global bot
