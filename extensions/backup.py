@@ -34,12 +34,13 @@ class Backup(GroupCog):
             for table_name in table_names:
                 # Execute the query and fetch all rows
                 query = select(Base.metadata.tables[table_name])
-                result = await self.session.execute(query)
+                result = self.session.execute(query)
                 rows = result.fetchall()
 
                 # Convert rows to DataFrame
                 df = DataFrame(rows, columns=result.keys())
-                df.to_excel(writer, sheet_name=table_name, index=False)
+                logger.debug(f"Writing table {table_name} with {len(df)} rows")
+                df.to_excel(writer, sheet_name=table_name, index=True)
 
         await interaction.followup.send(f"Excel file created: {handle_path}", ephemeral=self.use_ephemeral)
 
@@ -48,16 +49,16 @@ class Backup(GroupCog):
         await interaction.response.defer(ephemeral=self.use_ephemeral)
         # we need to use subprocess to call mysqldump, and we need to get the password from getenv("MYSQL_PASSWORD")
         # for all other parameters, we assume localhost and armco as the user and schema
-        password = os.getenv("MYSQL_PASSWORD")
+        """ password = os.getenv("MYSQL_PASSWORD")
         if not password:
             await interaction.followup.send("No MySQL password found in environment variables", ephemeral=True)
-            return
+            return """
         
         # Roll the file and prepare for writing
         self.sql_roller.roll() 
         # we will use the async subprocess to redirect the output to the handle, so we need to leave it open
-        command = ["mysqldump", "-h", "localhost", "-u", "armco", "-p" + password, "armco"]
-        process = await asyncio.create_subprocess_exec(*command, stdout=self.sql_roller.current_handle, stderr=asyncio.subprocess.PIPE)
+        command = ["mysqldump", "-h", "localhost", "-u", "armco", "armco"]
+        process = await asyncio.create_subprocess_exec(*command, stdout=self.sql_roller.current_handle, stderr=asyncio.subprocess.PIPE, env={"MYSQL_PWD": os.getenv("MYSQL_PASSWORD")})
 
         _, stderr = await process.communicate()
         if stderr or process.returncode != 0:

@@ -56,11 +56,19 @@ class Shop(GroupCog):
             async def buy_button_callback(interaction: Interaction):
                 # set the unit status to INACTIVE
                 logger.info(f"Buying unit {unit.name}")
+                if player.rec_points < 1:
+                    await interaction.response.send_message("You don't have enough requisition points to buy this unit", ephemeral=CustomClient().use_ephemeral)
+                    return
+                if unit.status.name != "PROPOSED":
+                    await interaction.response.send_message("Unit is not proposed, cannot buy", ephemeral=CustomClient().use_ephemeral)
+                    return
                 unit.status = "INACTIVE"
                 player.rec_points -= 1
+                
                 self.session.commit()
                 await interaction.response.send_message(f"You have bought {unit.name}", ephemeral=CustomClient().use_ephemeral)
                 buy_button.disabled = True
+                await interaction.edit_original_response(content=f"You have bought {unit.name}", view=view)
             buy_button.callback = buy_button_callback
             view.add_item(buy_button)
         elif unit.status.name in {"MIA", "KIA"}:

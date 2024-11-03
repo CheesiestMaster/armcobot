@@ -47,10 +47,15 @@ class Unit(GroupCog):
                     # create the unit in the database
                     unit_type = self.children[1].values[0]
                     logger.debug(f"Unit type selected: {unit_type}")
+                    # check if the unit name is already taken
+                    if self.session.query(Unit_model).filter(Unit_model.name == unit_name, Unit_model.player_id == player.id).first():
+                        await interaction.response.send_message("You already have a unit with that name", ephemeral=CustomClient().use_ephemeral)
+                        return
                     unit = Unit_model(player_id=player.id, name=unit_name, unit_type=unit_type)
                     self.session.add(unit)
                     self.session.commit()
                     logger.debug(f"Unit {unit.name} created for player {player.name}")
+                    button.disabled = True
                     await interaction.response.send_message(f"Unit {unit.name} created", ephemeral=CustomClient().use_ephemeral)
 
             view = CreateUnitView()
@@ -60,6 +65,9 @@ class Unit(GroupCog):
     @ac.describe(callsign="The callsign of the unit to activate, must be globally unique")
     async def activateunit(self, interaction: Interaction, callsign: str):
         # get the list of units for the author
+        if len(callsign) > 8:
+            await interaction.response.send_message("Callsign is too long, please use a shorter callsign", ephemeral=CustomClient().use_ephemeral)
+            return
         logger.debug(f"Activating unit for {interaction.user.id}")
         player: Player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:

@@ -1,6 +1,9 @@
 from os import remove
 from typing import BinaryIO, Union
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 class FileRoller:
     """
@@ -41,10 +44,11 @@ class FileRoller:
             if last_file.exists():
                 remove(last_file)
             
-            for i in range(self.max_count - 1, 0, -1):
+            for i in range(self.max_count - 1, -1, -1):
                 current_file = self.path.with_name(f"{self.path.stem}.{i}{original_suffix}")
                 next_file = self.path.with_name(f"{self.path.stem}.{i + 1}{original_suffix}")
                 if current_file.exists():
+                    logger.debug(f"Rolling {current_file} to {next_file}")
                     current_file.rename(next_file)
         else:
             suffixes = [int(p.stem.split('.')[-1]) for p in self.path.parent.glob(f"{self.path.stem}.*{original_suffix}") if p.stem.split('.')[-1].isdigit()]
@@ -54,9 +58,10 @@ class FileRoller:
                 current_file = self.path.with_name(f"{self.path.stem}.{i}{original_suffix}")
                 next_file = self.path.with_name(f"{self.path.stem}.{i + 1}{original_suffix}")
                 if current_file.exists():
+                    logger.debug(f"Rolling {current_file} to {next_file}")
                     current_file.rename(next_file)
 
-        self.current_handle = open(self.path, "ab")
+        self.current_handle = open(self.path.with_name(f"{self.path.stem}.0{original_suffix}"), "ab")
 
     def close(self):
         """

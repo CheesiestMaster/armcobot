@@ -239,12 +239,17 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     async def on_ready(self):
         logger.info(f"Logged in as {self.user}")
         await self.set_bot_nick("S.A.M.")
-        test = self.get_emoji(":database:1301575474899714078")
         asyncio.create_task(self.queue_consumer())
 
     async def close(self):
         await self.queue.put((4, None))
         await self.resync_config()
+        try:
+            self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error committing session, rolling back: {e}")
+        self.session.close()
         await super().close()
 
     async def setup_hook(self):
@@ -254,7 +259,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             await interaction.response.send_message(f"Pong! I was last restarted at <t:{int(self.start_time.timestamp())}:F>, <t:{int(self.start_time.timestamp())}:R>")
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
-        await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
+        await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
         
         logger.debug("Syncing slash commands")
         await self.tree.sync()

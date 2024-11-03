@@ -127,19 +127,23 @@ class Admin(GroupCog):
     @ac.describe(right_emote="The emote to use for the right side of the medal")
     async def create_medal(self, interaction: Interaction, name: str, left_emote: str, center_emote: str, right_emote: str):
         # check if the emotes are valid
-        _left_emote = self.bot.get_emoji(left_emote)
-        _center_emote = self.bot.get_emoji(center_emote)
-        _right_emote = self.bot.get_emoji(right_emote)
+        _left_emote = await self.bot.fetch_application_emoji(int(left_emote))
+        _center_emote = await self.bot.fetch_application_emoji(int(center_emote))
+        _right_emote = await self.bot.fetch_application_emoji(int(right_emote))
         if not (_left_emote and _center_emote and _right_emote):
             await interaction.response.send_message("Invalid emote", ephemeral=self.bot.use_ephemeral)
             return
         # create the medal
         self.bot.medal_emotes[name] = [left_emote, center_emote, right_emote]
+        logger.debug(f"Medal {name} created with emotes {left_emote}, {center_emote}, {right_emote}")
         await interaction.response.send_message(f"Medal {name} created", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="create_unit_type", description="Create a new unit type")
     @ac.describe(name="The name of the unit type")
     async def create_unit_type(self, interaction: Interaction, name: str):
+        if len(name) > 15:
+            await interaction.response.send_message("Unit type name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)
+            return
         if not self.bot.config.get("unit_types"):
             self.bot.config["unit_types"] = {name}
         else:
@@ -199,16 +203,21 @@ class Admin(GroupCog):
                 self.add_item(UnitSelect(player_units))
 
             @ui.button(label="Remove Unit", style=ButtonStyle.primary)
-            async def create_unit_callback(self, interaction: Interaction):
+            async def create_unit_callback(self, interaction: Interaction, button: ui.Button):
 
                 # create the unit in the database
                 unit_id = self.children[1].values[0]
                 unit = self.session.query(Unit).filter(Unit.player_id == player.id).filter(Unit.id == unit_id).first()
                 logger.debug(f"Unit with the id {unit_id} has been selected to remove")
+                if not unit:
+                    await interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
+                    return
+                self.bot.queue.put_nowait((2, unit))
                 self.session.delete(unit)
                 self.session.commit()
                 logger.debug(f"Unit with the id {unit_id} was deleted from player {player.name}")
                 await interaction.response.send_message(f"Unit {unit.name} has been removed", ephemeral=CustomClient().use_ephemeral)
+                
 
         # Checks if the Player has a Meta Company and If that company has a name
         player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()

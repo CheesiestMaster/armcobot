@@ -6,3 +6,5 @@ __pycache__
 .vscode
 *.flag
 *.log
+backup.*.xlsx
+backup.*.sql
