@@ -1,8 +1,9 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji
+from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji, SelectOption, ui, ButtonStyle
 from discord.ui import Modal, TextInput
 from models import Player, Unit, ActiveUnit, UnitStatus, Upgrade
+from customclient import CustomClient
 
 logger = getLogger(__name__)
 
@@ -178,6 +179,49 @@ class Admin(GroupCog):
         self.session.add(upgrade)
         self.session.commit()
         await interaction.response.send_message(f"Special upgrade {name} given to {_player.name}", ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="remove_unit", description="Remove a unit from a player")
+    @ac.describe(player="The player to remove the unit from")
+    async def remove_unit(self, interaction: Interaction, player: Member):
+        # we need to make a modal for this, as we need a dropdown for the unit type
+        class UnitSelect(ui.Select):
+            def __init__(self, player_units):
+                options = [SelectOption(label=unit.name, value=unit.id) for unit in player_units]
+                super().__init__(placeholder="Select name of unit you want to removed", options=options)
+
+            async def callback(self, interaction: Interaction):
+                await interaction.response.defer(ephemeral=True)
+
+        class CreateUnitView(ui.View):
+            def __init__(self, player_units):
+                super().__init__()
+                self.session = CustomClient().session  # can't use self.session because this is a nested class, so we use the singleton reference
+                self.add_item(UnitSelect(player_units))
+
+            @ui.button(label="Remove Unit", style=ButtonStyle.primary)
+            async def create_unit_callback(self, interaction: Interaction):
+
+                # create the unit in the database
+                unit_id = self.children[1].values[0]
+                unit = self.session.query(Unit).filter(Unit.player_id == player.id).filter(Unit.id == unit_id).first()
+                logger.debug(f"Unit with the id {unit_id} has been selected to remove")
+                self.session.delete(unit)
+                self.session.commit()
+                logger.debug(f"Unit with the id {unit_id} was deleted from player {player.name}")
+                await interaction.response.send_message(f"Unit {unit.name} has been removed", ephemeral=CustomClient().use_ephemeral)
+
+        # Checks if the Player has a Meta Company and If that company has a name
+        player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
+        if not player:
+            await interaction.response.send_message(f"{player.name} doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            return
+        if len(player.units) == 0:
+            await interaction.response.send_message(f"{player.name} doesn't have a unit to remove", ephemeral=CustomClient().use_ephemeral)
+            return
+        player_units = self.session.query(Unit).filter(Unit.player_id == player.id).all()
+        view = CreateUnitView(player_units)
+        await interaction.response.send_message("Please select the unit type and enter the unit name", view=view, ephemeral=CustomClient().use_ephemeral)
+
 bot: Bot = None
 async def setup(_bot: Bot):
     global bot
