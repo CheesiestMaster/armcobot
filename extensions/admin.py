@@ -2,7 +2,7 @@ from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji, SelectOption, ui, ButtonStyle
 from discord.ui import Modal, TextInput
-from models import Player, Unit, ActiveUnit, UnitStatus, Upgrade
+from models import Player, Unit, ActiveUnit, UnitStatus, Upgrade, Medals
 from customclient import CustomClient
 
 logger = getLogger(__name__)
@@ -127,16 +127,37 @@ class Admin(GroupCog):
     @ac.describe(right_emote="The emote to use for the right side of the medal")
     async def create_medal(self, interaction: Interaction, name: str, left_emote: str, center_emote: str, right_emote: str):
         # check if the emotes are valid
-        _left_emote = await self.bot.fetch_application_emoji(int(left_emote))
-        _center_emote = await self.bot.fetch_application_emoji(int(center_emote))
-        _right_emote = await self.bot.fetch_application_emoji(int(right_emote))
-        if not (_left_emote and _center_emote and _right_emote):
+        _left_emote: Emoji = await self.bot.fetch_application_emoji(int(left_emote))
+        _center_emote: Emoji = await self.bot.fetch_application_emoji(int(center_emote))
+        _right_emote: Emoji = await self.bot.fetch_application_emoji(int(right_emote))
+        if not all([isinstance(emote, Emoji) for emote in [_left_emote, _center_emote, _right_emote]]):
             await interaction.response.send_message("Invalid emote", ephemeral=self.bot.use_ephemeral)
             return
         # create the medal
-        self.bot.medal_emotes[name] = [left_emote, center_emote, right_emote]
+
+        self.bot.medal_emotes[name] = [str(_left_emote), str(_center_emote), str(_right_emote)]
         logger.debug(f"Medal {name} created with emotes {left_emote}, {center_emote}, {right_emote}")
         await interaction.response.send_message(f"Medal {name} created", ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="award_medal", description="Award a medal to a player")
+    @ac.describe(player="The player to award the medal to")
+    @ac.describe(medal="The name of the medal")
+    async def award_medal(self, interaction: Interaction, player: Member, medal: str):
+        # find the player by discord id
+        _player: Player = self.session.query(Player).filter(Player.discord_id == player.id).first()
+        if not _player:
+            await interaction.response.send_message("User doesn't have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
+            return
+        # if the player already has a medal with that name, send a message saying so
+        _medal = self.session.query(Medals).filter(Medals.name == medal).filter(Medals.player_id == _player.id).first()
+        if _medal:
+            await interaction.response.send_message(f"{player.name} already has the medal {medal}", ephemeral=self.bot.use_ephemeral)
+            return
+        # add the medal to the player
+        _medal = Medals(name=medal, player_id=_player.id)
+        self.session.add(_medal)
+        self.session.commit()
+        await interaction.response.send_message(f"{player.name} has been awarded the medal {medal}", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="create_unit_type", description="Create a new unit type")
     @ac.describe(name="The name of the unit type")

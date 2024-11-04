@@ -61,8 +61,18 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     if isinstance(task[1], Player):
                         player = task[1]
                         medals = self.session.query(Medals).filter(Medals.player_id == player.id).all()
-                        medal_block = "" # TODO: format medals
-                        dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(templates.Dossier.format(player=player))
+                        # identify what medals have known emotes
+                        known_emotes = set(self.medal_emotes.keys())
+                        known_medals = {medal.name for medal in medals if medal.name in known_emotes}
+                        unknown_medals = {medal.name for medal in medals if medal.name not in known_emotes}
+                        known_medals_list = list(known_medals)
+                        # make rows of 5 medals that have known emotes
+                        rows = [known_medals_list[i:i+5] for i in range(0, len(known_medals_list), 5)]
+                        unknown_medals_list = list(unknown_medals)
+                        unknown_text = "\n".join(unknown_medals_list)
+                        # convert the rows to a string of emotes, with a space between each emote
+                        medal_block = "\n".join([" ".join([self.medal_emotes[medal] for medal in row]) for row in rows]) + "\n" + unknown_text
+                        dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(templates.Dossier.format(player=player, medals=medal_block))
                         dossier = Dossier(player_id=player.id, message_id=dossier_message.id)
                         self.session.add(dossier)
                         self.session.commit()
