@@ -103,7 +103,8 @@ class Unit(GroupCog):
         if not active_unit:
             await interaction.response.send_message("You don't have any active units", ephemeral=CustomClient().use_ephemeral)
             return
-                
+        
+        active_unit.unit.status == "INACTIVE"        
         logger.debug(f"Deactivating unit with callsign {active_unit.callsign}")
         self.session.delete(active_unit)
         self.session.commit()
