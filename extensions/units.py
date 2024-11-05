@@ -91,6 +91,24 @@ class Unit(GroupCog):
         view.add_item(UnitSelect())
         await interaction.response.send_message("Please select the unit to activate", view=view, ephemeral=CustomClient().use_ephemeral)
 
+    @ac.command(name="deactivate", description="Deactivate a unit")
+    async def deactivateunit(self, interaction: Interaction):
+        logger.debug(f"Deactivating unit for {interaction.user.id}")
+        player: Player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
+        if not player:
+            await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            return
+        
+        active_unit = self.session.query(ActiveUnit).filter(ActiveUnit.player_id == player.id).first()
+        if not active_unit:
+            await interaction.response.send_message("You don't have any active units", ephemeral=CustomClient().use_ephemeral)
+            return
+                
+        logger.debug(f"Deactivating unit with callsign {active_unit.callsign}")
+        self.session.delete(active_unit)
+        self.session.commit()
+        await interaction.response.send_message(f"Unit with callsign {active_unit.callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
+
 bot: Bot = None
 async def setup(_bot: Bot):
     global bot
