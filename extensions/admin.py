@@ -8,12 +8,22 @@ from customclient import CustomClient
 logger = getLogger(__name__)
 
 class Admin(GroupCog):
+    """
+    Admin commands for the bot
+    """
     def __init__(self, bot: Bot):
+        """
+        Initialize the Admin cog
+        """
+        super().__init__()
         self.bot = bot
         self.session = bot.session
         # self.interaction_check = self.is_mod # disabled for development, as those roles don't exist on the dev guild
 
     async def is_mod(self, interaction: Interaction):
+        """
+        Check if the user is a moderator
+        """
         valid = any(interaction.user.has_role(role) for role in self.bot.mod_roles)
         if not valid:
             logger.warning(f"{interaction.user.name} tried to use admin commands")
@@ -23,6 +33,13 @@ class Admin(GroupCog):
     @ac.describe(player="The player to give or remove points from")
     @ac.describe(points="The number of points to give or remove")
     async def recpoint(self, interaction: Interaction, player: Member, points: int):
+        """
+        Give or remove a number of requisition points from a player
+
+        Args:
+            player (Member): The player to give or remove points from
+            points (int): The number of points to give or remove
+        """
         # find the player by discord id
         player = self.session.query(Player).filter(Player.discord_id == player.id).first()
         if not player:
@@ -39,6 +56,13 @@ class Admin(GroupCog):
     @ac.describe(points="The number of points to give or remove")
     @ac.describe(status="Status of the unit (Inactive = 0, Active = 1, MIA = 2, KIA = 3)")
     async def bulk_recpoint(self, interaction: Interaction, status: str, points: int):
+        """
+        Give or remove a number of requisition points from a set of players
+
+        Args:
+            status (str): The status of the units to update
+            points (int): The number of points to give or remove
+        """
         # Find all units with corresponding Enum status
         status_enum = UnitStatus(status)
         units = self.session.query(Unit).filter(Unit.status == status_enum).all()
@@ -49,11 +73,59 @@ class Admin(GroupCog):
             logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
         self.session.commit()
         await interaction.response.send_message(f"Players of units of the status {status} have received {points} requisition points", ephemeral=self.bot.use_ephemeral)
+    
+    @ac.command(name="bulk_recpoint_by_name", description="Give or remove a number of requisition points from a set of players by name")
+    @ac.describe(points="The number of requisition points to give or remove")
+    async def bulk_recpoint_by_name(self, interaction: Interaction, points: int):
+        """
+        Give or remove a number of requisition points from a set of players by name
+
+        Args:
+            points (int): The number of requisition points to give or remove
+        """
+        brp_modal = Modal(title="Bulk Requisition Points by Name", custom_id="bulk_recpoint_by_name")
+        brp_modal.add_item(TextInput(label="Player names", custom_id="player_names", style=TextStyle.paragraph))
+        async def brp_modal_callback(interaction: Interaction):
+            player_names = interaction.data["components"][0]["components"][0]["value"]
+            logger.debug(f"Received player names: {player_names}")
+            if "\n" in player_names[:40]:
+                player_names = set(player_names.split("\n"))
+            else:
+                player_names = set(player_names.split(","))
+            player_names = [name.strip() for name in player_names]
+            if len(player_names) == 0:
+                await interaction.response.send_message("No player names provided", ephemeral=self.bot.use_ephemeral)
+                return
+            logger.debug(f"Parsed player names: {player_names}")
+            # we need to convert the discord names to discord ids, then convert those to Player objects
+            members: list[Member] = await interaction.guild.fetch_members(limit=None).flatten()
+            chosen_members = {member for member in members if member.global_name in player_names}
+            discord_ids = {member.id for member in chosen_members}
+            players = self.session.query(Player).filter(Player.discord_id.in_(discord_ids)).all()
+            failed_players = []
+            for player in players:
+                if player.rec_points + points < 0:
+                    failed_players.append(player.name)
+                    continue
+                player.rec_points += points
+            self.session.commit()
+            await interaction.response.send_message(f"Players {chosen_members} have been updated, {', '.join(failed_players)} failed", ephemeral=self.bot.use_ephemeral)
+
+        brp_modal.on_submit = brp_modal_callback
+        await interaction.response.send_modal(brp_modal)
+
 
     @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
     @ac.describe(player="The player to give or remove bonus pay from")
     @ac.describe(points="The number of bonus pay to give or remove")
     async def bonuspay(self, interaction: Interaction, player: Member, points: int):
+        """
+        Give or remove a number of bonus pay from a player
+
+        Args:
+            player (Member): The player to give or remove bonus pay from
+            points (int): The number of bonus pay to give or remove
+        """
         # find the player by discord id
         player = self.session.query(Player).filter(Player.discord_id == player.id).first()
         if not player:
@@ -70,6 +142,13 @@ class Admin(GroupCog):
     @ac.describe(points="The number of bonus pay to give or remove")
     @ac.describe(status="Status of the unit (Inactive = 0, Active = 1, MIA = 2, KIA = 3)")
     async def bulk_bonus_pay(self, interaction: Interaction, status: str, points: int):
+        """
+        Give or remove a number of bonus pay from a set of players
+
+        Args:
+            status (str): The status of the units to update
+            points (int): The number of bonus pay to give or remove
+        """
         # Find all units with corresponding Enum status
         status_enum = UnitStatus(status)
         units = self.session.query(Unit).filter(Unit.status == status_enum).all()
@@ -81,12 +160,53 @@ class Admin(GroupCog):
         self.session.commit()
         await interaction.response.send_message(f"Players of units of the status {status} have received {points} bonus pay", ephemeral=self.bot.use_ephemeral)
 
+    @ac.command(name="bulk_bonuspay_by_name", description="Give or remove a number of bonus pay from a set of players by name")
+    @ac.describe(points="The number of bonus pay to give or remove")
+    async def bulk_bonuspay_by_name(self, interaction: Interaction, points: int):
+        """
+        Give or remove a number of bonus pay from a set of players by name
+
+        Args:
+            points (int): The number of bonus pay to give or remove
+        """
+        bbp_modal = Modal(title="Bulk Bonus Pay by Name", custom_id="bulk_bonuspay_by_name")
+        bbp_modal.add_item(TextInput(label="Player names", custom_id="player_names", style=TextStyle.paragraph))
+        async def bbp_modal_callback(interaction: Interaction):
+            player_names = interaction.data["components"][0]["components"][0]["value"]
+            logger.debug(f"Received player names: {player_names}")
+            if "\n" in player_names[:40]:
+                player_names = set(player_names.split("\n"))
+            else:
+                player_names = set(player_names.split(","))
+            player_names = [name.strip() for name in player_names]
+            if len(player_names) == 0:
+                await interaction.response.send_message("No player names provided", ephemeral=self.bot.use_ephemeral)
+                return
+            logger.debug(f"Parsed player names: {player_names}")
+            # we need to convert the discord names to discord ids, then convert those to Player objects
+            members: list[Member] = await interaction.guild.fetch_members(limit=None).flatten()
+            chosen_members = {member for member in members if member.global_name in player_names}
+            discord_ids = {member.id for member in chosen_members}
+            players = self.session.query(Player).filter(Player.discord_id.in_(discord_ids)).all()
+            failed_players = []
+            for player in players:
+                if player.bonus_pay + points < 0:
+                    failed_players.append(player.name)
+                    continue
+                player.bonus_pay += points
+            self.session.commit()
+            await interaction.response.send_message(f"Players {chosen_members} have been updated, {', '.join(failed_players)} failed", ephemeral=self.bot.use_ephemeral)
+
+        bbp_modal.on_submit = bbp_modal_callback
+        await interaction.response.send_modal(bbp_modal)
+
+            
+
     @ac.command(name="activateunits", description="Activate multiple units")
     async def activateunits(self, interaction: Interaction):
-        # we need a modal with a paragraph input for the unit names
-        # we identify if a newline is in the first 40 characters, if so, we split on that, otherwise we split on commas
-        # we then check if the units exist, and if they do, we activate them
-        # we send a response in the end saying which units were activated, and which ones didn't exist
+        """
+        Activate multiple units
+        """ 
         modal = Modal(title="Activate Units", custom_id="activate_units")
         modal.add_item(TextInput(label="Unit names", custom_id="unit_names", style=TextStyle.long))
         async def modal_callback(interaction: Interaction):
@@ -122,10 +242,19 @@ class Admin(GroupCog):
 
     @ac.command(name="create_medal", description="Create a medal")
     @ac.describe(name="The name of the medal")
-    @ac.describe(left_emote="The emote to use for the left side of the medal")
-    @ac.describe(center_emote="The emote to use for the center of the medal")
-    @ac.describe(right_emote="The emote to use for the right side of the medal")
+    @ac.describe(left_emote="The emote id to use for the left side of the medal")
+    @ac.describe(center_emote="The emote id to use for the center of the medal")
+    @ac.describe(right_emote="The emote id to use for the right side of the medal")
     async def create_medal(self, interaction: Interaction, name: str, left_emote: str, center_emote: str, right_emote: str):
+        """
+        Create a medal
+
+        Args:
+            name (str): The name of the medal
+            left_emote (str): The emote id to use for the left side of the medal
+            center_emote (str): The emote id to use for the center of the medal
+            right_emote (str): The emote id to use for the right side of the medal
+        """
         # check if the emotes are valid
         _left_emote: Emoji = await self.bot.fetch_application_emoji(int(left_emote))
         _center_emote: Emoji = await self.bot.fetch_application_emoji(int(center_emote))
@@ -143,6 +272,13 @@ class Admin(GroupCog):
     @ac.describe(player="The player to award the medal to")
     @ac.describe(medal="The name of the medal")
     async def award_medal(self, interaction: Interaction, player: Member, medal: str):
+        """
+        Award a medal to a player
+
+        Args:
+            player (Member): The player to award the medal to
+            medal (str): The name of the medal
+        """
         # find the player by discord id
         _player: Player = self.session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
@@ -162,6 +298,12 @@ class Admin(GroupCog):
     @ac.command(name="create_unit_type", description="Create a new unit type")
     @ac.describe(name="The name of the unit type")
     async def create_unit_type(self, interaction: Interaction, name: str):
+        """
+        Create a new unit type
+
+        Args:
+            name (str): The name of the unit type
+        """
         if len(name) > 15:
             await interaction.response.send_message("Unit type name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)
             return
@@ -174,6 +316,9 @@ class Admin(GroupCog):
 
     @ac.command(name="refresh_stats", description="Refresh the statistics and dossiers for all players")
     async def refresh_stats(self, interaction: Interaction):
+        """
+        Refresh the statistics and dossiers for all players
+        """
         await interaction.response.send_message("Refreshing statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
         self.session.expire_all()
         for player in self.session.query(Player).all():
@@ -184,6 +329,13 @@ class Admin(GroupCog):
     @ac.describe(player="The player to give the item to")
     @ac.describe(name="The name of the item")
     async def specialupgrade(self, interaction: Interaction, player: Member, name: str):
+        """
+        Give a player a one-off or relic item
+
+        Args:
+            player (Member): The player to give the item to
+            name (str): The name of the item
+        """
         _player = self.session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
             await interaction.response.send_message("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
@@ -208,6 +360,12 @@ class Admin(GroupCog):
     @ac.command(name="remove_unit", description="Remove a unit from a player")
     @ac.describe(player="The player to remove the unit from")
     async def remove_unit(self, interaction: Interaction, player: Member):
+        """
+        Remove a unit from a player
+
+        Args:
+            player (Member): The player to remove the unit from
+        """
         # we need to make a modal for this, as we need a dropdown for the unit type
         class UnitSelect(ui.Select):
             def __init__(self, player_units):
@@ -254,6 +412,12 @@ class Admin(GroupCog):
 
 bot: Bot = None
 async def setup(_bot: Bot):
+    """
+    Setup the Admin cog
+
+    Args:
+        _bot (Bot): The bot instance
+    """
     global bot
     bot = _bot
     logger.info("Setting up Admin cog")
@@ -261,5 +425,8 @@ async def setup(_bot: Bot):
     await bot.tree.sync()
 
 async def teardown():
+    """
+    Teardown the Admin cog
+    """
     logger.info("Tearing down Admin cog")
     bot.remove_cog(Admin.__name__) # remove_cog takes a string, not a class

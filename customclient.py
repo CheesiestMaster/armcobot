@@ -40,7 +40,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         initializes the task queue, and loads the bot configuration and medal emotes from the database.
         If the configuration or medal emotes are not found in the database, they are created with default values.
         """
-        DEFAULTS = {"command_prefix":"\0", "intents":Intents.default()}
+        defintents = Intents.default()
+        defintents.members = True
+        DEFAULTS = {"command_prefix":"\0", "intents":defintents}
         kwargs = {**DEFAULTS, **kwargs} # merge DEFAULTS and kwargs, kwargs takes precedence
         super().__init__(**kwargs)
         self.owner_ids = {533009808501112881, 126747253342863360}
