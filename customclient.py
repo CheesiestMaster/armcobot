@@ -360,7 +360,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             await interaction.response.send_message(f"Pong! I was last restarted at <t:{int(self.start_time.timestamp())}:F>, <t:{int(self.start_time.timestamp())}:R>")
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
-        await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
+        await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup", "extensions.search"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
         
         logger.debug("Syncing slash commands")
         await self.tree.sync()

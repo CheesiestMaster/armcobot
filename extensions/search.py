@@ -6,7 +6,7 @@ from customclient import CustomClient
 
 logger = getLogger(__name__)
 
-class Company(GroupCog):
+class Search(GroupCog):
     """
         A Discord bot cog that allows users to search for players by unit type and area of operation (AO)
         in the Meta Campaign.
@@ -26,7 +26,7 @@ class Company(GroupCog):
 
     def __init__(self, bot: Bot):
         """
-                Initializes the Company cog.
+                Initializes the Search cog.
 
                 Args:
                     bot (Bot): The bot instance the cog will be added to.
@@ -143,19 +143,19 @@ class Company(GroupCog):
 bot: Bot = None
 async def setup(_bot: Bot):
     """
-    Asynchronous setup function to add the Company cog to the bot.
+    Asynchronous setup function to add the Search cog to the bot.
 
     Args:
         _bot (Bot): The bot instance to add this cog to.
     """
     global bot
     bot = _bot
-    logger.info("Setting up Company cog")
-    await bot.add_cog(Company(bot))
+    logger.info("Setting up Search cog")
+    await bot.add_cog(Search(bot))
 
 async def teardown():
     """
-    Asynchronous teardown function to remove the Company cog from the bot.
+    Asynchronous teardown function to remove the Search cog from the bot.
     """
-    logger.info("Tearing down Company cog")
-    bot.remove_cog(Company.__name__) # remove_cog takes a string, not a class
+    logger.info("Tearing down Search cog")
+    bot.remove_cog(Search.__name__) # remove_cog takes a string, not a class
