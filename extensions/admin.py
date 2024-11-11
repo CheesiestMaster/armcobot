@@ -200,8 +200,6 @@ class Admin(GroupCog):
         bbp_modal.on_submit = bbp_modal_callback
         await interaction.response.send_modal(bbp_modal)
 
-            
-
     @ac.command(name="activateunits", description="Activate multiple units")
     async def activateunits(self, interaction: Interaction):
         """
@@ -409,6 +407,23 @@ class Admin(GroupCog):
         player_units = self.session.query(Unit).filter(Unit.player_id == player.id).all()
         view = CreateUnitView(player_units)
         await interaction.response.send_message("Please select the unit type and enter the unit name", view=view, ephemeral=CustomClient().use_ephemeral)
+
+    @ac.command(name="remove_unittype", description="Remove a unit type from the game")
+    @ac.describe(name="The name of the unit type to remove")
+    async def remove_unittype(self, interaction: Interaction, name: str):
+        if name in self.bot.config.get("unit_types"):
+            self.bot.config["unit_types"].remove(name)
+            await self.bot.resync_config()
+        units = self.session.query(Unit).filter(Unit.type == name).filter(Unit.active_unit == None).all()
+        for unit in units:
+            unit.legacy = True
+            if unit.status == UnitStatus.INACTIVE:
+                unit.status = UnitStatus.LEGACY
+            logger.debug(f"Unit {unit.name} has been set to legacy")
+        self.session.commit()
+
+        await interaction.response.send_message(f"Unit type {name} removed", ephemeral=self.bot.use_ephemeral)
+
 
 bot: Bot = None
 async def setup(_bot: Bot):
