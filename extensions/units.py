@@ -1,6 +1,6 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOption
+from discord import Interaction, app_commands as ac, Member, ui, ButtonStyle, SelectOption
 from discord.ui import View
 from models import Player, Unit as Unit_model, ActiveUnit, UnitStatus
 from customclient import CustomClient
@@ -156,6 +156,30 @@ class Unit(GroupCog):
         self.session.delete(active_unit)
         self.session.commit()
         await interaction.response.send_message(f"Unit with callsign {active_unit.callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
+
+
+    @ac.command(name="units", description="Display a list of all Units for a Player")
+    @ac.describe(player="The player to deliver results for")
+    async def units(self, interaction: Interaction, player: Member):
+
+        player = self.session.query(Player).filter(Player.discord_id == player.id).first()
+        if not player:
+            await interaction.response.send_message("User doesn't have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
+            return
+        
+        units = self.session.query(Unit_model).filter(Unit_model.player_id == player.id).all()
+        if not units:
+            await interaction.response.send_message("User doesn't have any Units", ephemeral=CustomClient().use_ephemeral)
+            return
+        
+        # Create a table with unit details
+        unit_table = "| Unit Name | Callsign | Unit Type | Status |\n"
+        unit_table += "|-----------|-----------|-----------|--------|\n"
+        for unit in units:
+            unit_table += f"| {unit.name} | {unit.active_unit.callsign} | {unit.unit_type} | {unit.status} |\n"
+
+        # Send the table to the user
+        await interaction.response.send_message(f"Here are {player.name}'s Units:\n\n{unit_table}", ephemeral=CustomClient().use_ephemeral)
 
 bot: Bot = None
 async def setup(_bot: Bot):
