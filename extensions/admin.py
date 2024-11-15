@@ -9,11 +9,13 @@ logger = getLogger(__name__)
 
 class Admin(GroupCog):
     """
-    Admin commands for the bot
+    Admin commands for managing players, units, points, and medals in the bot.
+
+    Provides a set of commands to assist moderators with administrative tasks.
     """
     def __init__(self, bot: Bot):
         """
-        Initialize the Admin cog
+        Initialize the Admin cog with a reference to the bot instance.
         """
         super().__init__()
         self.bot = bot
@@ -22,7 +24,7 @@ class Admin(GroupCog):
 
     async def is_mod(self, interaction: Interaction):
         """
-        Check if the user is a moderator
+        Check if the user is a moderator with the necessary role.
         """
         valid = any(interaction.user.has_role(role) for role in self.bot.mod_roles)
         if not valid:
@@ -34,11 +36,7 @@ class Admin(GroupCog):
     @ac.describe(points="The number of points to give or remove")
     async def recpoint(self, interaction: Interaction, player: Member, points: int):
         """
-        Give or remove a number of requisition points from a player
-
-        Args:
-            player (Member): The player to give or remove points from
-            points (int): The number of points to give or remove
+        Adjusts a player's requisition points by adding or removing a specified amount.
         """
         # find the player by discord id
         player = self.session.query(Player).filter(Player.discord_id == player.id).first()
@@ -57,11 +55,7 @@ class Admin(GroupCog):
     @ac.describe(status="Status of the unit (Inactive = 0, Active = 1, MIA = 2, KIA = 3)")
     async def bulk_recpoint(self, interaction: Interaction, status: str, points: int):
         """
-        Give or remove a number of requisition points from a set of players
-
-        Args:
-            status (str): The status of the units to update
-            points (int): The number of points to give or remove
+        Modify requisition points for players with units of a specific status.
         """
         # Find all units with corresponding Enum status
         status_enum = UnitStatus(status)
@@ -78,10 +72,7 @@ class Admin(GroupCog):
     @ac.describe(points="The number of requisition points to give or remove")
     async def bulk_recpoint_by_name(self, interaction: Interaction, points: int):
         """
-        Give or remove a number of requisition points from a set of players by name
-
-        Args:
-            points (int): The number of requisition points to give or remove
+        Adjust requisition points for players by entering their names in a modal form.
         """
         brp_modal = Modal(title="Bulk Requisition Points by Name", custom_id="bulk_recpoint_by_name")
         brp_modal.add_item(TextInput(label="Player names", custom_id="player_names", style=TextStyle.paragraph))
@@ -114,17 +105,12 @@ class Admin(GroupCog):
         brp_modal.on_submit = brp_modal_callback
         await interaction.response.send_modal(brp_modal)
 
-
     @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
     @ac.describe(player="The player to give or remove bonus pay from")
     @ac.describe(points="The number of bonus pay to give or remove")
     async def bonuspay(self, interaction: Interaction, player: Member, points: int):
         """
-        Give or remove a number of bonus pay from a player
-
-        Args:
-            player (Member): The player to give or remove bonus pay from
-            points (int): The number of bonus pay to give or remove
+        Modify a player's bonus pay by adding or removing a specified amount.
         """
         # find the player by discord id
         player = self.session.query(Player).filter(Player.discord_id == player.id).first()
@@ -143,11 +129,7 @@ class Admin(GroupCog):
     @ac.describe(status="Status of the unit (Inactive = 0, Active = 1, MIA = 2, KIA = 3)")
     async def bulk_bonus_pay(self, interaction: Interaction, status: str, points: int):
         """
-        Give or remove a number of bonus pay from a set of players
-
-        Args:
-            status (str): The status of the units to update
-            points (int): The number of bonus pay to give or remove
+        Modify bonus pay for players with units of a specific status.
         """
         # Find all units with corresponding Enum status
         status_enum = UnitStatus(status)
@@ -164,10 +146,7 @@ class Admin(GroupCog):
     @ac.describe(points="The number of bonus pay to give or remove")
     async def bulk_bonuspay_by_name(self, interaction: Interaction, points: int):
         """
-        Give or remove a number of bonus pay from a set of players by name
-
-        Args:
-            points (int): The number of bonus pay to give or remove
+        Adjust bonus pay for players by entering their names in a modal form.
         """
         bbp_modal = Modal(title="Bulk Bonus Pay by Name", custom_id="bulk_bonuspay_by_name")
         bbp_modal.add_item(TextInput(label="Player names", custom_id="player_names", style=TextStyle.paragraph))
@@ -203,8 +182,8 @@ class Admin(GroupCog):
     @ac.command(name="activateunits", description="Activate multiple units")
     async def activateunits(self, interaction: Interaction):
         """
-        Activate multiple units
-        """ 
+        Activates several units by name through a modal form.
+        """
         modal = Modal(title="Activate Units", custom_id="activate_units")
         modal.add_item(TextInput(label="Unit names", custom_id="unit_names", style=TextStyle.long))
         async def modal_callback(interaction: Interaction):
@@ -245,13 +224,7 @@ class Admin(GroupCog):
     @ac.describe(right_emote="The emote id to use for the right side of the medal")
     async def create_medal(self, interaction: Interaction, name: str, left_emote: str, center_emote: str, right_emote: str):
         """
-        Create a medal
-
-        Args:
-            name (str): The name of the medal
-            left_emote (str): The emote id to use for the left side of the medal
-            center_emote (str): The emote id to use for the center of the medal
-            right_emote (str): The emote id to use for the right side of the medal
+        Add a new medal with specified emotes for left, center, and right sides.
         """
         # check if the emotes are valid
         _left_emote: Emoji = await self.bot.fetch_application_emoji(int(left_emote))
@@ -271,11 +244,7 @@ class Admin(GroupCog):
     @ac.describe(medal="The name of the medal")
     async def award_medal(self, interaction: Interaction, player: Member, medal: str):
         """
-        Award a medal to a player
-
-        Args:
-            player (Member): The player to award the medal to
-            medal (str): The name of the medal
+        Assign a specific medal to a player.
         """
         # find the player by discord id
         _player: Player = self.session.query(Player).filter(Player.discord_id == player.id).first()
@@ -297,10 +266,7 @@ class Admin(GroupCog):
     @ac.describe(name="The name of the unit type")
     async def create_unit_type(self, interaction: Interaction, name: str):
         """
-        Create a new unit type
-
-        Args:
-            name (str): The name of the unit type
+        Define a new unit type that can be assigned to players' units.
         """
         if len(name) > 15:
             await interaction.response.send_message("Unit type name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)
@@ -315,7 +281,7 @@ class Admin(GroupCog):
     @ac.command(name="refresh_stats", description="Refresh the statistics and dossiers for all players")
     async def refresh_stats(self, interaction: Interaction):
         """
-        Refresh the statistics and dossiers for all players
+        Refreshes the statistics and dossiers for all players.
         """
         await interaction.response.send_message("Refreshing statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
         self.session.expire_all()
@@ -328,11 +294,7 @@ class Admin(GroupCog):
     @ac.describe(name="The name of the item")
     async def specialupgrade(self, interaction: Interaction, player: Member, name: str):
         """
-        Give a player a one-off or relic item
-
-        Args:
-            player (Member): The player to give the item to
-            name (str): The name of the item
+        Give a unique or relic item to a player’s active unit.
         """
         _player = self.session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
@@ -359,10 +321,7 @@ class Admin(GroupCog):
     @ac.describe(player="The player to remove the unit from")
     async def remove_unit(self, interaction: Interaction, player: Member):
         """
-        Remove a unit from a player
-
-        Args:
-            player (Member): The player to remove the unit from
+        Remove a specific unit from a player's records.
         """
         # we need to make a modal for this, as we need a dropdown for the unit type
         class UnitSelect(ui.Select):
@@ -411,6 +370,9 @@ class Admin(GroupCog):
     @ac.command(name="remove_unittype", description="Remove a unit type from the game")
     @ac.describe(name="The name of the unit type to remove")
     async def remove_unittype(self, interaction: Interaction, name: str):
+        """
+        Delete a unit type and mark all related inactive units as legacy.
+        """
         if name in self.bot.config.get("unit_types"):
             self.bot.config["unit_types"].remove(name)
             await self.bot.resync_config()
@@ -424,14 +386,13 @@ class Admin(GroupCog):
 
         await interaction.response.send_message(f"Unit type {name} removed", ephemeral=self.bot.use_ephemeral)
 
-
 bot: Bot = None
 async def setup(_bot: Bot):
     """
-    Setup the Admin cog
+    Registers the Admin cog with the bot.
 
     Args:
-        _bot (Bot): The bot instance
+        _bot (Bot): The bot instance to register the cog to.
     """
     global bot
     bot = _bot
@@ -441,7 +402,7 @@ async def setup(_bot: Bot):
 
 async def teardown():
     """
-    Teardown the Admin cog
+    Unregisters the Admin cog, removing all related commands.
     """
     logger.info("Tearing down Admin cog")
     bot.remove_cog(Admin.__name__) # remove_cog takes a string, not a class

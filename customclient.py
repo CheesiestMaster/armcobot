@@ -1,3 +1,20 @@
+"""
+CustomClient is a specialized subclass of `discord.ext.commands.Bot` to facilitate the S.A.M. bot functionality.
+
+*Features*:
+    - Integrates with SQLAlchemy for database operations.
+    - Uses an asynchronous task queue for handling various player and unit-related tasks.
+    - Periodically keeps the database session alive.
+    - Manages bot commands and extensions.
+    - Syncs slash commands with Discord's command tree.
+    - Employs error handling for database session management.
+
+Modules:
+    - `discord.ext.commands`: Provides command-related tools.
+    - `discord.app_commands`: Manages Discord's application commands.
+    - `sqlalchemy.orm.Session`: Database session handling.
+    - `logging`: Logging utilities for debugging and information.
+"""
 from discord.ext import commands
 from discord import app_commands, Interaction, Member, Intents, ui, SelectOption, ButtonStyle, TextStyle, TextChannel
 from discord.ext.commands import Bot
@@ -23,6 +40,12 @@ logging.getLogger("discord").setLevel(logging.WARNING)
 class CustomClient(Bot): # need to inherit from Bot to use Cogs
     """
     CustomClient is a subclass of discord.Bot that adds additional functionality for the S.A.M. bot.
+
+    Attributes:
+        - `mod_roles`: (Set[str]) Roles with moderator privileges.
+        - `session`: (Session) Database session for executing SQL queries.
+        - `use_ephemeral`: (bool) Controls whether to send messages as ephemeral.
+        - `config`: (dict) Bot configuration loaded from the database.
     """
     mod_roles = {"FLEET OFFICER (Moderator)", "FLEET AMBASSADOR", "FLEET COMMAND"}
     session: Session
@@ -33,12 +56,11 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         Initializes the CustomClient instance.
 
         Args:
-            session (Session): The SQLAlchemy session to be used for database operations.
-            **kwargs: Additional keyword arguments to be passed to the Bot constructor.
+            session (Session): The SQLAlchemy session for database operations.
+            **kwargs: Additional keyword arguments for the Bot constructor.
 
-        The constructor initializes the bot with default and provided settings, sets up the session,
-        initializes the task queue, and loads the bot configuration and medal emotes from the database.
-        If the configuration or medal emotes are not found in the database, they are created with default values.
+        Merges the `DEFAULTS` with provided `kwargs`, loads configurations, and initializes
+        the task queue. Additionally, loads or initializes `BOT_CONFIG` and `MEDAL_EMOTES` in the database.
         """
         defintents = Intents.default()
         defintents.members = True
@@ -64,14 +86,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
     async def resync_config(self):
         """
-        Resynchronizes the bot configuration with the database.
+        Synchronizes the bot configuration with the database.
 
-        This method fetches the current bot configuration from the database,
-        updates the in-memory configuration, and commits any changes back to the database.
-        It ensures that the bot's configuration is always in sync with the stored configuration.
+        Fetches and updates the in-memory configuration, ensuring the bot is synchronized with the database.
 
         Raises:
-            SQLAlchemyError: If there is an issue with the database operation.
+            SQLAlchemyError: If a database operation fails.
         """
         _Config = self.session.query(Config).filter(Config.key == "BOT_CONFIG").first()
         _Config.value = self.config
@@ -80,21 +100,19 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
     async def queue_consumer(self):
         """
-        Consumes tasks from the queue and processes them based on their type.
+        Consumes tasks from the queue for processing player and unit actions.
 
-        This method runs indefinitely, consuming tasks from the queue and processing them
-        according to their type. It handles tasks related to players, units, upgrades, and active units,
-        updating the database and sending messages to the appropriate channels as needed.
+        *Task Types*:
+            - **0**: Creation tasks.
+            - **1**: Update tasks.
+            - **2**: Deletion tasks.
+            - **4**: Graceful termination of the queue consumer.
 
-        Task Types:
-            0: Creation
-            1: Updates
-            2: Deletions
-            3: Unused
-            4: Terminates the queue consumer gracefully.
+        This method runs indefinitely, processing tasks from the queue and managing associated database
+        operations, while updating channels as necessary.
 
         Raises:
-            Exception: If there is an issue with processing a task.
+            Exception: If task processing encounters an error.
         """
         logger.info("queue consumer started")
         while True:
@@ -241,15 +259,16 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         "HAT": templates.Air_Stats,
         "LIGHT_MECH": templates.Armor_Stats
     }
-    def generate_unit_message(self, player):
+
+    def generate_unit_message(self, player: Player):
         """
-        Generates a unit message for a given player.
+        Creates a message detailing a player's units, both active and inactive.
 
         Args:
-            player (Player): The player for whom to generate the unit message.
+            player (Player): The player instance for whom the message is generated.
 
         Returns:
-            str: A formatted string containing the unit messages for the player.
+            str: Formatted unit messages for the player, grouped by status.
         """
         logger.debug(f"Generating unit message for player: {player.id}")
         unit_messages = []
@@ -283,13 +302,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     @tasks.loop(hours=4)
     async def session_keep_alive(self):
         """
-        Keeps the database session alive by executing a simple query every 4 hours.
+        Maintains the database session by executing a query every 4 hours.
 
-        This task ensures that the database session remains active and prevents it from timing out
-        due to inactivity. It runs indefinitely, executing a "SELECT 1" query to keep the session alive.
+        Ensures the session remains active by running a "SELECT 1" query periodically.
 
         Raises:
-            Exception: If there is an issue with executing the keep-alive query.
+            Exception: If an error occurs during the keep-alive query.
         """
         logger.debug("Session Keep-Alive Task started")
         try:
@@ -298,35 +316,33 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         except Exception as e:
             logger.error(f"Session Keep-Alive Task failed: {e}")
 
-
     async def load_extensions(self, extensions: List[str]):
         """
-        Loads a list of extensions.
+        Loads a list of bot extensions (modules).
 
         Args:
-            extensions (List[str]): A list of extension names to be loaded.
+            extensions (List[str]): List of extension names to load.
         """
         for extension in extensions:
             await self.load_extension(extension)
         logger.debug(f"Loaded extensions: {', '.join(extensions)}")
 
-
     async def set_bot_nick(self, nick: str):
         """
-        Sets the bot's nickname in all guilds.
+        Sets the bot's nickname across all connected guilds.
 
         Args:
-            nick (str): The new nickname to be set for the bot.
+            nick (str): The new nickname for the bot.
         """
         for guild in self.guilds:
             await guild.me.edit(nick=nick)
 
     async def on_ready(self):
         """
-        Handles the bot's readiness event.
+        Event handler for bot readiness.
 
-        This method is called when the bot has successfully logged in. It sets the bot's nickname,
-        starts the queue consumer task, and logs the bot's user information.
+        Called upon successful login, setting the bot's nickname, starting the queue consumer,
+        and logging the bot's information.
         """
         logger.info(f"Logged in as {self.user}")
         await self.set_bot_nick("S.A.M.")
@@ -334,11 +350,10 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
     async def close(self):
         """
-        Closes the bot and performs cleanup tasks.
+        Closes the bot and performs necessary cleanup.
 
-        This method is called when the bot is shutting down. It puts a termination signal in the queue,
-        resynchronizes the bot configuration, commits any outstanding database changes, closes the session,
-        and terminates the bot.
+        Puts a termination signal in the queue, resyncs configuration, commits database changes,
+        and closes the session.
         """
         await self.queue.put((4, None))
         await self.resync_config()
@@ -352,13 +367,25 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
     async def setup_hook(self):
         """
-        Sets up the bot's event listeners and slash commands.
+        Sets up the bot's event listeners and syncs slash commands.
 
-        This method is called when the bot is ready to receive events and commands. It sets up the ping command
-        as a slash command and logs the bot's user information.
+        This method is called when the bot is ready to receive events and commands. It:
+            - Defines the `/ping` command
+            - Loads core and additional extensions.
+            - Synchronizes slash commands with Discord's command tree.
         """
         @self.tree.command(name="ping", description="Ping the bot")
         async def ping(interaction: Interaction):
+            """
+            Responds with "Pong!" and shows the bot's last restart time.
+
+            *Displays:*
+            - A message saying "Pong!" to indicate that the bot is active.
+            - The last time the bot was restarted, both in a formatted and relative format.
+            
+            Example:
+                `/ping` returns "Pong! I was last restarted at [formatted date], [relative time]."
+            """
             await interaction.response.send_message(f"Pong! I was last restarted at <t:{int(self.start_time.timestamp())}:F>, <t:{int(self.start_time.timestamp())}:R>")
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
@@ -370,11 +397,13 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         
     async def start(self, *args, **kwargs):
         """
-        Starts the bot with the provided token and arguments.
+        Starts the bot with the provided arguments.
+
+        Records the start time and retrieves the bot token from environment variables.
 
         Args:
-            *args: Additional positional arguments to be passed to the start method.
-            **kwargs: Additional keyword arguments to be passed to the start method.
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
         """
         self.start_time = datetime.now()
         logger.debug(f"Starting bot at {self.start_time}")
