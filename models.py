@@ -52,38 +52,15 @@ class Unit(Base):
     unit_type = Column(String(15))
     status = Column(Enum(UnitStatus), default=UnitStatus.PROPOSED) # status is still an enum, but type is a string now
     legacy = Column(Boolean, default=False)
+    active = Column(Boolean, default=False)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), default=1)
+    callsign = Column(String(15), index=True, unique=True)
+    area_operation = Column(String(30), default="ARMCO")
     
     # relationships
     player = relationship("Player", back_populates="units")
     upgrades = relationship("Upgrade", back_populates="unit", cascade="all, delete-orphan")
-    active_unit = relationship("ActiveUnit", back_populates="unit", cascade="all, delete-orphan")
-
-class ActiveUnit(Base):
-    __tablename__ = "active_units"
-    # columns
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    player_id = Column(Integer, ForeignKey("players.id"), unique=True, index=True)
-    callsign = Column(String(8), index=True, unique=True)
-    unit_id = Column(Integer, ForeignKey("units.id"), unique=True, index=True)
-    force_strength = Column(Integer, default=0)
-    range = Column(Integer, default=0)
-    speed = Column(Integer, default=0)
-    defense = Column(Integer, default=0)
-    armor = Column(Integer, default=0)
-    north_south = Column(Integer, default=0)
-    east_west = Column(Integer, default=0)
-    facing = Column(Integer, default=0)
-    area_operation = Column(String(30), default="ARMCO")
-    supply = Column(Integer, default=0)
-    immobilized = Column(Boolean, default=False)
-    disarmed = Column(Boolean, default=False)
-    transport_id = Column(Integer, ForeignKey("active_units.id"))
-    campaign_id = Column(Integer, ForeignKey("campaigns.id"))
-    # relationships
-    player = relationship("Player", back_populates="active_units")
-    unit = relationship("Unit", back_populates="active_unit")
-    transport = relationship("ActiveUnit", remote_side=[id], backref=backref("passengers", lazy="dynamic"))
-    campaign = relationship("Campaign", back_populates="active_units")
+    campaign = relationship("Campaign", back_populates="units")
 
 class Campaign(Base):
     __tablename__ = "campaigns"
@@ -94,7 +71,7 @@ class Campaign(Base):
     open = Column(Boolean, default=False)
     gm = Column(String(255), default="")
     # relationships
-    active_units = relationship("ActiveUnit", back_populates="campaign")
+    units = relationship("Unit", back_populates="campaign")
 
 class Player(Base):
     __tablename__ = "players"
@@ -107,7 +84,6 @@ class Player(Base):
     bonus_pay = Column(Integer, default=0)
     # relationships
     units = relationship("Unit", back_populates="player", cascade="all, delete-orphan")
-    active_units = relationship("ActiveUnit", back_populates="player", cascade="all, delete-orphan")
     dossier = relationship("Dossier", back_populates="player", cascade="all, delete-orphan")
     statistic = relationship("Statistic", back_populates="player", cascade="all, delete-orphan")
     medals = relationship("Medals", back_populates="player", cascade="all, delete-orphan")
@@ -152,11 +128,11 @@ class Medals(Base):
     player_id = Column(Integer, ForeignKey("players.id"), index=True)
     # relationships
     player = relationship("Player", back_populates="medals")
-# Unit, ActiveUnit, Upgrade need all 3 listeners
+# Unit, Upgrade need all 3 listeners
 # Dossier and Statistic need only after_delete
 
-[event.listen(model, "after_insert", after_insert) for model in [Player, Unit, ActiveUnit, Upgrade]]
-[event.listen(model, "after_update", after_update) for model in [Player, Unit, ActiveUnit, Upgrade]]
-[event.listen(model, "after_delete", after_delete) for model in [Unit, ActiveUnit, Upgrade, Dossier, Statistic]]
+[event.listen(model, "after_insert", after_insert) for model in [Player, Unit, Upgrade]]
+[event.listen(model, "after_update", after_update) for model in [Player, Unit, Upgrade]]
+[event.listen(model, "after_delete", after_delete) for model in [Unit, Upgrade, Dossier, Statistic]]
 
 create_all = Base.metadata.create_all
