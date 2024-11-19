@@ -4,6 +4,7 @@ from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac
 from sqlalchemy import text
 import os
+from models import Player
 logger = getLogger(__name__)
 
 class Debug(GroupCog):
@@ -90,6 +91,13 @@ class Debug(GroupCog):
         except Exception as e:
             logger.error(f"Error running query: {e}")
             await interaction.response.send_message(f"Error: {e}", ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="botcompany", description="make a company for the bot")
+    async def botcompany(self, interaction: Interaction):
+        player = Player(discord_id=self.bot.user.id, name="Supply Allocation and Management", rec_points=0)
+        self.session.add(player)
+        self.session.commit()
+        await interaction.response.send_message("Bot company created", ephemeral=self.bot.use_ephemeral)
 
 bot: Bot = None
 async def setup(_bot: Bot):

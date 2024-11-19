@@ -22,7 +22,7 @@ class Company(GroupCog):
             return
         
         # create a new Player in the database
-        player = Player(discord_id=interaction.user.id, name=interaction.user.name, rec_points=2)
+        player = Player(discord_id=interaction.user.id, name=interaction.user.name, rec_points=1)
         self.session.add(player)
         self.session.commit()
         logger.debug(f"User {interaction.user.display_name} created a new Meta Campaign company")
