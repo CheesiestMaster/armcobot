@@ -11,7 +11,7 @@ Base = declarative_base()
 
 class UpgradeType(PyEnum):
     UPGRADE = "0.0"
-    WEAPON = "1.0"
+    REFIT = "1.0"
     SPECIAL = "2.0"
 
 class UnitStatus(PyEnum):
@@ -20,10 +20,6 @@ class UnitStatus(PyEnum):
     MIA = "2"
     KIA = "3"
     PROPOSED = "4"
-
-class LegacyUnitStatus(PyEnum):
-    MIA = "2"
-    KIA = "3"
     LEGACY = "5"
 
 # Listeners
@@ -55,6 +51,7 @@ class Unit(Base):
     player_id = Column(Integer, ForeignKey("players.id"), index=True)
     unit_type = Column(String(15))
     status = Column(Enum(UnitStatus), default=UnitStatus.PROPOSED) # status is still an enum, but type is a string now
+    legacy = Column(Boolean, default=False)
     
     # relationships
     player = relationship("Player", back_populates="units")
@@ -95,6 +92,7 @@ class Campaign(Base):
     name = Column(String(30), index=True)
     active = Column(Boolean, default=True)
     open = Column(Boolean, default=False)
+    gm = Column(String(255), default="")
     # relationships
     active_units = relationship("ActiveUnit", back_populates="campaign")
 
@@ -146,15 +144,6 @@ class Config(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     key = Column(String(255), index=True, unique=True)
     value = Column(PickleType)
-
-class LegacyUnit(Base):
-    __tablename__ = "legacy_units"
-    # almost identical to Unit, but uses a different pair of Enums for status and type
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    name = Column(String(30), index=True)
-    player_id = Column(Integer, ForeignKey("players.id"), index=True)
-    unit_type = Column(String(30), index=True)
-    status = Column(String(30), index=True)
 
 class Medals(Base):
     __tablename__ = "medals"
