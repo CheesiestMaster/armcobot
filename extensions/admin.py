@@ -2,7 +2,7 @@ from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji, SelectOption, ui, ButtonStyle
 from discord.ui import Modal, TextInput
-from models import Player, Unit, ActiveUnit, UnitStatus, Upgrade, Medals
+from models import Player, Unit, UnitStatus, Upgrade, Medals
 from customclient import CustomClient
 
 logger = getLogger(__name__)
@@ -221,8 +221,7 @@ class Admin(GroupCog):
                 unit = self.session.query(Unit).filter(Unit.name == unit_name).first()
                 if unit:
                     activated.append(unit.name)
-                    active_unit = ActiveUnit(unit_id=unit.id, player_id=unit.player_id)
-                    self.session.add(active_unit)
+                    unit.active = True
                     logger.debug(f"Activated unit: {unit.name}")
                 else:
                     not_found.append(unit_name)
@@ -338,13 +337,9 @@ class Admin(GroupCog):
         if not _player:
             await interaction.response.send_message("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
             return
-        _active_unit = self.session.query(ActiveUnit).filter(ActiveUnit.player_id == _player.id).first()
-        if not _active_unit:
-            await interaction.response.send_message("Player does not have an active unit", ephemeral=self.bot.use_ephemeral)
-            return
-        _unit = self.session.query(Unit).filter(Unit.id == _active_unit.unit_id).first()
+        _unit = self.session.query(Unit).filter(Unit.player_id == _player.id, Unit.active == True).first()
         if not _unit:
-            await interaction.response.send_message("Player's unit does not exist, please contact the Quartermaster", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message("Player does not have an active unit", ephemeral=self.bot.use_ephemeral)
             return
         # create an Upgrade with the given name, type "SPECIAL", and the unit as the parent
         if len(name) > 30:

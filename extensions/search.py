@@ -1,7 +1,7 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOption
-from models import Player, ActiveUnit, Unit
+from models import Player, Unit
 from customclient import CustomClient
 
 logger = getLogger(__name__)
@@ -54,9 +54,8 @@ class Search(GroupCog):
         if not player:
             await interaction.response.send_message("You don't have a Meta Campaign company so you can't search", ephemeral=CustomClient().use_ephemeral)
             return
-        player_active_unit = self.session.query(ActiveUnit).filter(ActiveUnit.player_id == player.id).first()
-        unit = self.session.query(Unit).filter(Unit.id == player_active_unit.unit_id).first()
-        aos = self.session.query(ActiveUnit.area_operation).distinct().all()
+        unit = self.session.query(Unit).filter(Unit.player_id == player.id, Unit.active == True).first()
+        aos = self.session.query(Unit.area_operation).distinct().all()
 
         class TypeSelect(ui.Select):
             """
@@ -124,7 +123,7 @@ class Search(GroupCog):
                 logger.debug(f"Unit type selected: {unit_type}")
                 logger.debug(f"AO selected: {ao}")
 
-                target_units_in_ao = self.session.query(ActiveUnit.player_id).filter(ActiveUnit.area_operation == ao).all()
+                target_units_in_ao = self.session.query(Unit.player_id).filter(Unit.area_operation == ao).all()
                 target_units_same_type = self.session.query(Unit.player_id).filter(Unit.unit_type == unit_type).all()
                 targets = list(set(target_units_in_ao).intersection(target_units_same_type))
                 message = ""

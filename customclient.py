@@ -139,15 +139,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                         player = self.session.query(Player).filter(Player.id == unit.player_id).first()
                         self.queue.put_nowait((1, player))
                         logger.debug(f"Queued update task for player {player.id} due to upgrade {task[1].id}")
-                    elif isinstance(task[1], ActiveUnit):
-                        # make the unit flagged ACTIVE, then queue an update task for the player
-                        au: ActiveUnit = task[1]
-                        unit = self.session.query(Unit).filter(Unit.id == au.unit_id).first()
-                        unit.status = UnitStatus.ACTIVE.name
-                        self.session.commit()
-                        player = self.session.query(Player).filter(Player.id == unit.player_id).first()
-                        self.queue.put_nowait((1, player))
-                        logger.debug(f"Queued update task for player {player.id} due to active unit {au.id}")
                 self.queue.task_done()
             elif task[0] == 1:
                 if isinstance(task[1], Player):
@@ -172,12 +163,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     player = self.session.query(Player).filter(Player.id == unit.player_id).first()
                     self.queue.put_nowait((1, player))
                     logger.debug(f"Queued update task for player {player.id} due to unit {unit.id}")
-                elif isinstance(task[1], ActiveUnit):
-                    active_unit = task[1]
-                    unit = self.session.query(Unit).filter(Unit.id == active_unit.unit_id).first()
-                    player = self.session.query(Player).filter(Player.id == unit.player_id).first()
-                    self.queue.put_nowait((1, player))
-                    logger.debug(f"Queued update task for player {player.id} due to active unit {active_unit.id}")
                 elif isinstance(task[1], Upgrade):
                     upgrade = task[1]
                     unit = self.session.query(Unit).filter(Unit.id == upgrade.unit_id).first()
@@ -211,14 +196,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     player = self.session.query(Player).filter(Player.id == unit.player_id).first()
                     self.queue.put_nowait((1, player))
                     logger.debug(f"Queued update task for player {player.id} due to upgrade {upgrade.id}")
-                elif isinstance(task[1], ActiveUnit):
-                    active_unit = task[1]
-                    unit = self.session.query(Unit).filter(Unit.id == active_unit.unit_id).first()
-                    unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
-                    self.session.commit()
-                    player = self.session.query(Player).filter(Player.id == unit.player_id).first()
-                    self.queue.put_nowait((1, player))
-                    logger.debug(f"Set unit {unit.id} status to INACTIVE and queued update task for player {player.id}")
                 self.queue.task_done()
             elif task[0] == 4:
                 logger.info("queue consumer terminating")
@@ -253,17 +230,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         """
         logger.debug(f"Generating unit message for player: {player.id}")
         unit_messages = []
-
-        # Query active units
-        active_units = self.session.query(ActiveUnit).filter(ActiveUnit.player_id == player.id).all()
-        logger.debug(f"Found {len(active_units)} active units for player: {player.id}")
-        for unit in active_units:
-            upgrades = self.session.query(Upgrade).filter(Upgrade.unit_id == unit.unit_id).all()
-            base_unit = self.session.query(Unit).filter(Unit.id == unit.unit_id).first()
-            upgrade_list = ", ".join([upgrade.name for upgrade in upgrades])
-            logger.debug(f"Active unit {base_unit.name} has upgrades: {upgrade_list}")
-            stats = self.stats_map[base_unit.unit_type].format(unit=unit)
-            unit_messages.append(templates.Statistics_Unit_Active.format(unit=base_unit, upgrades=upgrade_list, stats=stats))
 
         # Query inactive units
         inactive_units = self.session.query(Unit).filter(Unit.player_id == player.id).filter(Unit.status != 'ACTIVE').all()
