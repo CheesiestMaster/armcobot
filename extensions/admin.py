@@ -419,6 +419,19 @@ class Admin(GroupCog):
 
         await interaction.response.send_message(f"Unit type {name} removed", ephemeral=self.bot.use_ephemeral)
 
+    @ac.command(name="deactivate_unit", description="Deactivate a unit")
+    @ac.describe(callsign="The callsign of the unit to deactivate")
+    async def deactivate_unit(self, interaction: Interaction, callsign: str):
+        # filter on the callsign
+        unit = self.session.query(Unit).filter(Unit.callsign == callsign).first()
+        if not unit:
+            await interaction.response.send_message("Unit not found", ephemeral=self.bot.use_ephemeral)
+            return
+        unit.active = False
+        unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
+        unit.callsign = None
+        self.session.commit()
+        await interaction.response.send_message(f"Unit {unit.name} deactivated", ephemeral=self.bot.use_ephemeral)
 
 bot: Bot = None
 async def setup(_bot: Bot):
