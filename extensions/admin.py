@@ -381,7 +381,6 @@ class Admin(GroupCog):
 
         await interaction.response.send_message(f"Unit type {name} removed", ephemeral=self.bot.use_ephemeral)
 
-
     @ac.command(name="deactivate_unit", description="Deactivate a unit")
     @ac.describe(callsign="The callsign of the unit to deactivate")
     async def deactivate_unit(self, interaction: Interaction, callsign: str):
@@ -396,7 +395,70 @@ class Admin(GroupCog):
         self.session.commit()
         await interaction.response.send_message(f"Unit {unit.name} deactivated", ephemeral=self.bot.use_ephemeral)
 
+    @ac.command(name="change_callsign", description="Change the callsign of a unit")
+    @ac.describe(old_callsign="The callsign of the unit to change")
+    @ac.describe(new_callsign="The new callsign for the unit")
+    async def change_callsign(self, interaction: Interaction, old_callsign: str, new_callsign: str):
+        # change the callsign of the unit
+        unit = self.session.query(Unit).filter(Unit.callsign == old_callsign).first()
+        if not unit:
+            await interaction.response.send_message("Unit not found", ephemeral=self.bot.use_ephemeral)
+            return
+        unit.callsign = new_callsign
+        self.session.commit()
+        await interaction.response.send_message(f"Unit {unit.name} callsign changed to {new_callsign}", ephemeral=self.bot.use_ephemeral)
 
+    @ac.command(name="change_status", description="Change the status of a unit")
+    @ac.describe(player="The player whose unit you want to change the status of")
+    async def change_status(self, interaction: Interaction, player: Member):
+        # create a view with a select menu for all of the player's units
+        # when a unit is selected, create a view with the status options, if the status is changed to legacy, set the legacy flag, it it's changed to active, prompt for a callsign
+        class UnitSelect(ui.Select):
+            def __init__(self, player: Player):
+                self.session = CustomClient().session
+                player_units = self.session.query(Unit).filter(Unit.player_id == player.id).all()
+                options = [SelectOption(label=unit.name, value=unit.id) for unit in player_units]
+                super().__init__(placeholder="Select name of unit you want to change the status of", options=options)
+
+            async def callback(self, interaction: Interaction):
+                status_view = ui.View()
+                unit = self.session.query(Unit).filter(Unit.id == self.values[0]).first()
+                status_view.add_item(StatusSelect(unit))
+                await interaction.response.send_message("Please select the new status for the unit", view=status_view, ephemeral=CustomClient().use_ephemeral)
+
+        class StatusSelect(ui.Select):
+            def __init__(self, unit: Unit):
+                self.unit = unit
+                self.session = CustomClient().session
+                options = [SelectOption(label=status.value, value=status.value, default=unit.status == status) for status in UnitStatus]
+                super().__init__(placeholder="Select the new status for the unit", options=options)
+
+            async def callback(self, interaction: Interaction):
+                # if the new status is active, create a modal for the callsign, if it's either active or legacy, set the appropriate flag, if it's inactive, kia, or mia, just set the status and commit
+                new_status = UnitStatus(self.values[0])
+                if new_status == UnitStatus.ACTIVE:
+                    modal = ui.Modal(title="Enter the callsign for the unit", custom_id="change_callsign", components=[ui.InputText(label="New callsign", custom_id="new_callsign")])
+                    modal.callback = self.change_callsign_callback
+                    await interaction.response.send_modal(modal)
+                elif new_status == UnitStatus.LEGACY:
+                    self.unit.legacy = True
+                    self.unit.status = UnitStatus.LEGACY
+                else:
+                    self.unit.status = new_status
+                self.session.commit()
+                await interaction.response.send_message(f"Unit {self.unit.name} status changed to {new_status.value}", ephemeral=CustomClient().use_ephemeral)
+
+            async def change_callsign_callback(self, interaction: Interaction):
+                new_callsign = interaction.data["components"][0]["components"][0]["value"]
+                self.unit.callsign = new_callsign
+                self.unit.active = True
+                self.unit.status = UnitStatus.ACTIVE
+                self.session.commit()
+                await interaction.response.send_message(f"Unit {self.unit.name} activated with callsign {new_callsign}", ephemeral=CustomClient().use_ephemeral)
+
+        view = ui.View()
+        view.add_item(UnitSelect(player))
+        await interaction.response.send_message("Please select the unit you want to change the status of", view=view, ephemeral=CustomClient().use_ephemeral)
 
 bot: Bot = None
 async def setup(_bot: Bot):
