@@ -147,6 +147,8 @@ class Unit(GroupCog):
                 
         logger.debug(f"Deactivating unit with callsign {active_unit.callsign}")
         active_unit.active = False
+        active_unit.status = UnitStatus.INACTIVE if active_unit.status == UnitStatus.ACTIVE else active_unit.status
+        active_unit.callsign = None
         self.session.commit()
         await interaction.response.send_message(f"Unit with callsign {active_unit.callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
 
