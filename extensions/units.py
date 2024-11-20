@@ -174,6 +174,64 @@ class Unit(GroupCog):
         # Send the table to the user
         await interaction.response.send_message(f"Here are {player.name}'s Units:\n\n{unit_table}", ephemeral=CustomClient().use_ephemeral)
 
+    @ac.command(name="edit_proposed", description="Edit a proposed unit")
+    async def edit_proposed(self, interaction: Interaction):
+        # create a view with a select menu for all of the user's proposed units
+        # when a unit is selected, create a view with a "rename" button and a unit type select menu
+        # when the rename button is clicked, create a modal for the text input
+        # when the unit type select menu is clicked, update the unit type
+        class UnitSelect(ui.View):
+            def __init__(self):
+                super().__init__()
+                self.session = CustomClient().session
+                player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
+                if not player:
+                    raise Exception("You don't have a Meta Campaign company")
+                units = self.session.query(Unit_model).filter(Unit_model.player_id == player.id, Unit_model.status == UnitStatus.PROPOSED).all()
+                if not units:
+                    raise Exception("You don't have any proposed units") # we cannot use interaction in init because init cannot be async, so we raise with the message and catch it in the caller
+                options = [SelectOption(label=unit.name, value=unit.name) for unit in units]
+                self.select = ui.Select(placeholder="Select the unit to edit", options=options)
+                self.select.callback = self.unit_select_callback
+                self.add_item(self.select)
+
+            async def unit_select_callback(self, interaction: Interaction):
+                await interaction.response.defer(ephemeral=True)
+                unit: Unit_model = self.session.query(Unit_model).filter(Unit_model.name == self.select.values[0]).first()
+                if not unit:
+                    raise Exception("Unit not found")
+                self.edit_proposed_view = EditProposedView(unit)
+                await interaction.followup.send("Please select the action to perform", view=self.edit_proposed_view, ephemeral=CustomClient().use_ephemeral)
+
+        class EditProposedView(ui.View):
+            def __init__(self, unit: Unit_model):
+                super().__init__()
+                self.unit = unit
+                rename_button = ui.Button(label="Rename", style=ButtonStyle.primary, custom_id="rename")
+                rename_button.callback = self.rename_callback
+                self.add_item(rename_button)
+                unit_type_select = ui.Select(placeholder="Select the unit type", options=[SelectOption(label=unit_type, value=unit_type) for unit_type in bot.config["unit_types"]])
+                unit_type_select.callback = self.unit_type_select_callback
+                self.add_item(unit_type_select)
+
+            async def rename_callback(self, interaction: Interaction):
+                # cannot defer if we want to send a modal
+                modal = ui.Modal(title="Rename Unit", custom_id="rename_unit", components=[ui.InputText(label="New Name", custom_id="new_name", value=self.unit.name)])
+                modal.callback = self.rename_modal_callback
+                await interaction.response.send_modal(modal)
+
+            async def rename_modal_callback(self, interaction: Interaction):
+                new_name = interaction.data["components"][0]["components"][0]["value"]
+                self.unit.name = new_name
+                self.session.commit()
+                await interaction.response.send_message(f"Unit {self.unit.name} renamed to {new_name}", ephemeral=CustomClient().use_ephemeral)
+
+            async def unit_type_select_callback(self, interaction: Interaction):
+                new_unit_type = interaction.data["components"][0]["components"][0]["value"]
+                self.unit.unit_type = new_unit_type
+                self.session.commit()
+                await interaction.response.send_message(f"Unit {self.unit.name} unit type changed to {new_unit_type}", ephemeral=CustomClient().use_ephemeral)
+
 bot: Bot = None
 async def setup(_bot: Bot):
     global bot
