@@ -21,13 +21,6 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-# delete the database
-""" try:
-    os.remove("armco.db")
-    logger.debug("Database file 'armco.db' removed successfully.")
-except Exception as e:
-    logger.error("Failed to remove 'armco.db': %s", e) """
-
 # create a DB engine
 engine = create_engine(os.getenv("DATABASE_URL"))
 logger.debug("Database engine created with URL: %s", os.getenv("DATABASE_URL"))

@@ -47,12 +47,8 @@ class Backup(GroupCog):
     @ac.command(name="create-sql", description="Create a mysqldump file with the current state of the database")
     async def create_sql(self, interaction: Interaction):
         await interaction.response.defer(ephemeral=self.use_ephemeral)
-        # we need to use subprocess to call mysqldump, and we need to get the password from getenv("MYSQL_PASSWORD")
+        # we need to use subprocess to call mysqldump
         # for all other parameters, we assume localhost and armco as the user and schema
-        """ password = os.getenv("MYSQL_PASSWORD")
-        if not password:
-            await interaction.followup.send("No MySQL password found in environment variables", ephemeral=True)
-            return """
         
         # Roll the file and prepare for writing
         self.sql_roller.roll() 
