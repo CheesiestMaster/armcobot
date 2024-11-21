@@ -15,14 +15,14 @@ Modules:
     - `sqlalchemy.orm.Session`: Database session handling.
     - `logging`: Logging utilities for debugging and information.
 """
-from discord.ext import commands
-from discord import app_commands, Interaction, Member, Intents, ui, SelectOption, ButtonStyle, TextStyle, TextChannel
+
+from discord import Interaction, Intents
 from discord.ext.commands import Bot
 from discord.ext import tasks
 from os import getenv
 from sqlalchemy.orm import Session
 from models import *
-from sqlalchemy import text, select
+from sqlalchemy import text
 from datetime import datetime
 from typing import List
 from singleton import Singleton
@@ -30,7 +30,7 @@ import asyncio
 import templates
 import logging
 
-use_ephemeral = False
+use_ephemeral = not getenv("PROD", False)
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         - `use_ephemeral`: (bool) Controls whether to send messages as ephemeral.
         - `config`: (dict) Bot configuration loaded from the database.
     """
-    mod_roles = {"FLEET OFFICER (Moderator)", "FLEET AMBASSADOR", "FLEET COMMAND"}
+    mod_roles = {1308924912936685609, 1302095620231794698}
     session: Session
     use_ephemeral: bool
     config: dict
@@ -313,6 +313,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         logger.info(f"Logged in as {self.user}")
         await self.set_bot_nick("S.A.M.")
         asyncio.create_task(self.queue_consumer())
+        self.session_keep_alive.start()
 
     async def close(self):
         """

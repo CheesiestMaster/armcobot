@@ -16,6 +16,13 @@ class Backup(GroupCog):
         self.use_ephemeral = bot.use_ephemeral
         self.xls_roller = FileRoller("backup.xlsx", 6)
         self.sql_roller = FileRoller("backup.sql", 2)
+        self.interaction_check = self.is_mod
+
+    async def is_mod(self, interaction: Interaction):
+        valid = any(interaction.user.get_role(role_id) for role_id in self.bot.mod_roles)
+        if not valid:
+            logger.warning(f"{interaction.user.global_name} tried to use backup commands")
+        return valid
 
     @ac.command(name="create-xls", description="Create an Excel file with the current state of the database")
     async def create_xls(self, interaction: Interaction):

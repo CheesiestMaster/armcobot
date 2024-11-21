@@ -1,7 +1,7 @@
 from logging import getLogger
 from pathlib import Path
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac
+from discord import Interaction, app_commands as ac, ui
 from sqlalchemy import text
 import os
 from models import Player
@@ -11,15 +11,15 @@ class Debug(GroupCog):
     def __init__(self, bot: Bot):
         self.bot = bot
         self.session = bot.session
-        self.interaction_check = self.is_owner
+        self.interaction_check = self.is_mod
         # get the list of extensions from the disk, and create a list of them for the autocomplete
         self.extensions = [f.stem for f in Path("extensions").glob("*.py") if f.stem != "__init__"]
 
     async def autocomplete_extensions(self, interaction: Interaction, current: str):
         return [ac.Choice(name=extension, value=extension) for extension in self.extensions if current.lower() in extension.lower() and not extension.startswith("template")]
 
-    async def is_owner(self, interaction: Interaction):
-        valid = interaction.user.id in self.bot.owner_ids
+    async def is_mod(self, interaction: Interaction):
+        valid = any(interaction.user.get_role(role_id) for role_id in self.bot.mod_roles)
         if not valid:
             logger.warning(f"{interaction.user.global_name} tried to use debug commands")
         return valid
@@ -98,6 +98,23 @@ class Debug(GroupCog):
         self.session.add(player)
         self.session.commit()
         await interaction.response.send_message("Bot company created", ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="rp", description="Send a roleplay message")
+    async def rp(self, interaction: Interaction):
+        # create a modal with a text input for the message, this can be a two-line code
+        rp_modal = ui.Modal(title="Roleplay Message")
+        rp_modal.add_item(ui.TextInput(label="Message", style=ui.TextInputStyle.Paragraph))
+
+        async def on_submit(_interaction: Interaction):
+            channel = interaction.channel # we are specifically looking at the original command's interaction, not the modal response _interaction
+            template = """---- RP POST ----
+```ansi
+[32m{message}
+```"""
+            await channel.send(template.format(message=_interaction.data["components"][0]["components"][0]["value"]))
+
+        rp_modal.on_submit = on_submit
+        await interaction.response.send_modal(rp_modal)
 
 bot: Bot = None
 async def setup(_bot: Bot):

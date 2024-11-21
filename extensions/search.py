@@ -8,20 +8,7 @@ logger = getLogger(__name__)
 
 class Search(GroupCog):
     """
-        A Discord bot cog that allows users to search for players by unit type and area of operation (AO)
-        in the Meta Campaign.
-
-        This cog provides a command (`/search`) that allows users to query players based on their specific
-        unit type and area of operation, showing the list of players that match the selected criteria.
-
-        Attributes:
-            bot (Bot): The instance of the bot that this cog is attached to.
-            session: The database session used for querying player, unit, and active unit information.
-
-        Methods:
-            search(interaction: Interaction)
-                Responds with a UI for selecting unit type and area of operation, then provides a list of
-                players who match the criteria.
+    A cog for searching players by unit type and area of operation in the Meta Campaign.
     """
 
     def __init__(self, bot: Bot):

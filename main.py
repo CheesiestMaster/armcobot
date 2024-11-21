@@ -1,5 +1,26 @@
 import logging
+from dotenv import load_dotenv
 import sys
+import os
+if not os.path.exists("global.env"):
+    raise FileNotFoundError("global.env not found")
+load_dotenv("global.env")
+LOCAL_ENV_FILE = os.getenv("LOCAL_ENV_FILE")
+if not os.path.exists(LOCAL_ENV_FILE):
+    # touch the file
+    open(LOCAL_ENV_FILE, "w").close()
+load_dotenv(LOCAL_ENV_FILE, override=True)
+SENSITIVE_ENV_FILE = os.getenv("SENSITIVE_ENV_FILE")
+if not os.path.exists(SENSITIVE_ENV_FILE):
+    # create the file with the required variables
+    with open(SENSITIVE_ENV_FILE, "w") as f:
+        f.write("BOT_TOKEN='TOKEN'\n")
+        f.write("DATABASE_URL='URL'\n")
+        f.write("MYSQL_PASSWORD='PASSWORD'\n")
+    raise FileNotFoundError("SENSITIVE_ENV_FILE wasn't found so a new one was created, please fill it in")
+
+load_dotenv(SENSITIVE_ENV_FILE, override=True)
+
 # add a file handler to the root logger
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -12,14 +33,12 @@ logging.basicConfig(level=logging.DEBUG,
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models import Base
-from dotenv import load_dotenv
-import os
 from customclient import CustomClient
 import asyncio
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+
 
 # create a DB engine
 engine = create_engine(os.getenv("DATABASE_URL"))

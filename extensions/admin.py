@@ -4,14 +4,12 @@ from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji, S
 from discord.ui import Modal, TextInput
 from models import Player, Unit, UnitStatus, Upgrade, Medals
 from customclient import CustomClient
-
+import os
 logger = getLogger(__name__)
 
 class Admin(GroupCog):
     """
     Admin commands for managing players, units, points, and medals in the bot.
-
-    Provides a set of commands to assist moderators with administrative tasks.
     """
     def __init__(self, bot: Bot):
         """
@@ -20,13 +18,14 @@ class Admin(GroupCog):
         super().__init__()
         self.bot = bot
         self.session = bot.session
-        # self.interaction_check = self.is_mod # disabled for development, as those roles don't exist on the dev guild
+        if os.getenv("PROD", False):
+            self.interaction_check = self.is_mod # disabled for development, as those roles don't exist on the dev guild
 
     async def is_mod(self, interaction: Interaction):
         """
         Check if the user is a moderator with the necessary role.
         """
-        valid = any(interaction.user.has_role(role) for role in self.bot.mod_roles)
+        valid = any(interaction.user.get_role(role) for role in self.bot.mod_roles)
         if not valid:
             logger.warning(f"{interaction.user.name} tried to use admin commands")
         return valid
