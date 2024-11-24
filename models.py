@@ -1,6 +1,5 @@
 from sqlalchemy import Column, Integer, String, Enum, ForeignKey, PickleType, Boolean, event
-from sqlalchemy.orm import relationship, backref
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, backref, declarative_base
 from enum import Enum as PyEnum
 import logging
 
@@ -53,7 +52,7 @@ class Unit(Base):
     status = Column(Enum(UnitStatus), default=UnitStatus.PROPOSED) # status is still an enum, but type is a string now
     legacy = Column(Boolean, default=False)
     active = Column(Boolean, default=False)
-    campaign_id = Column(Integer, ForeignKey("campaigns.id"), default=1)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     callsign = Column(String(15), index=True, unique=True)
     area_operation = Column(String(30), default="ARMCO")
     
@@ -94,10 +93,10 @@ class Upgrade(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     type = Column(Enum(UpgradeType))
     name = Column(String(30), index=True)
+    original_price = Column(Integer, default=0)
     unit_id = Column(Integer, ForeignKey("units.id"))
     # relationships
     unit = relationship("Unit", back_populates="upgrades")
-
 class Dossier(Base):
     __tablename__ = "dossiers"
     # columns
@@ -128,6 +127,7 @@ class Medals(Base):
     player_id = Column(Integer, ForeignKey("players.id"), index=True)
     # relationships
     player = relationship("Player", back_populates="medals")
+
 # Unit, Upgrade need all 3 listeners
 # Dossier and Statistic need only after_delete
 

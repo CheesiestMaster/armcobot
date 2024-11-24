@@ -96,6 +96,7 @@ class Unit(GroupCog):
                 logger.debug(f"Activating unit {unit.name}")
                 unit.active = True
                 unit.callsign = callsign
+                unit.status = UnitStatus.ACTIVE
                 self.session.commit()
                 await interaction.response.send_message(f"Unit {unit.name} activated", ephemeral=CustomClient().use_ephemeral)
 

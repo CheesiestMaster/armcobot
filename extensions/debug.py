@@ -1,7 +1,7 @@
 from logging import getLogger
 from pathlib import Path
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, ui
+from discord import Interaction, app_commands as ac, ui, TextStyle
 from sqlalchemy import text
 import os
 from models import Player
@@ -103,7 +103,7 @@ class Debug(GroupCog):
     async def rp(self, interaction: Interaction):
         # create a modal with a text input for the message, this can be a two-line code
         rp_modal = ui.Modal(title="Roleplay Message")
-        rp_modal.add_item(ui.TextInput(label="Message", style=ui.TextInputStyle.Paragraph))
+        rp_modal.add_item(ui.TextInput(label="Message", style=TextStyle.paragraph))
 
         async def on_submit(_interaction: Interaction):
             channel = interaction.channel # we are specifically looking at the original command's interaction, not the modal response _interaction
@@ -112,6 +112,7 @@ class Debug(GroupCog):
 [32m{message}
 ```"""
             await channel.send(template.format(message=_interaction.data["components"][0]["components"][0]["value"]))
+            await _interaction.response.send_message("Message sent", ephemeral=self.bot.use_ephemeral)
 
         rp_modal.on_submit = on_submit
         await interaction.response.send_modal(rp_modal)

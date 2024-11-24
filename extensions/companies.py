@@ -58,13 +58,13 @@ class Company(GroupCog):
     @ac.command(name="show", description="Displays a Players Meta Campaign company")
     @ac.describe(member="The players Meta Campaign company to show")
     async def show(self, interaction: Interaction, member: Member):
-        player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
+        player = self.session.query(Player).filter(Player.discord_id == member.id).first()
         if not player:
             await interaction.response.send_message(f"{member.display_name} doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
             return
 
         # Generate the info message strings
-        dossier_message = templates.Dossier.format(player=player)
+        dossier_message = templates.Dossier.format(player=player, medals="")
         unit_message = CustomClient().generate_unit_message(player=player)
         statistic_message = templates.Statistics_Player.format(player=player, units=unit_message)
 

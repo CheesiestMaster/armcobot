@@ -166,7 +166,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                         channel = self.get_channel(self.config["dossier_channel_id"])
                         if channel:
                             message = await channel.fetch_message(dossier.message_id)
-                            await message.edit(content=templates.Dossier.format(player=player))
+                            await message.edit(content=templates.Dossier.format(player=player, medals=""))
                             logger.debug(f"Updated dossier for player {player.id} with message ID {dossier.message_id}")
                     statistics = self.session.query(Statistic).filter(Statistic.player_id == player.id).first()
                     if statistics:
@@ -251,7 +251,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         unit_messages = []
 
         # Query inactive units
-        inactive_units = self.session.query(Unit).filter(Unit.player_id == player.id).filter(Unit.status != 'ACTIVE').all()
+        inactive_units = self.session.query(Unit).filter(Unit.player_id == player.id).all()
         logger.debug(f"Found {len(inactive_units)} inactive units for player: {player.id}")
         for unit in inactive_units:
             upgrades = self.session.query(Upgrade).filter(Upgrade.unit_id == unit.id).all()

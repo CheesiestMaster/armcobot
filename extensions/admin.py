@@ -319,25 +319,26 @@ class Admin(GroupCog):
         """
         # we need to make a modal for this, as we need a dropdown for the unit type
         class UnitSelect(ui.Select):
-            def __init__(self, player_units):
+            def __init__(self, player_units: list[Unit]):
                 options = [SelectOption(label=unit.name, value=unit.id) for unit in player_units]
                 super().__init__(placeholder="Select name of unit you want to removed", options=options)
 
             async def callback(self, interaction: Interaction):
                 await interaction.response.defer(ephemeral=True)
 
-        class CreateUnitView(ui.View):
-            def __init__(self, player_units):
+        class RemoveUnitView(ui.View):
+            def __init__(self, player_units: list[Unit]):
                 super().__init__()
                 self.session = CustomClient().session  # can't use self.session because this is a nested class, so we use the singleton reference
                 self.add_item(UnitSelect(player_units))
 
             @ui.button(label="Remove Unit", style=ButtonStyle.primary)
-            async def create_unit_callback(self, interaction: Interaction, button: ui.Button):
+            async def remove_unit_callback(self, interaction: Interaction, button: ui.Button):
 
                 # create the unit in the database
                 unit_id = self.children[1].values[0]
-                unit = self.session.query(Unit).filter(Unit.player_id == player.id).filter(Unit.id == unit_id).first()
+                company: Player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
+                unit: Unit = self.session.query(Unit).filter(Unit.player_id == company.id).filter(Unit.id == unit_id).first()
                 logger.debug(f"Unit with the id {unit_id} has been selected to remove")
                 if not unit:
                     await interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
@@ -358,8 +359,8 @@ class Admin(GroupCog):
             await interaction.response.send_message(f"{player.name} doesn't have a unit to remove", ephemeral=CustomClient().use_ephemeral)
             return
         player_units = self.session.query(Unit).filter(Unit.player_id == player.id).all()
-        view = CreateUnitView(player_units)
-        await interaction.response.send_message("Please select the unit type and enter the unit name", view=view, ephemeral=CustomClient().use_ephemeral)
+        view = RemoveUnitView(player_units)
+        await interaction.response.send_message("Please select the unit you want to remove", view=view, ephemeral=CustomClient().use_ephemeral)
 
     @ac.command(name="remove_unittype", description="Remove a unit type from the game")
     @ac.describe(name="The name of the unit type to remove")
