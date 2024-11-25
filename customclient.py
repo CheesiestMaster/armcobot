@@ -313,7 +313,10 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         logger.info(f"Logged in as {self.user}")
         await self.set_bot_nick("S.A.M.")
         asyncio.create_task(self.queue_consumer())
-        self.session_keep_alive.start()
+        try:
+            self.session_keep_alive.start()
+        except Exception as e:
+            logger.error(f"Error starting session keep-alive task: {e}")
 
     async def close(self):
         """

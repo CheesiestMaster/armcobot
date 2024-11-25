@@ -162,7 +162,7 @@ class Admin(GroupCog):
                 return
             logger.debug(f"Parsed player names: {player_names}")
             # we need to convert the discord names to discord ids, then convert those to Player objects
-            members: list[Member] = await interaction.guild.fetch_members(limit=None).flatten()
+            members = [member async for member in await interaction.guild.fetch_members(limit=None)]
             chosen_members = {member for member in members if member.global_name in player_names}
             discord_ids = {member.id for member in chosen_members}
             players = self.session.query(Player).filter(Player.discord_id.in_(discord_ids)).all()
@@ -200,6 +200,8 @@ class Admin(GroupCog):
                 if unit:
                     activated.append(unit.name)
                     unit.active = True
+                    unit.callsign = unit.name[:10]
+                    unit.status = UnitStatus.ACTIVE
                     logger.debug(f"Activated unit: {unit.name}")
                 else:
                     not_found.append(unit_name)
@@ -371,7 +373,7 @@ class Admin(GroupCog):
         if name in self.bot.config.get("unit_types"):
             self.bot.config["unit_types"].remove(name)
             await self.bot.resync_config()
-        units = self.session.query(Unit).filter(Unit.type == name).filter(Unit.active_unit == None).all()
+        units = self.session.query(Unit).filter(Unit.unit_type == name).filter(Unit.active == False).all()
         for unit in units:
             unit.legacy = True
             if unit.status == UnitStatus.INACTIVE:
@@ -403,6 +405,14 @@ class Admin(GroupCog):
         unit = self.session.query(Unit).filter(Unit.callsign == old_callsign).first()
         if not unit:
             await interaction.response.send_message("Unit not found", ephemeral=self.bot.use_ephemeral)
+            return
+        # check length
+        if len(new_callsign) > 10:
+            await interaction.response.send_message("Callsign is too long, please use a shorter callsign", ephemeral=self.bot.use_ephemeral)
+            return
+        # check if the callsign is already taken
+        if self.session.query(Unit).filter(Unit.callsign == new_callsign).first():
+            await interaction.response.send_message("Callsign is already taken", ephemeral=self.bot.use_ephemeral)
             return
         unit.callsign = new_callsign
         self.session.commit()
