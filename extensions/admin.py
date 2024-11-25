@@ -329,7 +329,8 @@ class Admin(GroupCog):
         class RemoveUnitView(ui.View):
             def __init__(self, player_units: list[Unit]):
                 super().__init__()
-                self.session = CustomClient().session  # can't use self.session because this is a nested class, so we use the singleton reference
+                self.bot = CustomClient()
+                self.session = self.bot.session  # can't use self.session because this is a nested class, so we use the singleton reference
                 self.add_item(UnitSelect(player_units))
 
             @ui.button(label="Remove Unit", style=ButtonStyle.primary)
@@ -337,8 +338,7 @@ class Admin(GroupCog):
 
                 # create the unit in the database
                 unit_id = self.children[1].values[0]
-                company: Player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-                unit: Unit = self.session.query(Unit).filter(Unit.player_id == company.id).filter(Unit.id == unit_id).first()
+                unit: Unit = self.session.query(Unit).filter(Unit.id == unit_id).first()
                 logger.debug(f"Unit with the id {unit_id} has been selected to remove")
                 if not unit:
                     await interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
@@ -351,14 +351,14 @@ class Admin(GroupCog):
                 
 
         # Checks if the Player has a Meta Company and If that company has a name
-        player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-        if not player:
+        company: Player = self.session.query(Player).filter(Player.discord_id == player.id).first()
+        if not company:
             await interaction.response.send_message(f"{player.name} doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
             return
-        if len(player.units) == 0:
+        if len(company.units) == 0:
             await interaction.response.send_message(f"{player.name} doesn't have a unit to remove", ephemeral=CustomClient().use_ephemeral)
             return
-        player_units = self.session.query(Unit).filter(Unit.player_id == player.id).all()
+        player_units = self.session.query(Unit).filter(Unit.player_id == company.id).all()
         view = RemoveUnitView(player_units)
         await interaction.response.send_message("Please select the unit you want to remove", view=view, ephemeral=CustomClient().use_ephemeral)
 
