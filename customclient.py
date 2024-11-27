@@ -317,7 +317,25 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         try:
             self.session_keep_alive.start()
         except Exception as e:
-            logger.error(f"Error starting session keep-alive task: {e}")
+            logger.error(f"Error starting session keep-alive: {e}")
+        if (getenv("STARTUP_ANIMATION", "false").lower() == "true"):
+            try:
+                self.startup_animation.start()
+            except Exception as e:
+                logger.error(f"Error starting startup animation: {e}")
+
+    @tasks.loop(count=1)
+    async def startup_animation(self):
+        try:
+            import sam_startup
+        except ImportError:
+            return
+        channel = await self.fetch_channel(1211454073383952395)
+        message =await channel.send(sam_startup.startup_sequence[0])
+        for frame in sam_startup.startup_sequence[1:]:
+            await message.edit(content=frame)
+            await asyncio.sleep(1)
+        self.startup_animation.cancel()
 
     async def close(self):
         """
