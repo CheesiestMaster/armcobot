@@ -16,7 +16,7 @@ Modules:
     - `logging`: Logging utilities for debugging and information.
 """
 
-from discord import Interaction, Intents
+from discord import Interaction, Intents, Status, Activity, ActivityType
 from discord.ext.commands import Bot
 from discord.ext import tasks
 from os import getenv
@@ -258,7 +258,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             upgrade_list = ", ".join([upgrade.name for upgrade in upgrades])
             logger.debug(f"Inactive unit {unit.name} of type {unit.unit_type} has status {unit.status.name}")
             logger.debug(f"Inactive unit {unit.id} has upgrades: {upgrade_list}")
-            unit_messages.append(templates.Statistics_Unit.format(unit=unit, upgrades=upgrade_list))
+            unit_messages.append(templates.Statistics_Unit.format(unit=unit, upgrades=upgrade_list, callsign=('\"' + unit.callsign + '\"') if unit.callsign else ""))
 
         # Combine all unit messages into a single string
         combined_message = "\n".join(unit_messages)
@@ -313,6 +313,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         logger.info(f"Logged in as {self.user}")
         await self.set_bot_nick("S.A.M.")
         asyncio.create_task(self.queue_consumer())
+        await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign", type=ActivityType.playing))
         try:
             self.session_keep_alive.start()
         except Exception as e:
@@ -333,6 +334,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             self.session.rollback()
             logger.error(f"Error committing session, rolling back: {e}")
         self.session.close()
+        await self.change_presence(status=Status.offline, activity=None)
         await super().close()
 
     async def setup_hook(self):
