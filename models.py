@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-Base = declarative_base()
+Base: type = declarative_base()
 
 class UpgradeType(PyEnum):
     UPGRADE = "0.0"

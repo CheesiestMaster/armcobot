@@ -4,7 +4,8 @@ from discord import Interaction, app_commands as ac, ui, TextStyle, Member
 from models import Player
 from customclient import CustomClient
 import templates
-
+import os
+from utils import has_invalid_url
 logger = getLogger(__name__)
 
 class Company(GroupCog):
@@ -36,11 +37,24 @@ class Company(GroupCog):
                 super().__init__(title="Edit your Meta Campaign company")
                 self.player = player
                 self.session = CustomClient().session
-                self.add_item(ui.TextInput(label="Name", placeholder="Enter the company name", required=True, max_length=255, default=player.name))
+                self.add_item(ui.TextInput(label="Name", placeholder="Enter the company name", required=True, max_length=32, default=player.name))
                 self.add_item(ui.TextInput(label="Lore", placeholder="Enter the company lore", max_length=1000, style=TextStyle.paragraph, default=player.lore or ""))
 
 
             async def on_submit(self, interaction: Interaction):
+                if any(char in child.value for child in self.children for char in os.getenv("BANNED_CHARS", "")):
+                    # Handle the case where a value contains '<' or '>'
+                    await interaction.response.send_message("Invalid input: values cannot contain discord tags or headers", ephemeral=CustomClient().use_ephemeral)
+                    return
+                if 0 < len(self.children[0].value) > 32:
+                    await interaction.response.send_message("Name must be between 1 and 32 characters", ephemeral=CustomClient().use_ephemeral)
+                    return
+                if len(self.children[1].value) > 1000:
+                    await interaction.response.send_message("Lore must be less than 1000 characters", ephemeral=CustomClient().use_ephemeral)
+                    return
+                if has_invalid_url(self.children[1].value):
+                    await interaction.response.send_message("Lore cannot contain invalid URLs", ephemeral=CustomClient().use_ephemeral)
+                    return
                 self.player.name = self.children[0].value
                 self.player.lore = self.children[1].value
                 self.session.commit()

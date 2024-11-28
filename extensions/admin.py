@@ -5,6 +5,8 @@ from discord.ui import Modal, TextInput
 from models import Player, Unit, UnitStatus, Upgrade, Medals
 from customclient import CustomClient
 import os
+from utils import has_invalid_url
+from sqlalchemy.orm import Session
 logger = getLogger(__name__)
 
 class Admin(GroupCog):
@@ -17,7 +19,7 @@ class Admin(GroupCog):
         """
         super().__init__()
         self.bot = bot
-        self.session = bot.session
+        self.session: Session = bot.session
         if os.getenv("PROD", False):
             self.interaction_check = self.is_mod # disabled for development, as those roles don't exist on the dev guild
 
@@ -288,6 +290,20 @@ class Admin(GroupCog):
         for player in self.session.query(Player).all():
             self.bot.queue.put_nowait((1, player)) # make the bot think the player was edited, using nowait to avoid yielding control
         await interaction.followup.send("Refreshed statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
+    
+    @ac.command(name="refresh_player", description="Refresh the statistics and dossiers for a player")
+    @ac.describe(player="The player to refresh the statistics and dossiers for")
+    async def refresh_player(self, interaction: Interaction, player: Member):
+        """
+        Refreshes the statistics and dossiers for a specific player.
+        """
+        await interaction.response.send_message(f"Refreshing statistics and dossiers for {player.name}", ephemeral=self.bot.use_ephemeral)
+        _player = self.session.query(Player).filter(Player.discord_id == player.id).first()
+        if not _player:
+            await interaction.response.send_message("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
+            return
+        self.session.expire(_player)
+        self.bot.queue.put_nowait((1, _player))
 
     @ac.command(name="specialupgrade", description="Give a player a one-off or relic item")
     @ac.describe(player="The player to give the item to")
@@ -469,6 +485,48 @@ class Admin(GroupCog):
         view = ui.View()
         view.add_item(UnitSelect(player))
         await interaction.response.send_message("Please select the unit you want to change the status of", view=view, ephemeral=CustomClient().use_ephemeral)
+
+    @ac.command(name="edit_company", description="Edit a player's company")
+    @ac.describe(player="The player to edit the company of")
+    async def edit_company(self, interaction: Interaction, player: Member):
+        """
+        Edit a player's company.
+        """
+        class EditCompanyModal(ui.Modal):
+            def __init__(self, _player):
+                super().__init__(title="Edit the player's Meta Campaign company")
+                self.player = _player
+                self.session = CustomClient().session
+                self.add_item(ui.TextInput(label="Name", placeholder="Enter the company name", required=True, max_length=32, default=_player.name))
+                self.add_item(ui.TextInput(label="Lore", placeholder="Enter the company lore", max_length=1000, style=TextStyle.paragraph, default=_player.lore or ""))
+
+            async def on_submit(self, interaction: Interaction):
+                if any(char in child.value for child in self.children for char in os.getenv("BANNED_CHARS", "")):
+                    await interaction.response.send_message("Invalid input: values cannot contain discord tags or headers", ephemeral=CustomClient().use_ephemeral)
+                    return
+                if 0 < len(self.children[0].value) > 32:
+                    await interaction.response.send_message("Name must be between 1 and 32 characters", ephemeral=CustomClient().use_ephemeral)
+                    return
+                if len(self.children[1].value) > 1000:
+                    await interaction.response.send_message("Lore must be less than 1000 characters", ephemeral=CustomClient().use_ephemeral)
+                    return
+                if has_invalid_url(self.children[1].value):
+                    await interaction.response.send_message("Lore cannot contain invalid URLs", ephemeral=CustomClient().use_ephemeral)
+                    return
+                self.player.name = self.children[0].value
+                self.player.lore = self.children[1].value
+                self.session.commit()
+                await interaction.response.send_message("Company updated", ephemeral=CustomClient().use_ephemeral)
+
+        player = self.session.query(Player).filter(Player.discord_id == player.id).first()
+        if not player:
+            logger.debug(f"User {player.display_name} does not have a Meta Campaign company and an admin is trying to edit it")
+            await interaction.response.send_message("The player doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            return
+
+        modal = EditCompanyModal(player)
+        await interaction.response.send_modal(modal)
+
 
 bot: Bot = None
 async def setup(_bot: Bot):

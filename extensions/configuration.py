@@ -8,12 +8,15 @@ class Config(GroupCog):
     def __init__(self, bot: Bot):
         self.bot = bot
         self.session = bot.session
-        #self.interaction_check = self.is_mod
+        self.interaction_check = self.is_mod
 
     async def is_mod(self, interaction: Interaction):
-        valid = any(interaction.user.has_role(role) for role in self.bot.mod_roles)
+        """
+        Check if the user is a moderator with the necessary role.
+        """
+        valid = any(interaction.user.get_role(role) for role in self.bot.mod_roles)
         if not valid:
-            logger.warning(f"{interaction.user.name} tried to use config commands")
+            logger.warning(f"{interaction.user.name} tried to use admin commands")
         return valid
     
     async def is_owner(self, interaction: Interaction):

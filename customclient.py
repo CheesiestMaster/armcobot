@@ -24,15 +24,15 @@ from sqlalchemy.orm import Session
 from models import *
 from sqlalchemy import text
 from datetime import datetime
-from typing import List
+from typing import Any
 from singleton import Singleton
 import asyncio
 import templates
 import logging
 
-use_ephemeral = not getenv("PROD", False)
+use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.getLevelName(getenv("LOG_LEVEL", "INFO")))
 logger = logging.getLogger(__name__)
 logging.getLogger("discord").setLevel(logging.WARNING)
 
@@ -115,111 +115,183 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             Exception: If task processing encounters an error.
         """
         logger.info("queue consumer started")
+        unknown_handler = lambda task: logger.error(f"Unknown task type: {task}")
+        handlers = {
+            0: self._handle_create_task,
+            1: self._handle_update_task,
+            2: self._handle_delete_task,
+            4: self._handle_terminate_task
+        }
+        
         while True:
+            await asyncio.sleep(5)  # Maintain pacing to avoid hitting downstream timeouts
+            logger.debug(f"Queue size: {self.queue.qsize()}")
             task = await self.queue.get()
             logger.debug(f"Processing task: {task}")
-            if task[0] == 0:
-                if self.config.get("dossier_channel_id"):
-                    if isinstance(task[1], Player):
-                        player = task[1]
-                        medals = self.session.query(Medals).filter(Medals.player_id == player.id).all()
-                        # identify what medals have known emotes
-                        known_emotes = set(self.medal_emotes.keys())
-                        known_medals = {medal.name for medal in medals if medal.name in known_emotes}
-                        unknown_medals = {medal.name for medal in medals if medal.name not in known_emotes}
-                        known_medals_list = list(known_medals)
-                        # make rows of 5 medals that have known emotes
-                        rows = [known_medals_list[i:i+5] for i in range(0, len(known_medals_list), 5)]
-                        unknown_medals_list = list(unknown_medals)
-                        unknown_text = "\n".join(unknown_medals_list)
-                        # convert the rows to a string of emotes, with a space between each emote
-                        medal_block = "\n".join([" ".join([self.medal_emotes[medal] for medal in row]) for row in rows]) + "\n" + unknown_text
-                        dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(templates.Dossier.format(player=player, medals=medal_block))
-                        dossier = Dossier(player_id=player.id, message_id=dossier_message.id)
-                        self.session.add(dossier)
-                        self.session.commit()
-                        logger.debug(f"Created dossier for player {player.id} with message ID {dossier_message.id}")
-                if self.config.get("statistics_channel_id"):
-                    if isinstance(task[1], Player):
-                        player = task[1]
-                        unit_message = self.generate_unit_message(player)
-                        statistics_message = await self.get_channel(self.config["statistics_channel_id"]).send(templates.Statistics_Player.format(player=player, units=unit_message))
-                        statistics = Statistic(player_id=player.id, message_id=statistics_message.id)
-                        self.session.add(statistics)
-                        self.session.commit()
-                        logger.debug(f"Created statistics for player {player.id} with message ID {statistics_message.id}")
-                    elif isinstance(task[1], Unit):
-                        player = self.session.query(Player).filter(Player.id == task[1].player_id).first()
-                        self.queue.put_nowait((1, player))
-                        logger.debug(f"Queued update task for player {player.id} due to unit {task[1].id}")
-                    elif isinstance(task[1], Upgrade):
-                        unit = self.session.query(Unit).filter(Unit.id == task[1].unit_id).first()
-                        player = self.session.query(Player).filter(Player.id == unit.player_id).first()
-                        self.queue.put_nowait((1, player))
-                        logger.debug(f"Queued update task for player {player.id} due to upgrade {task[1].id}")
-                self.queue.task_done()
-            elif task[0] == 1:
-                if isinstance(task[1], Player):
-                    player = task[1]
-                    dossier = self.session.query(Dossier).filter(Dossier.player_id == player.id).first()
-                    if dossier:
-                        channel = self.get_channel(self.config["dossier_channel_id"])
-                        if channel:
-                            message = await channel.fetch_message(dossier.message_id)
-                            await message.edit(content=templates.Dossier.format(player=player, medals=""))
-                            logger.debug(f"Updated dossier for player {player.id} with message ID {dossier.message_id}")
-                    statistics = self.session.query(Statistic).filter(Statistic.player_id == player.id).first()
-                    if statistics:
-                        channel = self.get_channel(self.config["statistics_channel_id"])
-                        if channel:
-                            message = await channel.fetch_message(statistics.message_id)
-                            unit_message = self.generate_unit_message(player)
-                            await message.edit(content=templates.Statistics_Player.format(player=player, units=unit_message))
-                            logger.debug(f"Updated statistics for player {player.id} with message ID {statistics.message_id}")
-                elif isinstance(task[1], Unit):
-                    unit = task[1]
-                    player = self.session.query(Player).filter(Player.id == unit.player_id).first()
-                    self.queue.put_nowait((1, player))
-                    logger.debug(f"Queued update task for player {player.id} due to unit {unit.id}")
-                elif isinstance(task[1], Upgrade):
-                    upgrade = task[1]
-                    unit = self.session.query(Unit).filter(Unit.id == upgrade.unit_id).first()
-                    player = self.session.query(Player).filter(Player.id == unit.player_id).first()
-                    self.queue.put_nowait((1, player))
-                    logger.debug(f"Queued update task for player {player.id} due to upgrade {upgrade.id}")
-                self.queue.task_done()
-            elif task[0] == 2:
-                if isinstance(task[1], Dossier):
-                    dossier = task[1]
+            if not isinstance(task, tuple):
+                logger.error("Task is not a tuple, skipping")
+                continue
+            if len(task) == 0:
+                logger.error("Empty task received, skipping")
+                continue
+            # Initialize fail count
+            fail_count = task[2] if len(task) > 2 else 0
+            if fail_count > 5:
+                logger.error(f"Task {task} failed too many times, skipping")
+                continue
+
+            try:
+                result = await handlers.get(task[0], unknown_handler)(task)
+                if result:
+                    break
+            except Exception as e:
+                logger.error(f"Error processing task {task}: {e}")
+                # Requeue the task with an incremented fail count
+                new_fail_count = fail_count + 1
+                if len(task) > 2:
+                    task = (*task[:2], new_fail_count)  # Update fail count
+                else:
+                    task = (*task, new_fail_count)  # Add fail count
+                self.queue.put_nowait(task)
+
+    # we are going to start subdividing the queue consumer into multiple functions, for clarity
+
+    async def _handle_create_task(self, task: tuple[int, Any]):
+        if self.config.get("dossier_channel_id"):
+            if isinstance(task[1], Player):
+                player = task[1]
+                medals = self.session.query(Medals).filter(Medals.player_id == player.id).all()
+                # identify what medals have known emotes
+                known_emotes = set(self.medal_emotes.keys())
+                known_medals = {medal.name for medal in medals if medal.name in known_emotes}
+                unknown_medals = {medal.name for medal in medals if medal.name not in known_emotes}
+                known_medals_list = list(known_medals)
+                # make rows of 5 medals that have known emotes
+                rows = [known_medals_list[i:i+5] for i in range(0, len(known_medals_list), 5)]
+                unknown_medals_list = list(unknown_medals)
+                unknown_text = "\n".join(unknown_medals_list)
+                # convert the rows to a string of emotes, with a space between each emote
+                medal_block = "\n".join([" ".join([self.medal_emotes[medal] for medal in row]) for row in rows]) + "\n" + unknown_text
+                mention = await self.fetch_user(player.discord_id)
+                mention = mention.mention if mention else ""
+                # check for an existing dossier message, if it exists, skip creation
+                existing_dossier = self.session.query(Dossier).filter(Dossier.player_id == player.id).first()
+                if existing_dossier:
+                    # check if the message itself actually exists
                     channel = self.get_channel(self.config["dossier_channel_id"])
                     if channel:
-                        message = await channel.fetch_message(dossier.message_id)
-                        await message.delete()
-                        logger.debug(f"Deleted dossier message ID {dossier.message_id} for player {dossier.player_id}")
-                elif isinstance(task[1], Statistic):
-                    statistic = task[1]
+                        message = await channel.fetch_message(existing_dossier.message_id)
+                        if message:
+                            logger.debug(f"Dossier message for player {player.id} already exists, skipping creation")
+                            return
+                dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(templates.Dossier.format(mention=mention, player=player, medals=medal_block))
+                dossier = Dossier(player_id=player.id, message_id=dossier_message.id)
+                self.session.add(dossier)
+                self.session.commit()
+                logger.debug(f"Created dossier for player {player.id} with message ID {dossier_message.id}")
+        if self.config.get("statistics_channel_id"):
+            if isinstance(task[1], Player):
+                player = task[1]
+                unit_message = self.generate_unit_message(player)
+                mention = await self.fetch_user(player.discord_id)
+                mention = mention.mention if mention else ""
+                # check for an existing statistics message, if it exists, skip creation
+                existing_statistics = self.session.query(Statistic).filter(Statistic.player_id == player.id).first()
+                if existing_statistics:
+                    # check if the message itself actually exists
                     channel = self.get_channel(self.config["statistics_channel_id"])
                     if channel:
-                        message = await channel.fetch_message(statistic.message_id)
-                        await message.delete()
-                        logger.debug(f"Deleted statistics message ID {statistic.message_id} for player {statistic.player_id}")
-                elif isinstance(task[1], Unit):
-                    unit = task[1]
-                    player = self.session.query(Player).filter(Player.id == unit.player_id).first()
-                    self.queue.put_nowait((1, player))
-                    logger.debug(f"Queued update task for player {player.id} due to unit {unit.id}")
-                elif isinstance(task[1], Upgrade):
-                    upgrade = task[1]
-                    unit = self.session.query(Unit).filter(Unit.id == upgrade.unit_id).first()
-                    player = self.session.query(Player).filter(Player.id == unit.player_id).first()
-                    self.queue.put_nowait((1, player))
-                    logger.debug(f"Queued update task for player {player.id} due to upgrade {upgrade.id}")
-                self.queue.task_done()
-            elif task[0] == 4:
-                logger.info("queue consumer terminating")
-                break # graceful termination signal
-            elif task[0] == 4:
-                break # graceful termination signal
+                        message = await channel.fetch_message(existing_statistics.message_id)
+                        if message:
+                            logger.debug(f"Statistics message for player {player.id} already exists, skipping creation")
+                            return
+                statistics_message = await self.get_channel(self.config["statistics_channel_id"]).send(templates.Statistics_Player.format(mention=mention, player=player, units=unit_message))
+                statistics = Statistic(player_id=player.id, message_id=statistics_message.id)
+                self.session.add(statistics)
+                self.session.commit()
+                logger.debug(f"Created statistics for player {player.id} with message ID {statistics_message.id}")
+            elif isinstance(task[1], Unit):
+                player = self.session.query(Player).filter(Player.id == task[1].player_id).first()
+                self.queue.put_nowait((1, player))
+                logger.debug(f"Queued update task for player {player.id} due to unit {task[1].id}")
+            elif isinstance(task[1], Upgrade):
+                unit = self.session.query(Unit).filter(Unit.id == task[1].unit_id).first()
+                player = self.session.query(Player).filter(Player.id == unit.player_id).first()
+                self.queue.put_nowait((1, player))
+                logger.debug(f"Queued update task for player {player.id} due to upgrade {task[1].id}")
+
+    async def _handle_update_task(self, task):
+        if isinstance(task[1], Player):
+            player = task[1]
+            dossier = self.session.query(Dossier).filter(Dossier.player_id == player.id).first()
+            if dossier:
+                channel = self.get_channel(self.config["dossier_channel_id"])
+                if channel:
+                    message = await channel.fetch_message(dossier.message_id)
+                    mention = await self.fetch_user(player.discord_id)
+                    mention = mention.mention if mention else ""
+                    await message.edit(content=templates.Dossier.format(mention=mention, player=player, medals=""))
+                    logger.debug(f"Updated dossier for player {player.id} with message ID {dossier.message_id}")
+            else:
+                # user doesn't have a dossier message, push a create task on the user, to fudge it back
+                self.queue.put_nowait((0, player))
+                logger.debug(f"Queued create task for player {player.id} due to missing dossier message")
+            statistics = self.session.query(Statistic).filter(Statistic.player_id == player.id).first()
+            if statistics:
+                channel = self.get_channel(self.config["statistics_channel_id"])
+                if channel:
+                    message = await channel.fetch_message(statistics.message_id)
+                    unit_message = self.generate_unit_message(player)
+                    mention = await self.fetch_user(player.discord_id)
+                    mention = mention.mention if mention else ""
+                    await message.edit(content=templates.Statistics_Player.format(mention=mention, player=player, units=unit_message))
+                    logger.debug(f"Updated statistics for player {player.id} with message ID {statistics.message_id}")
+                else:
+                    # user doesn't have a statistics message, push a create task on the user, to fudge it back
+                    self.queue.put_nowait((0, player))
+                    logger.debug(f"Queued create task for player {player.id} due to missing statistics message")
+        elif isinstance(task[1], Unit):
+            unit = task[1]
+            player = self.session.query(Player).filter(Player.id == unit.player_id).first()
+            self.queue.put_nowait((1, player))
+            logger.debug(f"Queued update task for player {player.id} due to unit {unit.id}")
+        elif isinstance(task[1], Upgrade):
+            upgrade = task[1]
+            unit = self.session.query(Unit).filter(Unit.id == upgrade.unit_id).first()
+            player = self.session.query(Player).filter(Player.id == unit.player_id).first()
+            self.queue.put_nowait((1, player))
+            logger.debug(f"Queued update task for player {player.id} due to upgrade {upgrade.id}")
+
+    async def _handle_delete_task(self, task):
+        if isinstance(task[1], Dossier):
+            dossier = task[1]
+            channel = self.get_channel(self.config["dossier_channel_id"])
+            if channel:
+                message = await channel.fetch_message(dossier.message_id)
+                await message.delete()
+                logger.debug(f"Deleted dossier message ID {dossier.message_id} for player {dossier.player_id}")
+        elif isinstance(task[1], Statistic):
+            statistic = task[1]
+            channel = self.get_channel(self.config["statistics_channel_id"])
+            if channel:
+                message = await channel.fetch_message(statistic.message_id)
+                await message.delete()
+                logger.debug(f"Deleted statistics message ID {statistic.message_id} for player {statistic.player_id}")
+        elif isinstance(task[1], Unit):
+            unit = task[1]
+            player = self.session.query(Player).filter(Player.id == unit.player_id).first()
+            self.queue.put_nowait((1, player))
+            logger.debug(f"Queued update task for player {player.id} due to unit {unit.id}")
+        elif isinstance(task[1], Upgrade):
+            upgrade = task[1]
+            unit = self.session.query(Unit).filter(Unit.id == upgrade.unit_id).first()
+            player = self.session.query(Player).filter(Player.id == unit.player_id).first()
+            self.queue.put_nowait((1, player))
+            logger.debug(f"Queued update task for player {player.id} due to upgrade {upgrade.id}")
+
+    async def _handle_terminate_task(self, task): 
+        logger.debug("Queue consumer terminating")
+        return True # this is the only function that returns a value, as that's how we'll know to terminate, is if a value or raise is returned
 
     stats_map = {
         "INFANTRY": templates.Infantry_Stats,
@@ -282,7 +354,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         except Exception as e:
             logger.error(f"Session Keep-Alive Task failed: {e}")
 
-    async def load_extensions(self, extensions: List[str]):
+    async def load_extensions(self, extensions: list[str]):
         """
         Loads a list of bot extensions (modules).
 
@@ -379,6 +451,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             await interaction.response.send_message(f"Pong! I was last restarted at <t:{int(self.start_time.timestamp())}:F>, <t:{int(self.start_time.timestamp())}:R>")
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
+        #await self.load_extension("extensions.configuration") # for initial setup, we want to disable all user commands, so we only load the configuration extension
         await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup", "extensions.search"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
         
         logger.debug("Syncing slash commands")

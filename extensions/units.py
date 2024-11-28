@@ -4,7 +4,7 @@ from discord import Interaction, app_commands as ac, Member, ui, ButtonStyle, Se
 from discord.ui import View
 from models import Player, Unit as Unit_model, UnitStatus
 from customclient import CustomClient
-
+import os
 logger = getLogger(__name__)
 
 class Unit(GroupCog):
@@ -48,7 +48,15 @@ class Unit(GroupCog):
                 if self.session.query(Unit_model).filter(Unit_model.name == unit_name, Unit_model.player_id == player.id).first():
                     await interaction.response.send_message("You already have a unit with that name", ephemeral=CustomClient().use_ephemeral)
                     return
-
+                if len(unit_name) > 30:
+                    await interaction.response.send_message("Unit name is too long, please use a shorter name", ephemeral=CustomClient().use_ephemeral)
+                    return
+                if any(char in unit_name for char in os.getenv("BANNED_CHARS", "")):
+                    await interaction.response.send_message("Unit names cannot contain discord tags", ephemeral=CustomClient().use_ephemeral)
+                    return
+                if not unit_name.isascii():
+                    await interaction.response.send_message("Unit names must be ASCII", ephemeral=CustomClient().use_ephemeral)
+                    return
                 unit = Unit_model(player_id=player.id, name=unit_name, unit_type=unit_type, active=False)
                 self.session.add(unit)
                 self.session.commit()
@@ -62,8 +70,15 @@ class Unit(GroupCog):
     @ac.command(name="activate", description="Activate a unit")
     @ac.describe(callsign="The callsign of the unit to activate, must be globally unique")
     async def activateunit(self, interaction: Interaction, callsign: str):
-        if len(callsign) > 8:
+        logger.debug(f"Activating unit for {interaction.user.global_name} with callsign {callsign}")
+        if len(callsign) > 10:
             await interaction.response.send_message("Callsign is too long, please use a shorter callsign", ephemeral=CustomClient().use_ephemeral)
+            return
+        if any(char in callsign for char in os.getenv("BANNED_CHARS", "")):
+            await interaction.response.send_message("Callsigns cannot contain discord tags", ephemeral=CustomClient().use_ephemeral)
+            return
+        if not callsign.isascii():
+            await interaction.response.send_message("Callsigns must be ASCII", ephemeral=CustomClient().use_ephemeral)
             return
         logger.debug(f"Activating unit for {interaction.user.id}")
         player: Player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
@@ -89,7 +104,7 @@ class Unit(GroupCog):
                 super().__init__(placeholder="Select the unit to activate", options=options)
 
             async def callback(self, interaction: Interaction):
-                unit: Unit_model = self.session.query(Unit_model).filter(Unit_model.name == self.values[0]).first()
+                unit: Unit_model = self.session.query(Unit_model).filter(Unit_model.name == self.values[0]).filter(Unit_model.player_id == player.id).first()
                 if not unit.status == UnitStatus.INACTIVE:
                     await interaction.response.send_message("That unit is not inactive", ephemeral=CustomClient().use_ephemeral)
                     return
@@ -175,7 +190,7 @@ class Unit(GroupCog):
         # Send the table to the user
         await interaction.response.send_message(f"Here are {player.name}'s Units:\n\n{unit_table}", ephemeral=CustomClient().use_ephemeral)
 
-    @ac.command(name="edit_proposed", description="Edit a proposed unit")
+    #@ac.command(name="edit_proposed", description="Edit a proposed unit")
     async def edit_proposed(self, interaction: Interaction):
         # create a view with a select menu for all of the user's proposed units
         # when a unit is selected, create a view with a "rename" button and a unit type select menu
@@ -223,6 +238,12 @@ class Unit(GroupCog):
 
             async def rename_modal_callback(self, interaction: Interaction):
                 new_name = interaction.data["components"][0]["components"][0]["value"]
+                if len(new_name) > 32:
+                    await interaction.response.send_message("Unit name is too long, please use a shorter name", ephemeral=CustomClient().use_ephemeral)
+                    return
+                if any(char in new_name for char in os.getenv("BANNED_CHARS", "")):
+                    await interaction.response.send_message("Unit names cannot contain discord tags", ephemeral=CustomClient().use_ephemeral)
+                    return
                 self.unit.name = new_name
                 self.session.commit()
                 await interaction.response.send_message(f"Unit {self.unit.name} renamed to {new_name}", ephemeral=CustomClient().use_ephemeral)

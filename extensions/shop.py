@@ -34,6 +34,9 @@ class Shop(GroupCog):
 
         bonus_button = ui.Button(label="Convert 10 BP to 1 RP", style=ButtonStyle.success, disabled=player.bonus_pay < 10)
         async def bonus_button_callback(interaction: Interaction):
+            if player.bonus_pay < 10:
+                await interaction.response.send_message("You don't have enough bonus pay to convert", ephemeral=CustomClient().use_ephemeral)
+                return
             player.bonus_pay -= 10
             player.rec_points += 1
             self.session.commit()
@@ -76,6 +79,9 @@ class Shop(GroupCog):
             reform_button = ui.Button(label="Reform Unit", style=ButtonStyle.success, disabled=player.rec_points < 1)
             async def reform_button_callback(interaction: Interaction):
                 logger.info(f"Reforming unit {unit.name}")
+                if player.rec_points < 1:
+                    await interaction.response.send_message("You don't have enough requisition points to reform this unit", ephemeral=CustomClient().use_ephemeral)
+                    return
                 unit.status = "INACTIVE"
                 player.rec_points -= 1
                 self.session.commit()

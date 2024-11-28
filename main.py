@@ -2,6 +2,7 @@ import logging
 from dotenv import load_dotenv
 import sys
 import os
+from coloredformatter import ColoredFormatter
 if not os.path.exists("global.env"):
     raise FileNotFoundError("global.env not found")
 load_dotenv("global.env")
@@ -22,14 +23,16 @@ if not os.path.exists(SENSITIVE_ENV_FILE):
 load_dotenv(SENSITIVE_ENV_FILE, override=True)
 
 # add a file handler to the root logger
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setFormatter(ColoredFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     handlers=[
                         logging.FileHandler("armco.log"),
-                        logging.StreamHandler(sys.stdout)
+                        stream_handler
                     ],
                     force=True) # needed to delete the default stderr handler
-# rest of the imports
+# rest of the imports   
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models import Base
