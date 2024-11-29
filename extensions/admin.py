@@ -423,7 +423,7 @@ class Admin(GroupCog):
             await interaction.response.send_message("Unit not found", ephemeral=self.bot.use_ephemeral)
             return
         # check length
-        if len(new_callsign) > 10:
+        if len(new_callsign) > 15:
             await interaction.response.send_message("Callsign is too long, please use a shorter callsign", ephemeral=self.bot.use_ephemeral)
             return
         # check if the callsign is already taken

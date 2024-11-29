@@ -1,6 +1,8 @@
 import re
 import os
-from functools import lru_cache
+from functools import lru_cache, wraps
+from inspect import Signature
+from sqlalchemy.orm import scoped_session
 
 @lru_cache(maxsize=1)
 def get_url_pattern() -> re.Pattern:
@@ -36,3 +38,29 @@ def has_invalid_url(text: str) -> bool:
     """
     pattern = get_url_pattern()
     return bool(pattern.search(text))
+
+class RollbackException(Exception):
+    pass
+
+def uses_db(sessionmaker):
+    session_scope = scoped_session(sessionmaker)
+    def decorator(func):
+        original_signature = Signature.from_callable(func)
+        new_params = [param for name, param in original_signature.parameters.items() if name != "session"]
+        new_signature = original_signature.replace(parameters=new_params)
+        @wraps(func)
+        async def wrapper(*args, **kwargs): 
+            with session_scope() as session: # we are not currently using async with, because the sessionmaker is not async yet
+                try:
+                    result = await func(*args, session=session, **kwargs)
+                    session.commit()
+                    return result
+                except RollbackException:
+                    session.rollback()
+                    return None
+                except Exception as e:
+                    session.rollback()
+                    raise e
+        wrapper.__signature__ = new_signature
+        return wrapper
+    return decorator

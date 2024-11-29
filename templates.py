@@ -28,3 +28,7 @@ Infantry_Stats = "FS: {unit.force_strength} Range: {unit.range} Speed: {unit.spe
 Armor_Stats = "FS: {unit.force_strength} Armor: {unit.armor} Range: {unit.range} Speed: {unit.speed} Defense: {unit.defense}"
 Artillery_Stats = "FS: {unit.force_strength} Range: {unit.range} Speed: {unit.speed} Ammo: {unit.supply}"
 Air_Stats = "FS: {unit.force_strength} Range: {unit.range} Speed: {unit.speed} Armor: {unit.armor} Cargo: {unit.supply}"
+
+faq_response = """**Question:** {selected.question}
+
+**Answer:** {selected.answer}"""

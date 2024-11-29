@@ -38,7 +38,7 @@ class Company(GroupCog):
                 self.player = player
                 self.session = CustomClient().session
                 self.add_item(ui.TextInput(label="Name", placeholder="Enter the company name", required=True, max_length=32, default=player.name))
-                self.add_item(ui.TextInput(label="Lore", placeholder="Enter the company lore", max_length=1000, style=TextStyle.paragraph, default=player.lore or ""))
+                self.add_item(ui.TextInput(label="Lore", placeholder="Enter the company lore", max_length=1000, style=TextStyle.paragraph, default=player.lore or "", required=False))
 
 
             async def on_submit(self, interaction: Interaction):
@@ -78,9 +78,9 @@ class Company(GroupCog):
             return
 
         # Generate the info message strings
-        dossier_message = templates.Dossier.format(player=player, medals="")
+        dossier_message = templates.Dossier.format(mention="", player=player, medals="") # don't ping in company show
         unit_message = CustomClient().generate_unit_message(player=player)
-        statistic_message = templates.Statistics_Player.format(player=player, units=unit_message)
+        statistic_message = templates.Statistics_Player.format(mention="", player=player, units=unit_message)
 
         await interaction.response.send_message(f"{dossier_message}\n{statistic_message}", ephemeral=self.bot.use_ephemeral)
 

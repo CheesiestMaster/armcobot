@@ -16,7 +16,7 @@ Modules:
     - `logging`: Logging utilities for debugging and information.
 """
 
-from discord import Interaction, Intents, Status, Activity, ActivityType
+from discord import Interaction, Intents, Status, Activity, ActivityType, Member
 from discord.ext.commands import Bot
 from discord.ext import tasks
 from os import getenv
@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from models import *
 from sqlalchemy import text
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 from singleton import Singleton
 import asyncio
 import templates
@@ -46,12 +46,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         - `session`: (Session) Database session for executing SQL queries.
         - `use_ephemeral`: (bool) Controls whether to send messages as ephemeral.
         - `config`: (dict) Bot configuration loaded from the database.
+        - `uses_db`: (Callable) A decorator for database operations.
     """
     mod_roles = {1308924912936685609, 1302095620231794698}
     session: Session
     use_ephemeral: bool
     config: dict
-    def __init__(self, session: Session, **kwargs):
+    sessionmaker: Callable
+    def __init__(self, session: Session,/, sessionmaker: Callable, **kwargs):
         """
         Initializes the CustomClient instance.
 
@@ -69,6 +71,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         super().__init__(**kwargs)
         self.owner_ids = {533009808501112881, 126747253342863360}
         self.session = session
+        self.sessionmaker = sessionmaker
         self.queue = asyncio.Queue()
         _Config = self.session.query(Config).filter(Config.key == "BOT_CONFIG").first()
         if not _Config:
@@ -83,8 +86,20 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             self.session.commit()
         self.medal_emotes:dict = _Medal_Emotes.value
         self.use_ephemeral = use_ephemeral
+        self.tree.interaction_check = self.check_banned_interaction
 
-    async def resync_config(self):
+    async def check_banned_interaction(self, interaction: Interaction):
+        # check if the user.id is in the BANNED_USERS env variable, if so, reply with a message and return False, else return True
+        banned_users = getenv("BANNED_USERS", "").split(",")
+        if not banned_users[0]: # if the env was empty, split returns [""], so we need to check for that
+            return True
+        banned_users = [int(user) for user in banned_users]
+        if interaction.user.id in banned_users:
+            await interaction.response.send_message("You are banned from using this bot", ephemeral=self.use_ephemeral)
+            return False
+        return True
+
+    async def resync_config(self, session: Session):
         """
         Synchronizes the bot configuration with the database.
 
@@ -93,9 +108,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         Raises:
             SQLAlchemyError: If a database operation fails.
         """
-        _Config = self.session.query(Config).filter(Config.key == "BOT_CONFIG").first()
+        _Config = session.query(Config).filter(Config.key == "BOT_CONFIG").first()
         _Config.value = self.config
-        self.session.commit()
         logger.debug(f"Resynced config: {self.config}")
 
     async def queue_consumer(self):
@@ -417,7 +431,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         and closes the session.
         """
         await self.queue.put((4, None))
-        await self.resync_config()
+        await self.resync_config(session=self.session)
         try:
             self.session.commit()
         except Exception as e:
@@ -436,6 +450,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             - Loads core and additional extensions.
             - Synchronizes slash commands with Discord's command tree.
         """
+        last_ping: datetime | None = None
+        last_pinger: Member | None = None
         @self.tree.command(name="ping", description="Ping the bot")
         async def ping(interaction: Interaction):
             """
@@ -448,11 +464,20 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             Example:
                 `/ping` returns "Pong! I was last restarted at [formatted date], [relative time]."
             """
+            nonlocal last_pinger, last_ping
+            if interaction.user.id == last_pinger:
+                await interaction.response.send_message("You've already pinged me recently, wait a bit before pinging again", ephemeral=True)
+                return
+            if last_ping and (datetime.now() - last_ping).total_seconds() < 10:
+                await interaction.response.send_message("I've been pinged recently, wait a bit before pinging again", ephemeral=True)
+                return
+            last_pinger = interaction.user.id
+            last_ping = datetime.now()
             await interaction.response.send_message(f"Pong! I was last restarted at <t:{int(self.start_time.timestamp())}:F>, <t:{int(self.start_time.timestamp())}:R>")
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
         #await self.load_extension("extensions.configuration") # for initial setup, we want to disable all user commands, so we only load the configuration extension
-        await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup", "extensions.search"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
+        await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup", "extensions.search", "extensions.faq"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
         
         logger.debug("Syncing slash commands")
         await self.tree.sync()

@@ -9,3 +9,4 @@ __pycache__
 *.log
 backup.*.xlsx
 backup.*.sql
+sam_startup.py

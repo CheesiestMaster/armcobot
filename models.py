@@ -128,6 +128,12 @@ class Medals(Base):
     # relationships
     player = relationship("Player", back_populates="medals")
 
+class Faq(Base):
+    __tablename__ = "faq"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    question = Column(String(255), index=True)
+    answer = Column(String(500))
+
 # Unit, Upgrade need all 3 listeners
 # Dossier and Statistic need only after_delete
 

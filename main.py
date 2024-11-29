@@ -2,6 +2,7 @@ import logging
 from dotenv import load_dotenv
 import sys
 import os
+from utils import uses_db
 from coloredformatter import ColoredFormatter
 if not os.path.exists("global.env"):
     raise FileNotFoundError("global.env not found")
@@ -54,10 +55,11 @@ logger.info("Database tables created successfully.")
 # create a session
 Session = sessionmaker(bind=engine)
 session = Session()
+
 logger.debug("Session created successfully.")
 
 # create the bot
-bot = CustomClient(session)
+bot = CustomClient(session, sessionmaker=Session)
 logger.info("Bot created successfully.")
 
 # start the bot
