@@ -1,8 +1,10 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOption
+from sqlalchemy.orm import Session
 from models import Player, Unit
 from customclient import CustomClient
+from utils import uses_db
 
 logger = getLogger(__name__)
 
@@ -22,7 +24,8 @@ class Search(GroupCog):
         self.session = bot.session
 
     @ac.command(name="search", description="Search for players of specific unit type and AO")
-    async def search(self, interaction: Interaction):
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def search(self, interaction: Interaction, session: Session):
         """
                Handles the '/search' command for finding players based on unit type and area of operation.
 
@@ -37,12 +40,12 @@ class Search(GroupCog):
                    AOSelect (ui.Select): UI component for selecting an area of operation.
                    SearchView (ui.View): View to display TypeSelect and AOSelect options, along with a search button.
                """
-        player = self.session.query(Player).filter(Player.discord_id == interaction.user.id).first()
+        player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:
             await interaction.response.send_message("You don't have a Meta Campaign company so you can't search", ephemeral=CustomClient().use_ephemeral)
             return
-        unit = self.session.query(Unit).filter(Unit.player_id == player.id, Unit.active == True).first()
-        aos = self.session.query(Unit.area_operation).distinct().all()
+        unit = session.query(Unit).filter(Unit.player_id == player.id, Unit.active == True).first()
+        aos = session.query(Unit.area_operation).distinct().all()
 
         class TypeSelect(ui.Select):
             """
@@ -54,7 +57,7 @@ class Search(GroupCog):
             def __init__(self):
                 options = []
                 for unit_type in bot.config["unit_types"]:
-                    if unit_type == unit.type and not unit:
+                    if unit and unit_type == unit.type:
                         options.append(SelectOption(label=unit_type, value=unit_type, default=True))
                     else:
                         options.append(SelectOption(label=unit_type, value=unit_type))
@@ -91,12 +94,12 @@ class Search(GroupCog):
 
             def __init__(self):
                 super().__init__()
-                self.session = CustomClient().session  # can't use self.session because this is a nested class, so we use the singleton reference
                 self.add_item(TypeSelect())
                 self.add_item(AOSelect())
 
             @ui.button(label="Search", style=ButtonStyle.primary)
-            async def search_callback(self, interaction: Interaction, button: ui.Button):
+            @uses_db(sessionmaker=CustomClient().sessionmaker)
+            async def search_callback(self, interaction: Interaction, button: ui.Button, session: Session):
                 """
                 Executes a search in the database for players matching the selected unit type and AO.
 
@@ -110,12 +113,12 @@ class Search(GroupCog):
                 logger.debug(f"Unit type selected: {unit_type}")
                 logger.debug(f"AO selected: {ao}")
 
-                target_units_in_ao = self.session.query(Unit.player_id).filter(Unit.area_operation == ao).all()
-                target_units_same_type = self.session.query(Unit.player_id).filter(Unit.unit_type == unit_type).all()
+                target_units_in_ao = session.query(Unit.player_id).filter(Unit.area_operation == ao).all()
+                target_units_same_type = session.query(Unit.player_id).filter(Unit.unit_type == unit_type).all()
                 targets = list(set(target_units_in_ao).intersection(target_units_same_type))
                 message = ""
                 for target in targets:
-                    player_name = self.session.query(Player.name).filter(Player.discord_id == target).first()
+                    player_name = session.query(Player.name).filter(Player.discord_id == target).first()
                     message += f"{player_name}\n"
 
                 logger.debug(f"Unit {unit.name} created for player {player.name}")

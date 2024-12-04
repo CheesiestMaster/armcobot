@@ -32,7 +32,7 @@ class Faq(GroupCog):
     
     @ac.command(name="view", description="View the FAQ")
     @uses_db(CustomClient().sessionmaker)
-    async def faq(self, interaction: Interaction, session: Session):
+    async def view(self, interaction: Interaction, session: Session):
         """
         Displays the FAQ for S.A.M.
         """

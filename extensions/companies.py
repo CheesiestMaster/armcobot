@@ -1,11 +1,12 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, TextStyle, Member
-from models import Player
+from models import Player, Unit, UnitStatus
 from customclient import CustomClient
 import templates
 import os
 from utils import has_invalid_url
+import asyncio
 logger = getLogger(__name__)
 
 class Company(GroupCog):
@@ -25,7 +26,10 @@ class Company(GroupCog):
         # create a new Player in the database
         player = Player(discord_id=interaction.user.id, name=interaction.user.name, rec_points=1)
         self.session.add(player)
-        self.session.commit()
+        self.session.commit() # flush to get the player id
+        await asyncio.sleep(0.1) # we need an awaitable here so the consumer can act on the new player
+        stockpile = Unit(name="Stockpile", player_id=player.id, status=UnitStatus.INACTIVE, unit_type="STOCKPILE")
+        self.session.add(stockpile)
         logger.debug(f"User {interaction.user.display_name} created a new Meta Campaign company")
         await interaction.response.send_message("You have joined Meta Campaign", ephemeral=self.bot.use_ephemeral)
 
