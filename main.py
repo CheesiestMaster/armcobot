@@ -34,7 +34,7 @@ logging.basicConfig(level=logging.DEBUG,
                     ],
                     force=True) # needed to delete the default stderr handler
 # rest of the imports   
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from models import Base
 from customclient import CustomClient
@@ -55,6 +55,7 @@ logger.info("Database tables created successfully.")
 # create a session
 Session = sessionmaker(bind=engine)
 session = Session()
+session.execute(text("SET SESSION innodb_lock_wait_timeout = 10")) # set the lock timeout to 10 seconds only for the global session
 
 logger.debug("Session created successfully.")
 

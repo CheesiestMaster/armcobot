@@ -4,7 +4,9 @@ from enum import Enum as PyEnum
 import logging
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
+engine_logger = logging.getLogger("sqlalchemy.engine")
+#engine_logger.setLevel(logging.DEBUG)
 
 Base: type = declarative_base()
 
@@ -24,19 +26,19 @@ class UnitStatus(PyEnum):
 # Listeners
 
 def after_insert(mapper, connection, target):
-    logger.debug("Inserting target into queue")
+    logger.debug(f"{target} was inserted into the database")
     from customclient import CustomClient
     queue = CustomClient().queue
     queue.put_nowait((0, target))
 
 def after_update(mapper, connection, target):
-    logger.debug("Updating target in queue")
+    logger.debug(f"{target} was updated in the database")
     from customclient import CustomClient
     queue = CustomClient().queue
     queue.put_nowait((1, target))
 
 def after_delete(mapper, connection, target):
-    logger.debug("Deleting target from queue")
+    logger.debug(f"{target} was deleted from the database")
     from customclient import CustomClient
     queue = CustomClient().queue
     queue.put_nowait((2, target))
@@ -117,11 +119,11 @@ class Player(BaseModel):
     rec_points = Column(Integer, default=0)
     bonus_pay = Column(Integer, default=0)
     # relationships
-    units = relationship("Unit", back_populates="player", cascade="all, delete-orphan", lazy="subquery")
-    dossier = relationship("Dossier", back_populates="player", lazy="joined")
-    statistic = relationship("Statistic", back_populates="player", lazy="joined")
-    medals = relationship("Medals", back_populates="player", cascade="all, delete-orphan", lazy="subquery")
-    campaign_invites = relationship("CampaignInvite", back_populates="player", cascade="all, delete-orphan", lazy="subquery")
+    units = relationship("Unit", back_populates="player", cascade="none")
+    dossier = relationship("Dossier", back_populates="player")
+    statistic = relationship("Statistic", back_populates="player")
+    medals = relationship("Medals", back_populates="player", cascade="none")
+    campaign_invites = relationship("CampaignInvite", back_populates="player", cascade="none")
 
 class PlayerUpgrade(BaseModel):
     __tablename__ = "player_upgrades"
@@ -179,7 +181,7 @@ class ShopUpgrade(BaseModel):
     name = Column(String(30), index=True)
     type = Column(Enum(UpgradeType))
     cost = Column(Integer, default=0)
-    description = Column(String(255), default="")
+    refit_target = Column(String(15), nullable=True)
     required_upgrade_id = Column(Integer, ForeignKey("shop_upgrades.id"), nullable=True)
     player_upgrades = relationship("PlayerUpgrade", back_populates="shop_upgrade", cascade="all, delete-orphan", lazy="subquery")
     unit_types = relationship("ShopUpgradeUnitTypes", back_populates="shop_upgrade", cascade="all, delete-orphan", lazy="subquery")

@@ -29,7 +29,7 @@ from singleton import Singleton
 import asyncio
 import templates
 import logging
-from utils import uses_db
+from utils import uses_db, RollingCounterDict
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
 
@@ -72,33 +72,36 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         kwargs = {**DEFAULTS, **kwargs} # merge DEFAULTS and kwargs, kwargs takes precedence
         super().__init__(**kwargs)
         self.owner_ids = {533009808501112881, 126747253342863360}
-        self.session = session
         self.sessionmaker = sessionmaker
         self.queue = asyncio.Queue()
-        _Config = self.session.query(Config).filter(Config.key == "BOT_CONFIG").first()
+        _Config = session.query(Config).filter(Config.key == "BOT_CONFIG").first()
         if not _Config:
             _Config = Config(key="BOT_CONFIG", value={"EXTENSIONS":[]})
-            self.session.add(_Config)
-            self.session.commit()
+            session.add(_Config)
+            session.commit()
         self.config:dict = _Config.value
-        _Medal_Emotes = self.session.query(Config).filter(Config.key == "MEDAL_EMOTES").first()
+        _Medal_Emotes = session.query(Config).filter(Config.key == "MEDAL_EMOTES").first()
         if not _Medal_Emotes:
             _Medal_Emotes = Config(key="MEDAL_EMOTES", value={})
-            self.session.add(_Medal_Emotes)
-            self.session.commit()
+            session.add(_Medal_Emotes)
+            session.commit()
         self.medal_emotes:dict = _Medal_Emotes.value
         self.use_ephemeral = use_ephemeral
         self.tree.interaction_check = self.check_banned_interaction
 
     async def check_banned_interaction(self, interaction: Interaction):
         # check if the user.id is in the BANNED_USERS env variable, if so, reply with a message and return False, else return True
+        logger.debug(f"Interaction check for user {interaction.user.global_name}")
         banned_users = getenv("BANNED_USERS", "").split(",")
         if not banned_users[0]: # if the env was empty, split returns [""], so we need to check for that
+            logger.debug(f"Interaction check passed for user {interaction.user.global_name}")
             return True
         banned_users = [int(user) for user in banned_users]
         if interaction.user.id in banned_users:
             await interaction.response.send_message("You are banned from using this bot", ephemeral=self.use_ephemeral)
+            logger.warning(f"Interaction check failed for user {interaction.user.global_name}")
             return False
+        logger.debug(f"Interaction check passed for user {interaction.user.global_name}")
         return True
 
     async def resync_config(self, session: Session):
@@ -114,7 +117,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         _Config.value = self.config
         logger.debug(f"Resynced config: {self.config}")
 
-    async def queue_consumer(self):
+    async def queue_consumer(self, session: Session):
         """
         Consumes tasks from the queue for processing player and unit actions.
 
@@ -138,31 +141,62 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             2: self._handle_delete_task,
             4: self._handle_terminate_task
         }
+        ratelimit = RollingCounterDict(30)
+        nosleep = True
         
         while True:
-            await asyncio.sleep(5)  # Maintain pacing to avoid hitting downstream timeouts
+            if nosleep:
+                await asyncio.sleep(0)
+                nosleep = False
+            else:
+                await asyncio.sleep(5)  # Maintain pacing to avoid hitting downstream timeouts
             logger.debug(f"Queue size: {self.queue.qsize()}")
-            logger.debug(f"Queue: {self.queue._queue}") # access the underlying deque to see the actual list of tasks
+            if self.queue.qsize() >= 400:
+                logger.critical(f"Queue size is {self.queue.qsize()}, this is too high!")
+                # fetch the discord user for the bot owner, message them, then call self.close()
+                owner = await self.fetch_user(533009808501112881)
+                if owner:
+                    await owner.send("Queue size is too high, terminating")
+                await self.close()
             task = await self.queue.get()
-            logger.debug(f"Processing task: {task}")
             if not isinstance(task, tuple):
                 logger.error("Task is not a tuple, skipping")
+                nosleep = True
                 continue
-            if len(task) == 0:
-                logger.error("Empty task received, skipping")
+            # we need to recraft the tuple before we can log it, because the session is detached
+            if len(task) == 3:
+                task = (task[0], session.merge(task[1]), task[2])
+            elif len(task) == 2:
+                task = (task[0], session.merge(task[1]), 0)
+            elif len(task) == 1:
+                if not task[0] == 4:
+                    logger.error("Task is a tuple of length 1, but the first element is not 4, skipping")
+                    nosleep = True
+                    continue
+            else:
+                logger.error(f"Task is a tuple of length {len(task)}, skipping")
+                nosleep = True
                 continue
+            ratelimit.set(str(task[1]))
+            if ratelimit.get(str(task[1])) >=5: # window is 30s, which is 6 tasks, this requires at least 50% different tasks
+                logger.warning(f"Ratelimit hit for {task[1]}")
+                nosleep = True
+                continue # just discard the task
+            #logger.debug(f"Processing task: {task}")
             # Initialize fail count
             fail_count = task[2] if len(task) > 2 else 0
             if fail_count > 5:
                 logger.error(f"Task {task} failed too many times, skipping")
+                nosleep = True
                 continue
 
             try:
                 result = await handlers.get(task[0], unknown_handler)(task)
+                #session.expunge(task[1]) # expunge the instance to avoid memory leak or stale commits
                 if result:
                     break
             except Exception as e:
-                logger.error(f"Error processing task {task}: {e}")
+                logger.error(f"Error processing task: {e}")
                 # Requeue the task with an incremented fail count
                 new_fail_count = fail_count + 1
                 if len(task) > 2:
@@ -175,8 +209,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     # we are going to start subdividing the queue consumer into multiple functions, for clarity
 
     async def _handle_create_task(self, task: tuple[int, Any], session: Session):
+        session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
         requeued = False
-        instance = session.merge(task[1])
+        if task[1].id is None:
+            logger.error(f"Task has a None id, skipping")
+            return
+        instance  = session.query(task[1].__class__).filter(task[1].__class__.id == task[1].id).first()
         if isinstance(instance, Player):
             player = instance
             if self.config.get("dossier_channel_id"):
@@ -195,6 +233,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 mention = await self.fetch_user(player.discord_id)
                 mention = mention.mention if mention else ""
                 # check for an existing dossier message, if it exists, skip creation
+                create_dossier = True
                 existing_dossier = session.query(Dossier).filter(Dossier.player_id == player.id).first()
                 if existing_dossier:
                     # check if the message itself actually exists
@@ -203,35 +242,38 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                         message = await channel.fetch_message(existing_dossier.message_id)
                         if message:
                             logger.debug(f"Dossier message for player {player.id} already exists, skipping creation")
-                            return
+                            create_dossier = False
                 if not player.id:
                     logger.error(f"missing player id, skipping dossier creation")
                     return
-                dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(templates.Dossier.format(mention=mention, player=player, medals=medal_block))
-                dossier = Dossier(player_id=player.id, message_id=dossier_message.id)
-                session.add(dossier)
-                logger.debug(f"Created dossier for player {player.id} with message ID {dossier_message.id}")
+                if create_dossier:
+                    dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(templates.Dossier.format(mention=mention, player=player, medals=medal_block))
+                    dossier = Dossier(player_id=player.id, message_id=dossier_message.id)
+                    session.add(dossier)
+                    logger.debug(f"Created dossier for player {player.id} with message ID {dossier_message.id}")
             if self.config.get("statistics_channel_id"):
-                unit_message = self.generate_unit_message(player)
-                mention = await self.fetch_user(player.discord_id)
+                unit_message = await self.generate_unit_message(player)
+                _player = session.merge(player)
+                discord_id = _player.discord_id
+                mention = await self.fetch_user(discord_id)
                 mention = mention.mention if mention else ""
                 # check for an existing statistics message, if it exists, skip creation
-                existing_statistics = session.query(Statistic).filter(Statistic.player_id == player.id).first()
+                existing_statistics = session.query(Statistic).filter(Statistic.player_id == _player.id).first()
                 if existing_statistics:
                     # check if the message itself actually exists
                     channel = self.get_channel(self.config["statistics_channel_id"])
                     if channel:
                         message = await channel.fetch_message(existing_statistics.message_id)
                         if message:
-                            logger.debug(f"Statistics message for player {player.id} already exists, skipping creation")
+                            logger.debug(f"Statistics message for player {_player.id} already exists, skipping creation")
                             return
-                if not player.id:
+                if not _player.id:
                     logger.error(f"missing player id, skipping statistics creation")
                     return
-                statistics_message = await self.get_channel(self.config["statistics_channel_id"]).send(templates.Statistics_Player.format(mention=mention, player=player, units=unit_message))
-                statistics = Statistic(player_id=player.id, message_id=statistics_message.id)
+                statistics_message = await self.get_channel(self.config["statistics_channel_id"]).send(templates.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
+                statistics = Statistic(player_id=_player.id, message_id=statistics_message.id)
                 session.add(statistics)
-                logger.debug(f"Created statistics for player {player.id} with message ID {statistics_message.id}")
+                logger.debug(f"Created statistics for player {_player.id} with message ID {statistics_message.id}")
         elif isinstance(instance, Unit):
             player = session.query(Player).filter(Player.id == instance.player_id).first()
             if player:
@@ -255,21 +297,28 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     logger.debug(f"Already queued update task for player {player.id} due to upgrade {instance.id} Location 2")
 
     async def _handle_update_task(self, task: tuple[int, Any], session: Session):
-        instance = session.merge(task[1])
+        session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
+        instance = session.query(task[1].__class__).filter(task[1].__class__.id == task[1].id).first()
         requeued = False
         if isinstance(instance, Player):
+            logger.debug(f"Updating player: {instance}")
             player = instance
+            logger.debug("fetching dossier")
             dossier = session.query(Dossier).filter(Dossier.player_id == player.id).first()
             if dossier:
+                logger.debug("dossier found, fetching channel")
                 channel = self.get_channel(self.config["dossier_channel_id"])
                 if channel:
+                    logger.debug("channel found, fetching message")
                     message = await channel.fetch_message(dossier.message_id)
+                    logger.debug("message found, fetching user")
                     mention = await self.fetch_user(player.discord_id)
                     mention = mention.mention if mention else ""
+                    logger.debug("user found, editing message")
                     await message.edit(content=templates.Dossier.format(mention=mention, player=player, medals=""))
                     logger.debug(f"Updated dossier for player {player.id} with message ID {dossier.message_id}")
             else:
-                # user doesn't have a dossier message, push a create task on the user, to fudge it back
+                logger.debug("no dossier found, pushing create task")
                 if not requeued:
                     self.queue.put_nowait((0, player))
                     logger.debug(f"Queued create task for player {player.id} due to missing dossier message Location 3")
@@ -281,19 +330,25 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 channel = self.get_channel(self.config["statistics_channel_id"])
                 if channel:
                     message = await channel.fetch_message(statistics.message_id)
-                    unit_message = self.generate_unit_message(player)
-                    mention = await self.fetch_user(player.discord_id)
+                    discord_id = player.discord_id
+                    unit_message = await self.generate_unit_message(player)
+                    _player = session.merge(player)
+                    _statistics = session.merge(statistics)
+                    mention = await self.fetch_user(discord_id)
                     mention = mention.mention if mention else ""
-                    await message.edit(content=templates.Statistics_Player.format(mention=mention, player=player, units=unit_message))
-                    logger.debug(f"Updated statistics for player {player.id} with message ID {statistics.message_id}")
+                    await message.edit(content=templates.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
+                    logger.debug(f"Updated statistics for player {_player.id} with message ID {_statistics.message_id}")
                 else:
-                    # user doesn't have a statistics message, push a create task on the user, to fudge it back
-                    if not requeued:
-                        self.queue.put_nowait((0, player))
-                        logger.debug(f"Queued create task for player {player.id} due to missing statistics message Location 4")
-                        requeued = True
-                    else:
-                        logger.debug(f"Already queued create task for player {player.id} due to missing statistics message Location 4")
+                    # there should be a message, but the discord side was probably deleted by a mod
+                    logger.error(f"No channel found for statistics message of player {player.id}, skipping")
+            else:
+                # user doesn't have a statistics message, push a create task on the user, to fudge it back
+                if not requeued:
+                    self.queue.put_nowait((0, player))
+                    logger.debug(f"Queued create task for player {player.id} due to missing statistics message Location 4")
+                    requeued = True
+                else:
+                    logger.debug(f"Already queued create task for player {player.id} due to missing statistics message Location 4")
         elif isinstance(instance, Unit):
             unit = instance
             player = session.query(Player).filter(Player.id == unit.player_id).first()
@@ -317,7 +372,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     logger.debug(f"Already queued update task for player {player.id} due to upgrade {upgrade.id} Location 6")
 
     async def _handle_delete_task(self, task: tuple[int, Any], session: Session):
-        instance = session.merge(task[1])
+        session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
+        instance = session.query(task[1].__class__).filter(task[1].__class__.id == task[1].id).first()
         requeued = False
         if isinstance(instance, Dossier):
             dossier = instance
@@ -334,6 +390,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 await message.delete()
                 logger.debug(f"Deleted statistics message ID {statistic.message_id} for player {statistic.player_id}")
         elif isinstance(instance, Unit):
+            return
             unit = instance
             player = session.query(Player).filter(Player.id == unit.player_id).first()
             if player:
@@ -375,7 +432,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         "LIGHT_MECH": templates.Armor_Stats
     }
 
-    def generate_unit_message(self, player: Player):
+    async def generate_unit_message(self, player: Player, session: Session):
         """
         Creates a message detailing a player's units, both active and inactive.
 
@@ -389,10 +446,10 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         unit_messages = []
 
         # Query inactive units
-        units = self.session.query(Unit).filter(Unit.player_id == player.id).all()
+        units = session.query(Unit).filter(Unit.player_id == player.id).all()
         logger.debug(f"Found {len(units)} units for player: {player.id}")
         for unit in units:
-            upgrades = self.session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == unit.id).all()
+            upgrades = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == unit.id).all()
             upgrade_list = ", ".join([upgrade.name for upgrade in upgrades])
             logger.debug(f"Unit {unit.name} of type {unit.unit_type} has status {unit.status.name}")
             logger.debug(f"Unit {unit.id} has upgrades: {upgrade_list}")
@@ -402,23 +459,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         combined_message = "\n".join(unit_messages)
         logger.debug(f"Generated unit message for player {player.id}: {combined_message}")
         return combined_message
-
-    @tasks.loop(hours=4)
-    async def session_keep_alive(self):
-        """
-        Maintains the database session by executing a query every 4 hours.
-
-        Ensures the session remains active by running a "SELECT 1" query periodically.
-
-        Raises:
-            Exception: If an error occurs during the keep-alive query.
-        """
-        logger.debug("Session Keep-Alive Task started")
-        try:
-            self.session.execute(text("SELECT 1"))
-            logger.debug("Session Keep-Alive Task successful")
-        except Exception as e:
-            logger.error(f"Session Keep-Alive Task failed: {e}")
 
     async def load_extensions(self, extensions: list[str]):
         """
@@ -452,10 +492,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         #await self.set_bot_nick("S.A.M.")
         asyncio.create_task(self.queue_consumer())
         await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign", type=ActivityType.playing))
-        try:
-            self.session_keep_alive.start()
-        except Exception as e:
-            logger.error(f"Error starting session keep-alive: {e}")
         if (getenv("STARTUP_ANIMATION", "false").lower() == "true"):
             try:
                 self.startup_animation.start()
@@ -475,7 +511,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             await asyncio.sleep(1)
         self.startup_animation.cancel()
 
-    async def close(self):
+    
+    async def close(self, session: Session):
         """
         Closes the bot and performs necessary cleanup.
 
@@ -483,13 +520,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         and closes the session.
         """
         await self.queue.put((4, None))
-        await self.resync_config(session=self.session)
-        try:
-            self.session.commit()
-        except Exception as e:
-            self.session.rollback()
-            logger.error(f"Error committing session, rolling back: {e}")
-        self.session.close()
+        await self.resync_config(session=session)
         await self.change_presence(status=Status.offline, activity=None)
         await super().close()
 
@@ -537,9 +568,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
         # wrap all the consumer methods in uses_db now, since we can access the sessionmaker after init
         decorator = uses_db(sessionmaker=self.sessionmaker)
+        self.queue_consumer = decorator(self.queue_consumer)
         self._handle_create_task = decorator(self._handle_create_task)
         self._handle_update_task = decorator(self._handle_update_task)
         self._handle_delete_task = decorator(self._handle_delete_task)
+        self.generate_unit_message = decorator(self.generate_unit_message)
+        self.close = decorator(self.close)
         
     async def start(self, *args, **kwargs):
         """

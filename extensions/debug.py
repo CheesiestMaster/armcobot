@@ -1,16 +1,21 @@
 from logging import getLogger
 from pathlib import Path
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, ui, TextStyle
-from sqlalchemy import text
+from discord import Interaction, app_commands as ac, ui, TextStyle, ButtonStyle, Embed, SelectOption, Forbidden, HTTPException
+from sqlalchemy import text, func
 import os
 from models import Player
+from asyncio import QueueEmpty
+import random
+from customclient import CustomClient
+from utils import uses_db
+from sqlalchemy.orm import Session
 logger = getLogger(__name__)
 
 class Debug(GroupCog):
     def __init__(self, bot: Bot):
         self.bot = bot
-        self.session = bot.session
+ 
         self.interaction_check = self.is_mod
         # get the list of extensions from the disk, and create a list of them for the autocomplete
         self.extensions = [f.stem for f in Path("extensions").glob("*.py") if f.stem != "__init__"]
@@ -78,11 +83,12 @@ class Debug(GroupCog):
 
     @ac.command(name="query", description="Run a SQL query")
     @ac.describe(query="SQL query to run")
-    async def query(self, interaction: Interaction, query: str):
+    @uses_db(CustomClient().sessionmaker)
+    async def query(self, interaction: Interaction, query: str, session: Session):
         try:
             logger.info(f"Running query: {query}")
-            result = self.session.execute(text(query))
-            self.session.commit()
+            result = session.execute(text(query))
+            session.commit()
             try:
                 rows = result.fetchall()
             except Exception:
@@ -93,10 +99,11 @@ class Debug(GroupCog):
             await interaction.response.send_message(f"Error: {e}", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="botcompany", description="make a company for the bot")
-    async def botcompany(self, interaction: Interaction):
+    @uses_db(CustomClient().sessionmaker)
+    async def botcompany(self, interaction: Interaction, session: Session):
         player = Player(discord_id=self.bot.user.id, name="Supply Allocation and Management", rec_points=0)
-        self.session.add(player)
-        self.session.commit()
+        session.add(player)
+        session.commit()
         await interaction.response.send_message("Bot company created", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="rp", description="Send a roleplay message")
@@ -116,6 +123,39 @@ class Debug(GroupCog):
 
         rp_modal.on_submit = on_submit
         await interaction.response.send_modal(rp_modal)
+
+    @ac.command(name="dump_queue", description="Empty all tasks in the queue")
+    async def dump_queue(self, interaction: Interaction):
+        await interaction.response.defer()
+        while not self.bot.queue.empty():
+            try:
+                self.bot.queue.get_nowait()
+            except QueueEmpty:
+                break # handle race condition gracefully
+        await interaction.followup.send("Queue emptied", ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="clear_deletable", description="Deletes all deletable messages in the channel.")
+    async def clear_deletable(self, interaction: Interaction, limit: int = 100):
+        """Deletes all deletable messages in the channel."""
+        channel = interaction.channel
+
+        # Fetch the last 100 messages (you can adjust this number as needed)
+        messages = [message async for message in channel.history(limit=limit)]
+
+        for message in messages:
+            # Check if the message is deletable (i.e., sent by the bot)
+            if message.author == self.bot.user:
+                try:
+                    await message.delete()
+                    logger.info(f"Deleted message: {message.content}")
+                except Forbidden:
+                    # The bot does not have permission to delete the message
+                    logger.warning(f"Failed to delete message: {message.content} (Forbidden)")
+                except HTTPException:
+                    # An HTTP error occurred (e.g., message too old)
+                    logger.error(f"Failed to delete message: {message.content} (HTTP Exception)")
+
+        await interaction.response.send_message("All deletable messages have been cleared.", ephemeral=True)
 
 bot: Bot = None
 async def setup(_bot: Bot):

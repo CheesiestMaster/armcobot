@@ -21,7 +21,7 @@ class Search(GroupCog):
                     bot (Bot): The bot instance the cog will be added to.
                 """
         self.bot = bot
-        self.session = bot.session
+ 
 
     @ac.command(name="search", description="Search for players of specific unit type and AO")
     @uses_db(sessionmaker=CustomClient().sessionmaker)

@@ -3,7 +3,7 @@ from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, SelectOption, TextStyle
 from models import Faq as Faq_model
 from templates import faq_response
-from utils import uses_db
+from utils import uses_db, chunk_list
 from customclient import CustomClient
 from sqlalchemy.orm import Session
 logger = getLogger(__name__)
@@ -20,7 +20,7 @@ async def is_answerer(interaction: Interaction):
 class Faq(GroupCog):
     def __init__(self, bot: Bot):
         self.bot = bot
-        self.session = bot.session
+ 
 
     @ac.command(name="how", description="How to use the FAQ")
     async def how(self, interaction: Interaction):
@@ -166,18 +166,3 @@ async def setup(_bot: Bot):
 
 async def teardown():
     bot.remove_cog(Faq.__name__) # remove_cog takes a string, not a class
-
-
-def chunk_list(lst: list, chunk_size: int):
-    """Splits a list into chunks of specified size."""
-    if chunk_size <= 0:
-        raise ValueError("Chunk size must be greater than 0")
-    
-    # Create chunks for all but the last chunk
-    chunks = [lst[i:i + chunk_size] for i in range(0, len(lst) - len(lst) % chunk_size, chunk_size)]
-    
-    # Handle the last chunk if there are remaining elements
-    if len(lst) % chunk_size != 0:
-        chunks.append(lst[-(len(lst) % chunk_size):])
-    
-    return chunks

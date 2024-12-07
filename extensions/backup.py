@@ -7,12 +7,15 @@ from sqlalchemy import select
 from FileRoller import FileRoller
 import asyncio
 import os
+from customclient import CustomClient
+from utils import uses_db
+from sqlalchemy.orm import Session
 logger = getLogger(__name__)
 
 class Backup(GroupCog):
     def __init__(self, bot: Bot):
         self.bot = bot
-        self.session = bot.session
+ 
         self.use_ephemeral = bot.use_ephemeral
         self.xls_roller = FileRoller("backup.xlsx", 6)
         self.sql_roller = FileRoller("backup.sql", 2)
@@ -25,7 +28,8 @@ class Backup(GroupCog):
         return valid
 
     @ac.command(name="create-xls", description="Create an Excel file with the current state of the database")
-    async def create_xls(self, interaction: Interaction):
+    @uses_db(CustomClient().sessionmaker)
+    async def create_xls(self, interaction: Interaction, session: Session):
         await interaction.response.defer(ephemeral=self.use_ephemeral)
         
         # Roll the file and prepare for writing
@@ -41,7 +45,7 @@ class Backup(GroupCog):
             for table_name in table_names:
                 # Execute the query and fetch all rows
                 query = select(Base.metadata.tables[table_name])
-                result = self.session.execute(query)
+                result = session.execute(query)
                 rows = result.fetchall()
 
                 # Convert rows to DataFrame

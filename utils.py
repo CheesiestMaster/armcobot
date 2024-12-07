@@ -4,6 +4,8 @@ from functools import lru_cache, wraps
 from inspect import Signature
 from sqlalchemy.orm import scoped_session
 from logging import getLogger
+import asyncio
+from collections import deque
 
 logger = getLogger(__name__)
 
@@ -59,7 +61,7 @@ def uses_db(sessionmaker):
         async def wrapper(*args, **kwargs): 
             with session_scope() as session: # we are not currently using async with, because the sessionmaker is not async yet
                 try:
-                    logger.debug(f"calling {func.__name__} with args: {args} and kwargs: {kwargs}")
+                    logger.debug(f"calling {func.__name__}")
                     result = await func(*args, session=session, **kwargs)
                     logger.debug(f"commiting session for {func.__name__}")
                     session.commit()
@@ -87,3 +89,152 @@ def string_to_list(string: str) -> list[str]:
         string = set(string.split(","))
     string = [name.strip() for name in string]
     return string
+
+class RollingCounter:
+    def __init__(self, duration: int, loop=None):
+        """
+        Initializes the RollingCounter with a specified duration and event loop.
+
+        :param duration: Duration in seconds to keep each increment active. Must be > 0.
+        :param loop: Optional asyncio event loop to use. Defaults to asyncio.get_event_loop().
+        """
+        if duration <= 0:
+            raise ValueError("Duration must be greater than 0.")
+        self.duration = duration
+        self.loop = loop or asyncio.get_event_loop()
+        self.counter = 0
+        self.tasks = deque()
+
+    async def _decrement_after_delay(self):
+        """Waits for the specified duration, then decrements the counter."""
+        await asyncio.sleep(self.duration)
+        self.counter -= 1
+        self.tasks.popleft()  # Remove the completed task from the queue
+
+    def set(self):
+        """
+        Increments the counter and schedules a task to decrement it after the duration.
+        """
+        self.counter += 1
+        task = self.loop.create_task(self._decrement_after_delay())
+        self.tasks.append(task)
+
+    def get(self) -> int:
+        """
+        Returns the current value of the counter.
+        """
+        return self.counter
+
+    def average(self) -> float:
+        """
+        Returns the average number of increments per second over the duration.
+
+        :return: Average value (counter / duration)
+        """
+        return self.counter / self.duration
+
+class RollingCounterDict:
+    def __init__(self, duration: int, loop=None):
+        """
+        Initializes a RollingCounterDict with a specified duration for each counter.
+
+        :param duration: Duration in seconds for each RollingCounter. Must be > 0.
+        :param loop: Optional asyncio event loop to use. Defaults to asyncio.get_event_loop().
+        """
+        if duration <= 0:
+            raise ValueError("Duration must be greater than 0.")
+        self.duration = duration
+        self.loop = loop or asyncio.get_event_loop()
+        self.counters = {}
+
+    def set(self, key: str):
+        """
+        Increments the counter for the given key, initializing it if it doesn't exist.
+
+        :param key: The key for the counter to increment.
+        """
+        if key not in self.counters:
+            self.counters[key] = RollingCounter(self.duration, self.loop)
+        self.counters[key].set()
+
+    def get(self, key: str) -> int:
+        """
+        Returns the current value of the counter for the given key, or 0.0 as a sentinel if the key doesn't exist.
+
+        :param key: The key for the counter.
+        :return: The current value of the counter or 0.0.
+        """
+        if key in self.counters:
+            return self.counters[key].get()
+        return float(0)
+
+    def __setitem__(self, key: str, _: None):
+        """
+        Increments the counter for the given key, initializing it if it doesn't exist.
+
+        :param key: The key for the counter to increment.
+        """
+        self.set(key)
+
+    def __getitem__(self, key: str) -> int:
+        """
+        Returns the current value of the counter for the given key, or 0.0 as a sentinel if the key doesn't exist.
+
+        :param key: The key for the counter.
+        :return: The current value of the counter or 0.0.
+        """
+        return self.get(key)
+    
+def chunk_list(lst: list, chunk_size: int) -> list[list]:
+    """Splits a list into chunks of specified size."""
+    if chunk_size <= 0:
+        raise ValueError("Chunk size must be greater than 0")
+    
+    # Create chunks for all but the last chunk
+    chunks = [lst[i:i + chunk_size] for i in range(0, len(lst) - len(lst) % chunk_size, chunk_size)]
+    
+    # Handle the last chunk if there are remaining elements
+    if len(lst) % chunk_size != 0:
+        chunks.append(lst[-(len(lst) % chunk_size):])
+    
+    return chunks
+
+class Paginator:
+    # a bidirectional iterator over a list of items, with a constrained view size
+    def __init__(self, items: list, view_size: int):
+        self.items = chunk_list(items, view_size)
+        self.index = 0
+
+    def __iter__(self):
+        return self
+    
+    def next(self, is_iter: bool = False):
+        if self.index >= len(self.items):
+            if is_iter:
+                raise StopIteration
+            else:
+                return self.items[self.index] # bump off the end and return the same item
+        result = self.items[self.index]
+        self.index += 1
+        return result
+    
+    def previous(self):
+        if self.index == 0:
+            return self.items[self.index]
+        self.index -= 1
+        return self.items[self.index]
+    
+    def __next__(self):
+        return self.next(True)
+    
+    def current(self):
+        return self.items[self.index]
+    
+    def has_next(self):
+        return self.index < len(self.items)
+    
+    def has_previous(self):
+        return self.index > 0
+    
+    def __len__(self):
+        return len(self.items)

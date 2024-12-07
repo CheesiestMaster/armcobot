@@ -62,6 +62,8 @@ class Unit(GroupCog):
                 logger.info(f"Creating unit {unit_name} for player {player.name}")
                 unit = Unit_model(player_id=player.id, name=unit_name, unit_type=unit_type, active=False)
                 session.add(unit)
+                session.commit()
+                CustomClient().queue.put_nowait((1, unit))
                 logger.debug(f"Unit {unit.name} created for player {player.name}")
                 button.disabled = True
                 await interaction.response.send_message(f"Unit {unit.name} created", ephemeral=CustomClient().use_ephemeral)
@@ -181,6 +183,7 @@ class Unit(GroupCog):
                     return
                 logger.debug(f"Removing unit {unit.name}")
                 session.delete(unit)
+                session.commit()
                 CustomClient().queue.put_nowait((1, player))
                 await interaction.response.send_message(f"Unit {unit.name} removed", ephemeral=CustomClient().use_ephemeral)
 
@@ -268,6 +271,7 @@ class Unit(GroupCog):
                     nonlocal player
                     new_name = interaction.data["components"][0]["components"][0]["value"]
                     player = session.merge(player)
+                    _unit = session.merge(unit)
                     logger.debug(f"New name: {new_name}")
                     if session.query(Unit_model).filter(Unit_model.name == new_name, Unit_model.player_id == player.id).first():
                         logger.error(f"Unit with name {new_name} already exists for rename command")
@@ -285,8 +289,8 @@ class Unit(GroupCog):
                         logger.error("Unit name is not ASCII for rename command")
                         await interaction.response.send_message("Unit names must be ASCII", ephemeral=CustomClient().use_ephemeral)
                         return
-                    unit.name = new_name
-                    session.flush()
+                    _unit.name = new_name
+                    session.commit()
                     CustomClient().queue.put_nowait((1, unit))
 
                     logger.info(f"Unit renamed to {new_name}")

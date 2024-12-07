@@ -297,6 +297,7 @@ class Admin(GroupCog):
             await interaction.response.send_message("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
             return
         self.bot.queue.put_nowait((1, _player))
+        #await interaction.followup.send("Refreshed statistics and dossiers for all selected players", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="specialupgrade", description="Give a player a one-off or relic item")
     @ac.describe(player="The player to give the item to")

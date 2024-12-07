@@ -2,12 +2,15 @@ from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ChannelType
 from models import Config as Config_model, Dossier, Player, Statistic
+from customclient import CustomClient
+from utils import uses_db
+from sqlalchemy.orm import Session
 logger = getLogger(__name__)
 
 class Config(GroupCog):
     def __init__(self, bot: Bot):
         self.bot = bot
-        self.session = bot.session
+ 
         self.interaction_check = self.is_mod
 
     async def is_mod(self, interaction: Interaction):
@@ -39,36 +42,46 @@ class Config(GroupCog):
             await interaction.response.send_message("You don't have permission to set the bot's nickname", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="setdossier", description="Set the dossier channel to the current channel")
-    async def setdossier(self,interaction: Interaction):
+    @uses_db(CustomClient().sessionmaker)
+    async def setdossier(self,interaction: Interaction, session: Session):
         if interaction.channel.type != ChannelType.text:
             await interaction.response.send_message("This command can only be used in a text channel", ephemeral=self.bot.use_ephemeral)
             return
         self.bot.config["dossier_channel_id"] = interaction.channel.id
         await self.bot.resync_config()
         logger.info(f"Dossier channel set to {interaction.channel.name}")
-        old_dossiers = self.session.query(Dossier).all()
+        old_dossiers = session.query(Dossier).all()
         for dossier in old_dossiers:
-            self.session.delete(dossier)
-        self.session.commit()
-        for player in self.session.query(Player).all():
+            session.delete(dossier)
+        session.commit()
+        for player in session.query(Player).all():
             self.bot.queue.put_nowait((0, player))
         await interaction.response.send_message(f"Dossier channel set to {interaction.channel.mention}", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="setstatistics", description="Set the statistics channel to the current channel")
-    async def setstatistics(self,interaction: Interaction):
+    @uses_db(CustomClient().sessionmaker)
+    async def setstatistics(self,interaction: Interaction, session: Session):
         if interaction.channel.type != ChannelType.text:
             await interaction.response.send_message("This command can only be used in a text channel", ephemeral=self.bot.use_ephemeral)
             return
         self.bot.config["statistics_channel_id"] = interaction.channel.id
         await self.bot.resync_config()
         logger.info(f"Statistics channel set to {interaction.channel.name}")
-        old_statistics = self.session.query(Statistic).all()
+        old_statistics = session.query(Statistic).all()
         for statistic in old_statistics:
-            self.session.delete(statistic)
-        self.session.commit()
-        for player in self.session.query(Player).all():
+            session.delete(statistic)
+        session.commit()
+        for player in session.query(Player).all():
             self.bot.queue.put_nowait((0, player))
         await interaction.response.send_message(f"Statistics channel set to {interaction.channel.mention}", ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="list_configs", description="List all configurations")
+    @uses_db(CustomClient().sessionmaker)
+    async def list_configs(self, interaction: Interaction, session: Session):
+        configs = session.query(Config_model).all()
+        config_list = [f"{config.key}: {config.value}" for config in configs]
+        config_str = "\n".join(config_list)
+        await interaction.response.send_message(f"Configurations:\n{config_str}", ephemeral=self.bot.use_ephemeral)
 
 bot: Bot = None
 async def setup(_bot: Bot):
