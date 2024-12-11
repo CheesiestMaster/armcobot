@@ -83,7 +83,7 @@ class Unit(BaseModel):
     area_operation = Column(String(30), default="ARMCO")
     
     # relationships
-    player = relationship("Player", back_populates="units", lazy="joined")
+    player = relationship("Player", back_populates="units")
     upgrades = relationship("PlayerUpgrade", back_populates="unit", cascade="all, delete-orphan", lazy="subquery") # subquery for parent sides, joined for child sides
     campaign = relationship("Campaign", back_populates="units", lazy="joined")
 
@@ -99,7 +99,7 @@ class Campaign(BaseModel):
     required_role = Column(BigInteger, nullable=True) # null for no role required
     # relationships
     units = relationship("Unit", back_populates="campaign", lazy="subquery")
-    invites = relationship("CampaignInvite", back_populates="campaign", lazy="subquery")
+    invites = relationship("CampaignInvite", back_populates="campaign", cascade="all, delete-orphan", lazy="subquery")
 
 class CampaignInvite(BaseModel):
     __tablename__ = "campaign_invites"
@@ -199,6 +199,6 @@ class ShopUpgradeUnitTypes(BaseModel):
 
 [event.listen(model, "after_insert", after_insert) for model in [Player, Unit, PlayerUpgrade]]
 [event.listen(model, "after_update", after_update) for model in [Player, Unit, PlayerUpgrade]]
-[event.listen(model, "after_delete", after_delete) for model in [Unit, PlayerUpgrade, Dossier, Statistic]]
+[event.listen(model, "after_delete", after_delete) for model in [PlayerUpgrade, Dossier, Statistic]]
 
 create_all = Base.metadata.create_all

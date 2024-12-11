@@ -55,6 +55,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     use_ephemeral: bool
     config: dict
     sessionmaker: Callable
+    start_time: datetime
     def __init__(self, session: Session,/, sessionmaker: Callable, **kwargs):
         """
         Initializes the CustomClient instance.
@@ -373,7 +374,10 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
     async def _handle_delete_task(self, task: tuple[int, Any], session: Session):
         session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
-        instance = session.query(task[1].__class__).filter(task[1].__class__.id == task[1].id).first()
+        logger.debug(f"requerying instance for delete task")
+        with session.no_autoflush: # disable flush on delete, to avoid a reinsert
+            instance = session.query(task[1].__class__).filter(task[1].__class__.id == task[1].id).first()
+        logger.debug(f"instance found for delete task: {instance}") # we can't log the task as it's possibly unbound, but we can log the instance
         requeued = False
         if isinstance(instance, Dossier):
             dossier = instance
@@ -390,6 +394,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 await message.delete()
                 logger.debug(f"Deleted statistics message ID {statistic.message_id} for player {statistic.player_id}")
         elif isinstance(instance, Unit):
+            logger.debug(f"instance is a unit, expunging")
+            session.expunge(instance)
             return
             unit = instance
             player = session.query(Player).filter(Player.id == unit.player_id).first()
@@ -411,6 +417,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     requeued = True
                 else:
                     logger.debug(f"Already queued update task for player {player.id} due to upgrade {upgrade.id} Location 8")
+        if instance: # if the instance is not None, we need to expunge it, if the instance is None we can ignore it
+            session.expunge(instance)
 
     async def _handle_terminate_task(self, task): 
         logger.debug("Queue consumer terminating")
@@ -510,7 +518,17 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             await message.edit(content=frame)
             await asyncio.sleep(1)
         self.startup_animation.cancel()
+        self.notify_on_24_hours.start()
 
+    @tasks.loop(count=1)
+    async def notify_on_24_hours(self):
+        logger.debug("Starting 24 hour notification loop")
+        await asyncio.sleep(24 * 60 * 60)
+        channel = await self.fetch_channel(1211454073383952395)
+        owner = await self.fetch_user(533009808501112881)
+        await channel.send(f"{owner.mention}\n# I have successfully survived 24 Hours!")
+        logger.debug("24 hour notification loop finished")
+        self.notify_on_24_hours.cancel()
     
     async def close(self, session: Session):
         """
@@ -554,14 +572,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             if last_ping and (datetime.now() - last_ping).total_seconds() < 10:
                 await interaction.response.send_message("I've been pinged recently, wait a bit before pinging again", ephemeral=True)
                 return
-            last_pinger = interaction.user.id
+            last_pinger = interaction.user.id if not interaction.user.id == 533009808501112881 else last_pinger # don't lockout the owner from pings
             last_ping = datetime.now()
             await interaction.response.send_message(f"Pong! I was last restarted at <t:{int(self.start_time.timestamp())}:F>, <t:{int(self.start_time.timestamp())}:R>")
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
         #await self.load_extension("extensions.configuration") # for initial setup, we want to disable all user commands, so we only load the configuration extension
         await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup", "extensions.search", "extensions.faq", "extensions.campaigns"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
-        
+
         logger.debug("Syncing slash commands")
         await self.tree.sync()
         logger.debug("Slash commands synced")

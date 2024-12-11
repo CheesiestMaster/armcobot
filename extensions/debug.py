@@ -10,20 +10,27 @@ import random
 from customclient import CustomClient
 from utils import uses_db
 from sqlalchemy.orm import Session
+from coloredformatter import stats
+from templates import stats_template
+from datetime import datetime, timedelta
+from psutil import Process
+from MessageManager import MessageManager
 logger = getLogger(__name__)
 
 class Debug(GroupCog):
-    def __init__(self, bot: Bot):
+    def __init__(self, bot: CustomClient):
         self.bot = bot
  
-        self.interaction_check = self.is_mod
+        self.interaction_check = self._is_mod
         # get the list of extensions from the disk, and create a list of them for the autocomplete
         self.extensions = [f.stem for f in Path("extensions").glob("*.py") if f.stem != "__init__"]
 
-    async def autocomplete_extensions(self, interaction: Interaction, current: str):
+        self.process = Process() # get the current process
+
+    async def _autocomplete_extensions(self, interaction: Interaction, current: str):
         return [ac.Choice(name=extension, value=extension) for extension in self.extensions if current.lower() in extension.lower() and not extension.startswith("template")]
 
-    async def is_mod(self, interaction: Interaction):
+    async def _is_mod(self, interaction: Interaction):
         valid = any(interaction.user.get_role(role_id) for role_id in self.bot.mod_roles)
         if not valid:
             logger.warning(f"{interaction.user.global_name} tried to use debug commands")
@@ -47,7 +54,7 @@ class Debug(GroupCog):
             await self.bot.close() # this will trigger the start.sh script to restart, if we used kill it would completely stop the script
         
     @ac.command(name="reload", description="Reload an extension")
-    @ac.autocomplete(extension=autocomplete_extensions)
+    @ac.autocomplete(extension=_autocomplete_extensions)
     async def reload(self, interaction: Interaction, extension: str):
         extension = "extensions." + extension
         logger.info(f"Reload command invoked for {extension}")
@@ -56,7 +63,7 @@ class Debug(GroupCog):
         await self.bot.tree.sync()
 
     @ac.command(name="load", description="Load an extension")
-    @ac.autocomplete(extension=autocomplete_extensions)
+    @ac.autocomplete(extension=_autocomplete_extensions)
     async def load(self, interaction: Interaction, extension: str):
         extension = "extensions." + extension
         logger.info(f"Load command invoked for {extension}")
@@ -68,7 +75,7 @@ class Debug(GroupCog):
         await self.bot.tree.sync()
     # unload cannot have "debug" as it's argument, as that would cause a deadlock
     @ac.command(name="unload", description="Unload an extension")
-    @ac.autocomplete(extension=autocomplete_extensions)
+    @ac.autocomplete(extension=_autocomplete_extensions)
     async def unload(self, interaction: Interaction, extension: str):
         extension = "extensions." + extension
         if extension == "extensions.debug":
@@ -98,16 +105,18 @@ class Debug(GroupCog):
             logger.error(f"Error running query: {e}")
             await interaction.response.send_message(f"Error: {e}", ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="botcompany", description="make a company for the bot")
     @uses_db(CustomClient().sessionmaker)
-    async def botcompany(self, interaction: Interaction, session: Session):
+    async def botcompany(self, interaction: Interaction, _: MessageManager, session: Session):
+        existing = session.query(Player).filter(Player.discord_id == self.bot.user.id).first()
+        if existing:
+            await interaction.response.send_message("Bot company already exists", ephemeral=self.bot.use_ephemeral)
+            return
         player = Player(discord_id=self.bot.user.id, name="Supply Allocation and Management", rec_points=0)
         session.add(player)
         session.commit()
         await interaction.response.send_message("Bot company created", ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="rp", description="Send a roleplay message")
-    async def rp(self, interaction: Interaction):
+    async def rp(self, interaction: Interaction, _: MessageManager):
         # create a modal with a text input for the message, this can be a two-line code
         rp_modal = ui.Modal(title="Roleplay Message")
         rp_modal.add_item(ui.TextInput(label="Message", style=TextStyle.paragraph))
@@ -124,8 +133,8 @@ class Debug(GroupCog):
         rp_modal.on_submit = on_submit
         await interaction.response.send_modal(rp_modal)
 
-    @ac.command(name="dump_queue", description="Empty all tasks in the queue")
-    async def dump_queue(self, interaction: Interaction):
+    
+    async def dump_queue(self, interaction: Interaction, _: MessageManager):
         await interaction.response.defer()
         while not self.bot.queue.empty():
             try:
@@ -157,8 +166,37 @@ class Debug(GroupCog):
 
         await interaction.response.send_message("All deletable messages have been cleared.", ephemeral=True)
 
+    
+    async def stats(self, interaction: Interaction, _: MessageManager):
+        uptime: timedelta = datetime.now() - self.bot.start_time
+        start_time = f"<t:{int(self.bot.start_time.timestamp())}:F>"
+        resident = self.process.memory_info().rss / 1024 ** 2 # resident memory in MB
+        cpu_time = self.process.cpu_times().user + self.process.cpu_times().system # total CPU time in seconds
+        average_cpu = cpu_time / uptime.total_seconds() if uptime.total_seconds() > 0 else 0 # average CPU usage
+        await interaction.response.send_message(stats_template.format(**stats, **locals()), ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="menu", description="Show the menu")
+    async def menu(self, interaction: Interaction):
+        # I am moving most of the debug commands to the menu, which will use a MessageManager to keep the command list shorter
+        mm = MessageManager(interaction)
+        view = ui.View(timeout=None)
+
+        options = [v for k, v in self.__class__.__dict__.items() if not k.startswith("_") and callable(v)]
+        if not options:
+            await interaction.response.send_message("No commands found", ephemeral=self.bot.use_ephemeral)
+            return
+
+        select = ui.Select(placeholder="Select a command", options=[SelectOption(label=option.__name__, value=option.__name__) for option in options])
+        async def on_select(interaction: Interaction):
+            command = getattr(self, select.values[0])
+            await command(interaction, mm)
+        select.callback = on_select
+
+        view.add_item(select)
+        await mm.send_message(embed=Embed(title="Debug Menu", description="please select a command"), view=view, ephemeral=self.bot.use_ephemeral)
+
 bot: Bot = None
-async def setup(_bot: Bot):
+async def setup(_bot: CustomClient):
     global bot
     bot = _bot
     logger.debug("Setting up Debug cog")

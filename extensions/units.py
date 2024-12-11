@@ -174,10 +174,14 @@ class Unit(GroupCog):
             def __init__(self):
                 options = [SelectOption(label=unit.name, value=unit.name) for unit in units]
                 super().__init__(placeholder="Select the unit to remove", options=options)
+                self.player_id = player.id
+                session.expunge(player)
+                for unit in units:
+                    session.expunge(unit)
 
             @uses_db(sessionmaker=CustomClient().sessionmaker)
             async def callback(self, interaction: Interaction, session: Session):
-                unit: Unit_model = session.query(Unit_model).filter(Unit_model.name == self.values[0]).first()
+                unit: Unit_model = session.query(Unit_model).filter(Unit_model.name == self.values[0], Unit_model.player_id == self.player_id).first()
                 if unit.unit_type == "STOCKPILE":
                     await interaction.response.send_message("Stockpile units cannot be removed", ephemeral=CustomClient().use_ephemeral)
                     return
@@ -188,7 +192,12 @@ class Unit(GroupCog):
                 await interaction.response.send_message(f"Unit {unit.name} removed", ephemeral=CustomClient().use_ephemeral)
 
         view = View()
-        view.add_item(UnitSelect())
+        try:
+            view.add_item(UnitSelect())
+        except Exception as e:
+            logger.error(f"Error adding unit select to view: {e}")
+            await interaction.response.send_message("Unexpected error, please tell Cheese", ephemeral=CustomClient().use_ephemeral)
+            return
         await interaction.response.send_message("Please select the unit to remove", view=view, ephemeral=CustomClient().use_ephemeral)
         
     @ac.command(name="deactivate", description="Deactivate a unit")

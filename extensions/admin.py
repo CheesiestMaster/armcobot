@@ -9,7 +9,7 @@ from utils import has_invalid_url, uses_db, string_to_list
 from sqlalchemy.orm import Session
 logger = getLogger(__name__)
 
-class Admin(GroupCog):
+class Admin(GroupCog, group_name="admin", name="Admin"):
     """
     Admin commands for managing players, units, points, and medals in the bot.
     """

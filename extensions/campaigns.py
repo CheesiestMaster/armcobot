@@ -124,6 +124,7 @@ class Campaigns(GroupCog):
             logger.error(f"{interaction.user.name} does not have permission to remove campaign {campaign}")
             await interaction.response.send_message("You don't have permission to remove this campaign", ephemeral=True)
             return
+        await interaction.response.defer(ephemeral=True)
         # deactivate all units
         for unit in _campaign.units:
             unit.active = False
@@ -131,11 +132,15 @@ class Campaigns(GroupCog):
             unit.campaign_id = None
             unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
         # delete all invites because they are no longer valid
-        session.query(CampaignInvite).filter(CampaignInvite.campaign_id == _campaign.id).delete()
+        invites = session.query(CampaignInvite).filter(CampaignInvite.campaign_id == _campaign.id).all()
+        for invite in invites:
+            session.delete(invite)
+        session.flush()
         # delete the campaign
         session.delete(_campaign)
+        session.flush()
         logger.info(f"Campaign {campaign} removed")
-        await interaction.response.send_message(f"Campaign {campaign} removed", ephemeral=True)
+        await interaction.followup.send(f"Campaign {campaign} removed", ephemeral=True)
 
     @ac.command(name="payout", description="Payout a campaign")
     @ac.check(is_gm)

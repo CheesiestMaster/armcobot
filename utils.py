@@ -133,6 +133,12 @@ class RollingCounter:
         """
         return self.counter / self.duration
 
+    def __str__(self):
+        return str(self.counter) # make it easy to use in templates
+    
+    def __repr__(self):
+        return f"RollingCounter(duration={self.duration}, counter={self.counter})"
+
 class RollingCounterDict:
     def __init__(self, duration: int, loop=None):
         """
