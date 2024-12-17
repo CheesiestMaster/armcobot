@@ -20,9 +20,11 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         super().__init__()
         self.bot = bot
         if os.getenv("PROD", False):
-            self.interaction_check = self.is_mod # disabled for development, as those roles don't exist on the dev guild
+            self.interaction_check = self._is_mod
 
-    async def is_mod(self, interaction: Interaction):
+        self._setup_context_menus()
+
+    async def _is_mod(self, interaction: Interaction):
         """
         Check if the user is a moderator with the necessary role.
         """
@@ -31,11 +33,52 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             logger.warning(f"{interaction.user.name} tried to use admin commands")
         return valid
     
+    async def _setup_context_menus(self):
+        @self.bot.tree.context_menu(name="Req Point")
+        @ac.check(self._is_mod)
+        async def reqpoint_menu(interaction: Interaction, target: Member):
+            # send a modal to get the point amount, then call the private method to handle the change
+            reqpoint_modal = ui.Modal(title="Req Point", custom_id="reqpoint_modal")
+            reqpoint_modal.add_item(ui.TextInput(label="How many points?", style=TextStyle.short, placeholder="Enter a number"))
+            async def on_submit(_interaction: Interaction):
+                points = _interaction.data["components"][0]["components"][0]["value"]
+                if not points.isdigit():
+                    await _interaction.response.send_message("Please enter a valid number", ephemeral=self.bot.use_ephemeral)
+                    return
+                points = int(points)
+                await self._change_req_points(_interaction, target, points)
+            reqpoint_modal.on_submit = on_submit
+            await interaction.response.send_modal(reqpoint_modal)
+
+        @self.bot.tree.context_menu(name="Bonus Pay")
+        @ac.check(self._is_mod)
+        async def bonuspay_menu(interaction: Interaction, target: Member):
+            bonuspay_modal = ui.Modal(title="Bonus Pay", custom_id="bonuspay_modal")
+            bonuspay_modal.add_item(ui.TextInput(label="How many points?", style=TextStyle.short, placeholder="Enter a number"))
+            async def on_submit(_interaction: Interaction):
+                points = _interaction.data["components"][0]["components"][0]["value"]
+                if not points.isdigit():
+                    await _interaction.response.send_message("Please enter a valid number", ephemeral=self.bot.use_ephemeral)
+                    return
+                points = int(points)
+                await self._change_bonuspay(_interaction, target, points)
+            bonuspay_modal.on_submit = on_submit
+            await interaction.response.send_modal(bonuspay_modal)
+
+        @self.bot.tree.context_menu(name="Refresh Stats")
+        @ac.check(self._is_mod)
+        async def refresh_stats_menu(interaction: Interaction, target: Member):
+            await self._refresh_player(interaction, target)
+
+
     @ac.command(name="recpoint", description="Give or remove a number of requisition points from a player")
     @ac.describe(player="The player to give or remove points from")
     @ac.describe(points="The number of points to give or remove")
+    async def reqpoint_command(self, interaction: Interaction, player: Member, points: int):
+        await self._change_req_points(interaction, player, points)
+
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def recpoint(self, interaction: Interaction, player: Member, points: int, session: Session):
+    async def _change_req_points(self, interaction: Interaction, player: Member, points: int, session: Session):
         """
         Adjusts a player's requisition points by adding or removing a specified amount.
         """
@@ -50,62 +93,15 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
         await interaction.response.send_message(f"{player.name} now has {player.rec_points} requisition points", ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="bulk_recpoint", description="Give or remove a number of requisition points from a set of players")
-    @ac.describe(points="The number of points to give or remove")
-    @ac.describe(status="Status of the unit (Inactive = 0, Active = 1, MIA = 2, KIA = 3)")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def bulk_recpoint(self, interaction: Interaction, status: str, points: int, session: Session):
-        """
-        Modify requisition points for players with units of a specific status.
-        """
-        # Find all units with corresponding Enum status
-        status_enum = UnitStatus(status)
-        units = session.query(Unit).filter(Unit.status == status_enum).all()
-        for unit in units:
-            # Find player of each unit and update their recpoints
-            player = unit.player
-            player.rec_points += points
-            logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
-        await interaction.response.send_message(f"Players of units of the status {status} have received {points} requisition points", ephemeral=self.bot.use_ephemeral)
-    
-    @ac.command(name="bulk_recpoint_by_name", description="Give or remove a number of requisition points from a set of players by name")
-    @ac.describe(points="The number of requisition points to give or remove")
-    async def bulk_recpoint_by_name(self, interaction: Interaction, points: int):
-        """
-        Adjust requisition points for players by entering their names in a modal form.
-        """
-        brp_modal = Modal(title="Bulk Requisition Points by Name", custom_id="bulk_recpoint_by_name")
-        brp_modal.add_item(TextInput(label="Player names", custom_id="player_names", style=TextStyle.paragraph))
-        @uses_db(sessionmaker=CustomClient().sessionmaker) # we need to decorate the callback, as the command itself has left scope
-        async def brp_modal_callback(interaction: Interaction, session: Session):
-            player_names = interaction.data["components"][0]["components"][0]["value"]
-            logger.debug(f"Received player names: {player_names}")
-            player_names = string_to_list(player_names)
-            if len(player_names) == 0:
-                await interaction.response.send_message("No player names provided", ephemeral=self.bot.use_ephemeral)
-                return
-            logger.debug(f"Parsed player names: {player_names}")
-            # we need to convert the discord names to discord ids, then convert those to Player objects
-            members: list[Member] = await interaction.guild.fetch_members(limit=None).flatten()
-            chosen_members = {member for member in members if member.global_name in player_names}
-            discord_ids = {member.id for member in chosen_members}
-            players = session.query(Player).filter(Player.discord_id.in_(discord_ids)).all()
-            failed_players = []
-            for player in players:
-                if player.rec_points + points < 0:
-                    failed_players.append(player.name)
-                    continue
-                player.rec_points += points
-            await interaction.response.send_message(f"Players {chosen_members} have been updated, {', '.join(failed_players)} failed", ephemeral=self.bot.use_ephemeral)
-
-        brp_modal.on_submit = brp_modal_callback
-        await interaction.response.send_modal(brp_modal)
-
     @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
     @ac.describe(player="The player to give or remove bonus pay from")
     @ac.describe(points="The number of bonus pay to give or remove")
+    async def bonuspay_command(self, interaction: Interaction, player: Member, points: int):
+        await self._change_bonuspay(interaction, player, points)
+
+
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def bonuspay(self, interaction: Interaction, player: Member, points: int, session: Session):
+    async def _change_bonuspay(self, interaction: Interaction, player: Member, points: int, session: Session):
         """
         Modify a player's bonus pay by adding or removing a specified amount.
         """
@@ -120,58 +116,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         logger.debug(f"User {player.name} now has {player.bonus_pay} bonus pay")
         await interaction.response.send_message(f"{player.name} now has {player.bonus_pay} bonus pay", ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="bulk_bonuspay", description="Give or remove a number of bonus pay from a set of players")
-    @ac.describe(points="The number of bonus pay to give or remove")
-    @ac.describe(status="Status of the unit (Inactive = 0, Active = 1, MIA = 2, KIA = 3)")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def bulk_bonus_pay(self, interaction: Interaction, status: str, points: int, session: Session):
-        """
-        Modify bonus pay for players with units of a specific status.
-        """
-        # Find all units with corresponding Enum status
-        status_enum = UnitStatus(status)
-        units = session.query(Unit).filter(Unit.status == status_enum).all()
-        for unit in units:
-            # Find player of each unit and update their bonuspay
-            player = unit.player
-            player.bonus_pay += points
-            logger.debug(f"User {player.name} now has {player.bonus_pay} requisition points")
-        await interaction.response.send_message(f"Players of units of the status {status} have received {points} bonus pay", ephemeral=self.bot.use_ephemeral)
-
-    @ac.command(name="bulk_bonuspay_by_name", description="Give or remove a number of bonus pay from a set of players by name")
-    @ac.describe(points="The number of bonus pay to give or remove")
-    async def bulk_bonuspay_by_name(self, interaction: Interaction, points: int):
-        """
-        Adjust bonus pay for players by entering their names in a modal form.
-        """
-        bbp_modal = Modal(title="Bulk Bonus Pay by Name", custom_id="bulk_bonuspay_by_name")
-        bbp_modal.add_item(TextInput(label="Player names", custom_id="player_names", style=TextStyle.paragraph))
-        @uses_db(sessionmaker=CustomClient().sessionmaker) # we need to decorate the callback, as the command itself has left scope
-        async def bbp_modal_callback(interaction: Interaction, session: Session):
-            player_names = interaction.data["components"][0]["components"][0]["value"]
-            logger.debug(f"Received player names: {player_names}")
-            player_names = string_to_list(player_names)
-            if len(player_names) == 0:
-                await interaction.response.send_message("No player names provided", ephemeral=self.bot.use_ephemeral)
-                return
-            logger.debug(f"Parsed player names: {player_names}")
-            # we need to convert the discord names to discord ids, then convert those to Player objects
-            members = [member async for member in await interaction.guild.fetch_members(limit=None)]
-            chosen_members = {member for member in members if member.global_name in player_names}
-            discord_ids = {member.id for member in chosen_members}
-            players = session.query(Player).filter(Player.discord_id.in_(discord_ids)).all()
-            failed_players = []
-            for player in players:
-                if player.bonus_pay + points < 0:
-                    failed_players.append(player.name)
-                    continue
-                player.bonus_pay += points
-            await interaction.response.send_message(f"Players {chosen_members} have been updated, {', '.join(failed_players)} failed", ephemeral=self.bot.use_ephemeral)
-
-        bbp_modal.on_submit = bbp_modal_callback
-        await interaction.response.send_modal(bbp_modal)
-
-    @ac.command(name="activateunits", description="Activate multiple units")
+    #@ac.command(name="activateunits", description="Activate multiple units")
     async def activateunits(self, interaction: Interaction):
         """
         Activates several units by name through a modal form.
@@ -286,8 +231,12 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     
     @ac.command(name="refresh_player", description="Refresh the statistics and dossiers for a player")
     @ac.describe(player="The player to refresh the statistics and dossiers for")
+    async def refresh_player_command(self, interaction: Interaction, player: Member):
+        await self._refresh_player(interaction, player)
+
+
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def refresh_player(self, interaction: Interaction, player: Member, session: Session):
+    async def _refresh_player(self, interaction: Interaction, player: Member, session: Session):
         """
         Refreshes the statistics and dossiers for a specific player.
         """
@@ -297,7 +246,6 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             await interaction.response.send_message("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
             return
         self.bot.queue.put_nowait((1, _player))
-        #await interaction.followup.send("Refreshed statistics and dossiers for all selected players", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="specialupgrade", description="Give a player a one-off or relic item")
     @ac.describe(player="The player to give the item to")

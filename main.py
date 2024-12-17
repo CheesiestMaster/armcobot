@@ -45,7 +45,12 @@ logger = logging.getLogger(__name__)
 
 
 # create a DB engine
-engine = create_engine(os.getenv("DATABASE_URL"))
+engine = create_engine(
+    url = os.getenv("DATABASE_URL"),
+    pool_pre_ping= True,
+    pool_size=10,
+    max_overflow=20)
+
 logger.debug("Database engine created with URL: %s", os.getenv("DATABASE_URL"))
 
 # create the tables

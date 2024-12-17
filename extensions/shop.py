@@ -1,7 +1,7 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, SelectOption, ButtonStyle, Embed
-from models import Player, Unit, UnitStatus, UpgradeType, ShopUpgrade, ShopUpgradeUnitTypes
+from models import Player, Unit, UnitStatus, UpgradeType, ShopUpgrade, ShopUpgradeUnitTypes, PlayerUpgrade
 from customclient import CustomClient
 from utils import uses_db, string_to_list, Paginator
 from sqlalchemy.orm import Session
@@ -72,7 +72,6 @@ class Shop(GroupCog):
             await message_manager.update_message()  # Update the message manager with the new state
             await interaction.response.defer(thinking=False, ephemeral=True)
             
-
         bonus_button.callback = bonus_button_callback
 
         @uses_db(CustomClient().sessionmaker)
@@ -107,8 +106,6 @@ class Shop(GroupCog):
         view = ui.View()
         embed = Embed(title=f"Unit: {_unit.name}", color=0xc06335)
         
-        
-
         # allways add a leave button
         leave_button = ui.Button(label="Back to Home", style=ButtonStyle.danger)
         @uses_db(CustomClient().sessionmaker)
@@ -155,7 +152,7 @@ class Shop(GroupCog):
             return view, embed
 
         elif _unit.status.name == "INACTIVE":
-            logger.info(f"Unit is inactive, adding leave button with message")
+            logger.info(f"Unit is inactive, adding upgrade options")
             return await self.shop_inactive_view_factory(_unit.id, _player.id, message_manager, embed, view)
         
         logger.warning(f"Invalid end state for Shop Unit View")
@@ -163,7 +160,6 @@ class Shop(GroupCog):
 
     @uses_db(CustomClient().sessionmaker)
     async def shop_inactive_view_factory(self, unit_id: int, player_id: int, message_manager: MessageManager, embed: Embed, view: ui.View, session: Session):
-        embed.description = "Shop Under Construction"
         upgrades = session.query(ShopUpgrade).order_by(case((ShopUpgrade.type == "REFIT", 0), else_=1)).all()
         _player = session.query(Player).filter(Player.id == player_id).first()
         _unit = session.query(Unit).filter(Unit.id == unit_id).first()
@@ -196,6 +192,36 @@ class Shop(GroupCog):
             # TODO: actually implement the next button
             view.add_item(next_button)
         embed.description = f"Please select an upgrade to buy, you have {_player.rec_points} requisition points"
+
+        async def select_callback(interaction: Interaction):
+            upgrade_id = int(select.values[0])
+            upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == upgrade_id).first()
+            _player = session.query(Player).filter(Player.id == player_id).first()
+            _unit = session.query(Unit).filter(Unit.id == unit_id).first()
+            if upgrade.cost > _player.rec_points:
+                embed.description = "You don't have enough requisition points to buy this upgrade"
+                embed.color = 0xff0000
+                await message_manager.update_message()
+                await interaction.response.defer(thinking=False, ephemeral=True)
+                return
+            existing = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == _unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.id).first()
+            if existing:
+                embed.description = "You already have this upgrade"
+                embed.color = 0xff0000
+                await message_manager.update_message()
+                await interaction.response.defer(thinking=False, ephemeral=True)
+                return
+            new_upgrade = PlayerUpgrade(unit_id=_unit.id, shop_upgrade_id=upgrade.id, type=upgrade.type, name=upgrade.name, original_price=upgrade.cost)
+            session.add(new_upgrade)
+            upgrade_name = upgrade.name
+            upgrade_cost = upgrade.cost
+            session.commit()
+            view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
+            embed.description = f"You have bought {upgrade_name} for {upgrade_cost} Req"
+            embed.color = 0x00ff00
+            await message_manager.update_message(view=view, embed=embed)
+            await interaction.response.defer(thinking=False, ephemeral=True)
+        select.callback = select_callback
         return view, embed
     
     @ac.command(name="replace_stockpile", description="Create a new stockpile unit if you don't have one")

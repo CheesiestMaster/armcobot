@@ -237,7 +237,7 @@ class Paginator:
         return self.items[self.index]
     
     def has_next(self):
-        return self.index < len(self.items)
+        return self.index < len(self.items) - 1 # don't show the next button if we're at the end
     
     def has_previous(self):
         return self.index > 0

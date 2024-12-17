@@ -1,7 +1,7 @@
 from logging import getLogger
 from pathlib import Path
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, ui, TextStyle, ButtonStyle, Embed, SelectOption, Forbidden, HTTPException
+from discord import Interaction, app_commands as ac, ui, TextStyle, ButtonStyle, Embed, SelectOption, Forbidden, HTTPException, Message
 from sqlalchemy import text, func
 import os
 from models import Player
@@ -26,6 +26,7 @@ class Debug(GroupCog):
         self.extensions = [f.stem for f in Path("extensions").glob("*.py") if f.stem != "__init__"]
 
         self.process = Process() # get the current process
+        self._setup_context_menus() # context menus cannot be instance methods, so we need to nest them
 
     async def _autocomplete_extensions(self, interaction: Interaction, current: str):
         return [ac.Choice(name=extension, value=extension) for extension in self.extensions if current.lower() in extension.lower() and not extension.startswith("template")]
@@ -35,6 +36,24 @@ class Debug(GroupCog):
         if not valid:
             logger.warning(f"{interaction.user.global_name} tried to use debug commands")
         return valid
+
+    def _setup_context_menus(self):
+        @self.bot.tree.context_menu(name="~RP Reply~")
+        @ac.check(self._is_mod)
+        async def rp_reply(interaction: Interaction, message: Message):
+            rp_modal = ui.Modal(title="Roleplay Message")
+            rp_modal.add_item(ui.TextInput(label="Message", style=TextStyle.paragraph))
+
+            async def on_submit(_interaction: Interaction):
+                template = """---- RP POST ----
+```ansi
+[32m{message}
+```"""
+                await message.reply(template.format(message=_interaction.data["components"][0]["components"][0]["value"]), mention_author=False)
+                await _interaction.response.send_message("Message sent", ephemeral=self.bot.use_ephemeral)
+
+            rp_modal.on_submit = on_submit
+            await interaction.response.send_modal(rp_modal)
 
     @ac.command(name="kill", description="Kill the bot")
     async def kill(self, interaction: Interaction):
