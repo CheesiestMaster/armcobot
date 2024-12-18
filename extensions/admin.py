@@ -1,19 +1,22 @@
-from logging import getLogger
-from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji, SelectOption, ui, ButtonStyle
-from discord.ui import Modal, TextInput
-from models import Player, Unit, UnitStatus, PlayerUpgrade, Medals
-from customclient import CustomClient
 import os
-from utils import has_invalid_url, uses_db, string_to_list
+from logging import getLogger
+
+from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji, SelectOption, ui, ButtonStyle
+from discord.ext.commands import GroupCog, Bot
+from discord.ui import Modal, TextInput
 from sqlalchemy.orm import Session
+
+from customclient import CustomClient
+from models import Player, Unit, UnitStatus, PlayerUpgrade, Medals
+from utils import has_invalid_url, uses_db
+
 logger = getLogger(__name__)
 
 class Admin(GroupCog, group_name="admin", name="Admin"):
     """
     Admin commands for managing players, units, points, and medals in the bot.
     """
-    def __init__(self, bot: Bot):
+    def __init__(self, bot: CustomClient):
         """
         Initialize the Admin cog with a reference to the bot instance.
         """
@@ -52,7 +55,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             await interaction.response.send_modal(reqpoint_modal)
 
         @self.bot.tree.context_menu(name="Bonus Pay")
-        @ac.check(self._is_mod)
+        #@ac.check(self._is_mod)
         async def bonuspay_menu(interaction: Interaction, target: Member):
             bonuspay_modal = ui.Modal(title="Bonus Pay", custom_id="bonuspay_modal")
             bonuspay_modal.add_item(ui.TextInput(label="How many points?", style=TextStyle.short, placeholder="Enter a number"))
