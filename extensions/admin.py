@@ -74,7 +74,18 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         async def refresh_stats_menu(interaction: Interaction, target: Member):
             await self._refresh_player(interaction, target)
 
+        @self.bot.tree.context_menu(name="Award Medal")
+        @ac.check(self._is_mod)
+        async def award_medal_menu(interaction: Interaction, target: Member):
+            award_medal_modal = ui.Modal(title="Award Medal", custom_id="award_medal_modal")
+            award_medal_modal.add_item(ui.TextInput(label="What is the name of he medal you wish to award?", style=TextStyle.short, placeholder="Enter the name"))
+            async def on_submit(_interaction: Interaction):
+                name = _interaction.data["components"][0]["components"][0]["value"]
+                await self._award_medal(_interaction, target, name)
+            award_medal_modal.on_submit = on_submit
+            await interaction.response.send_modal(award_medal_modal)
 
+    # Do we need this command still?
     @ac.command(name="recpoint", description="Give or remove a number of requisition points from a player")
     @ac.describe(player="The player to give or remove points from")
     @ac.describe(points="The number of points to give or remove")
@@ -97,6 +108,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
         await interaction.response.send_message(f"{player.name} now has {player.rec_points} requisition points", ephemeral=self.bot.use_ephemeral)
 
+    # Do we need this command still?
     @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
     @ac.describe(player="The player to give or remove bonus pay from")
     @ac.describe(points="The number of bonus pay to give or remove")
@@ -120,6 +132,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         logger.debug(f"User {player.name} now has {player.bonus_pay} bonus pay")
         await interaction.response.send_message(f"{player.name} now has {player.bonus_pay} bonus pay", ephemeral=self.bot.use_ephemeral)
 
+    # Do we still need this?
     #@ac.command(name="activateunits", description="Activate multiple units")
     async def activateunits(self, interaction: Interaction):
         """
@@ -182,28 +195,23 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         logger.debug(f"Medal {name} created with emotes {left_emote}, {center_emote}, {right_emote}")
         await interaction.response.send_message(f"Medal {name} created", ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="award_medal", description="Award a medal to a player")
-    @ac.describe(player="The player to award the medal to")
-    @ac.describe(medal="The name of the medal")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def award_medal(self, interaction: Interaction, player: Member, medal: str, session: Session):
-        """
-        Assign a specific medal to a player.
-        """
-        # find the player by discord id
+    async def _award_medal(self, interaction: Interaction, player: Member, name: str, session: Session):
         _player: Player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
-            await interaction.response.send_message("User doesn't have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message("User doesn't have a Meta Campaign company",
+                                                    ephemeral=self.bot.use_ephemeral)
             return
         # if the player already has a medal with that name, send a message saying so
-        _medal = session.query(Medals).filter(Medals.name == medal).filter(Medals.player_id == _player.id).first()
+        _medal = session.query(Medals).filter(Medals.name == name).filter(Medals.player_id == _player.id).first()
         if _medal:
-            await interaction.response.send_message(f"{player.name} already has the medal {medal}", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(f"{player.name} already has the medal {name}",
+                                                    ephemeral=self.bot.use_ephemeral)
             return
         # add the medal to the player
-        _medal = Medals(name=medal, player_id=_player.id)
+        _medal = Medals(name=name, player_id=_player.id)
         session.add(_medal)
-        await interaction.response.send_message(f"{player.name} has been awarded the medal {medal}", ephemeral=self.bot.use_ephemeral)
+        await interaction.response.send_message(f"{player.name} has been awarded the medal {name}", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="create_unit_type", description="Create a new unit type")
     @ac.describe(name="The name of the unit type")
