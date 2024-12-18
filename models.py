@@ -81,6 +81,7 @@ class Unit(BaseModel):
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     callsign = Column(String(15), index=True, unique=True)
     area_operation = Column(String(30), default="ARMCO")
+    original_type = Column(String(15), nullable=True)
     
     # relationships
     player = relationship("Player", back_populates="units")
