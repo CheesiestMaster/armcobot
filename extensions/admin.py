@@ -33,7 +33,8 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             logger.warning(f"{interaction.user.name} tried to use admin commands")
         return valid
     
-    async def _setup_context_menus(self):
+    def _setup_context_menus(self):
+        logger.debug("Setting up context menus for admin commands")
         @self.bot.tree.context_menu(name="Req Point")
         @ac.check(self._is_mod)
         async def reqpoint_menu(interaction: Interaction, target: Member):

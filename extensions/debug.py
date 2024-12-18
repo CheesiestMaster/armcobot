@@ -38,6 +38,7 @@ class Debug(GroupCog):
         return valid
 
     def _setup_context_menus(self):
+        logger.debug("Setting up context menus for debug commands")
         @self.bot.tree.context_menu(name="~RP Reply~")
         @ac.check(self._is_mod)
         async def rp_reply(interaction: Interaction, message: Message):
