@@ -85,62 +85,39 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             award_medal_modal.on_submit = on_submit
             await interaction.response.send_modal(award_medal_modal)
 
-    # Do we need this command still?
-    @ac.command(name="recpoint", description="Give or remove a number of requisition points from a player")
-    @ac.describe(player="The player to give or remove points from")
-    @ac.describe(points="The number of points to give or remove")
+        @self.bot.tree.context_menu(name="Special Upgrade")
+        @ac.check(self._is_mod)
+        async def special_upgrade_menu(interaction: Interaction, target: Member):
+            special_upgrade_modal = ui.Modal(title="Special Upgrade", custom_id="special_upgrade_modal")
+            special_upgrade_modal.add_item(ui.TextInput(label="What is the name of the special upgrade?", style=TextStyle.short, placeholder="Enter the name"))
+            async def on_submit(_interaction: Interaction):
+                name = _interaction.data["components"][0]["components"][0]["value"]
+                await self._specialupgrade(_interaction, target, name)
+            special_upgrade_modal.on_submit = on_submit
+            await interaction.response.send_modal(special_upgrade_modal)
+
+    #@ac.command(name="recpoint", description="Give or remove a number of requisition points from a player")
+    #@ac.describe(player="The player to give or remove points from")
+    #@ac.describe(points="The number of points to give or remove")
     async def reqpoint_command(self, interaction: Interaction, player: Member, points: int):
         await self._change_req_points(interaction, player, points)
 
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def _change_req_points(self, interaction: Interaction, player: Member, points: int, session: Session):
-        """
-        Adjusts a player's requisition points by adding or removing a specified amount.
-        """
-        # find the player by discord id
-        player = session.query(Player).filter(Player.discord_id == player.id).first()
-        if not player:
-            await interaction.response.send_message("User doesn't have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
-            return
-        
-        # update the player's rec points
-        player.rec_points += points
-        logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
-        await interaction.response.send_message(f"{player.name} now has {player.rec_points} requisition points", ephemeral=self.bot.use_ephemeral)
-
-    # Do we need this command still?
-    @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
-    @ac.describe(player="The player to give or remove bonus pay from")
-    @ac.describe(points="The number of bonus pay to give or remove")
+    #@ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
+    #@ac.describe(player="The player to give or remove bonus pay from")
+    #@ac.describe(points="The number of bonus pay to give or remove")
     async def bonuspay_command(self, interaction: Interaction, player: Member, points: int):
         await self._change_bonuspay(interaction, player, points)
 
-
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def _change_bonuspay(self, interaction: Interaction, player: Member, points: int, session: Session):
-        """
-        Modify a player's bonus pay by adding or removing a specified amount.
-        """
-        # find the player by discord id
-        player = session.query(Player).filter(Player.discord_id == player.id).first()
-        if not player:
-            await interaction.response.send_message("User doesn't have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
-            return
-        
-        # update the player's bonus pay
-        player.bonus_pay += points
-        logger.debug(f"User {player.name} now has {player.bonus_pay} bonus pay")
-        await interaction.response.send_message(f"{player.name} now has {player.bonus_pay} bonus pay", ephemeral=self.bot.use_ephemeral)
-
-    # Do we still need this?
-    #@ac.command(name="activateunits", description="Activate multiple units")
+    # @ac.command(name="activateunits", description="Activate multiple units")
     async def activateunits(self, interaction: Interaction):
         """
         Activates several units by name through a modal form.
         """
         modal = Modal(title="Activate Units", custom_id="activate_units")
         modal.add_item(TextInput(label="Unit names", custom_id="unit_names", style=TextStyle.long))
-        @uses_db(sessionmaker=CustomClient().sessionmaker) # we need to decorate the callback, as the command itself has left scope
+
+        @uses_db(
+            sessionmaker=CustomClient().sessionmaker)  # we need to decorate the callback, as the command itself has left scope
         async def modal_callback(interaction: Interaction, session: Session):
             unit_names = interaction.data["components"][0]["components"][0]["value"]
             logger.debug(f"Received unit names: {unit_names}")
@@ -166,12 +143,48 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                     session.commit()
                 except Exception as e:
                     logger.error(f"Error committing to database: {e}")
-                    await interaction.response.send_message(f"Error committing to database: {e}", ephemeral=self.bot.use_ephemeral)
-            await interaction.response.send_message(f"Activated {activated}, not found {not_found}", ephemeral=self.bot.use_ephemeral)
+                    await interaction.response.send_message(f"Error committing to database: {e}",
+                                                            ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(f"Activated {activated}, not found {not_found}",
+                                                    ephemeral=self.bot.use_ephemeral)
             logger.debug(f"Activation results - Activated: {activated}, Not found: {not_found}")
+
         modal.on_submit = modal_callback
-                
+
         await interaction.response.send_modal(modal)
+
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def _change_req_points(self, interaction: Interaction, player: Member, points: int, session: Session):
+        """
+        Adjusts a player's requisition points by adding or removing a specified amount.
+        """
+        # find the player by discord id
+        player = session.query(Player).filter(Player.discord_id == player.id).first()
+        if not player:
+            await interaction.response.send_message("User doesn't have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
+            return
+        
+        # update the player's rec points
+        player.rec_points += points
+        logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
+        await interaction.response.send_message(f"{player.name} now has {player.rec_points} requisition points", ephemeral=self.bot.use_ephemeral)
+
+
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def _change_bonuspay(self, interaction: Interaction, player: Member, points: int, session: Session):
+        """
+        Modify a player's bonus pay by adding or removing a specified amount.
+        """
+        # find the player by discord id
+        player = session.query(Player).filter(Player.discord_id == player.id).first()
+        if not player:
+            await interaction.response.send_message("User doesn't have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
+            return
+        
+        # update the player's bonus pay
+        player.bonus_pay += points
+        logger.debug(f"User {player.name} now has {player.bonus_pay} bonus pay")
+        await interaction.response.send_message(f"{player.name} now has {player.bonus_pay} bonus pay", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="create_medal", description="Create a medal")
     @ac.describe(name="The name of the medal")
@@ -197,6 +210,18 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
 
     @uses_db(sessionmaker=CustomClient().sessionmaker)
     async def _award_medal(self, interaction: Interaction, player: Member, name: str, session: Session):
+        """
+        Awards a medal to a player in a Meta Campaign. Checks if the player exists
+        in the database and has a company associated with them. If the player already owns
+        the medal, it notifies the user. Otherwise, it adds the medal to the player's record.
+
+        Args:
+            interaction: The interaction object associated with the command invocation.
+            player: The Discord Member object representing the player to whom the medal
+                is being awarded.
+            name: The name of the medal to be awarded to the player.
+            session: The SQLAlchemy Session object used to query and update the database.
+        """
         _player: Player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
             await interaction.response.send_message("User doesn't have a Meta Campaign company",
@@ -240,7 +265,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         for player in session.query(Player).all():
             self.bot.queue.put_nowait((1, player)) # make the bot think the player was edited, using nowait to avoid yielding control
         await interaction.followup.send("Refreshed statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
-    
+
     @ac.command(name="refresh_player", description="Refresh the statistics and dossiers for a player")
     @ac.describe(player="The player to refresh the statistics and dossiers for")
     async def refresh_player_command(self, interaction: Interaction, player: Member):
@@ -259,13 +284,17 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             return
         self.bot.queue.put_nowait((1, _player))
 
-    @ac.command(name="specialupgrade", description="Give a player a one-off or relic item")
-    @ac.describe(player="The player to give the item to")
-    @ac.describe(name="The name of the item")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def specialupgrade(self, interaction: Interaction, player: Member, name: str, session: Session):
+    async def _specialupgrade(self, interaction: Interaction, player: Member, name: str, session: Session):
         """
-        Give a unique or relic item to a player’s active unit.
+        Handles the creation of a special upgrade for a player's active unit in the meta campaign,
+        ensuring constraints such as the existence of the player, active unit, and name length are met.
+
+        Args:
+            interaction: The interaction object containing the context of the Discord command.
+            player: The Discord Member object representing the player requesting the upgrade.
+            name: The name of the special upgrade being added.
+            session: The database session used to fetch and update the player's related information.
         """
         _player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
