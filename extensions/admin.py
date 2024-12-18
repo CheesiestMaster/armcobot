@@ -55,7 +55,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             await interaction.response.send_modal(reqpoint_modal)
 
         @self.bot.tree.context_menu(name="Bonus Pay")
-        #@ac.check(self._is_mod)
+        @ac.check(self._is_mod)
         async def bonuspay_menu(interaction: Interaction, target: Member):
             bonuspay_modal = ui.Modal(title="Bonus Pay", custom_id="bonuspay_modal")
             bonuspay_modal.add_item(ui.TextInput(label="How many points?", style=TextStyle.short, placeholder="Enter a number"))
