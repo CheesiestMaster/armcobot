@@ -6,7 +6,7 @@ from sqlalchemy.orm import scoped_session
 from logging import getLogger
 import asyncio
 from collections import deque
-
+from typing import Coroutine
 logger = getLogger(__name__)
 
 @lru_cache(maxsize=1)
@@ -244,3 +244,21 @@ class Paginator:
     
     def __len__(self):
         return len(self.items)
+    
+async def callback_listener(callback: Coroutine, bind:str):
+    address, port = bind.split(":")
+
+    async def listener(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        try:
+            await callback()
+            writer.write(b"200 OK") # just send a 200 ok response, not with any proper headers, since nc doesn't care about them
+            await writer.drain()
+        except Exception as e:
+            logger.error(f"Error in callback_listener: {e}")
+            writer.write(b"500 Internal Server Error")
+            await writer.drain()
+        finally:
+            writer.close()
+
+    server = await asyncio.start_server(listener, address, port)
+    await server.serve_forever()
