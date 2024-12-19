@@ -115,6 +115,8 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             async def on_submit(_interaction: Interaction):
                 unit_id = _interaction.data["components"][0]["components"][0]["values"][0]
                 await self._remove_unit(_interaction, target, unit_id)
+            remove_unit_modal.on_submit = on_submit
+            await interaction.response.send_modal(remove_unit_modal)
 
     #@ac.command(name="recpoint", description="Give or remove a number of requisition points from a player")
     #@ac.describe(player="The player to give or remove points from")
@@ -343,7 +345,6 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         session.delete(unit)
         logger.debug(f"Unit with the id {unit_id} was deleted from player {player.name}")
         await interaction.response.send_message(f"Unit {unit.name} has been removed", ephemeral=self.bot.use_ephemeral)
-        await interaction.response.send_message("Please select the unit you want to remove", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="remove_unittype", description="Remove a unit type from the game")
     @ac.describe(name="The name of the unit type to remove")
