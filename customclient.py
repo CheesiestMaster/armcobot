@@ -29,7 +29,7 @@ from singleton import Singleton
 import asyncio
 import templates
 import logging
-from utils import uses_db, RollingCounterDict
+from utils import uses_db, RollingCounterDict, callback_listener
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
 
@@ -505,6 +505,19 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 self.startup_animation.start()
             except Exception as e:
                 logger.error(f"Error starting startup animation: {e}")
+        asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345"))
+    
+
+    async def shutdown_callback(self):
+        try:
+            channel = await self.fetch_channel(1211454073383952395)
+        except Exception as e:
+            logger.error(f"Error fetching channel: {e}")
+            channel = None
+        owner = await self.fetch_user(533009808501112881)
+        if channel:
+            await channel.send(f"{owner.mention}\n# S.A.M. was terminated by the system")
+        await self.close()
 
     @tasks.loop(count=1)
     async def startup_animation(self):
@@ -513,6 +526,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         except ImportError:
             return
         channel = await self.fetch_channel(1211454073383952395)
+        if not channel:
+            return
         message =await channel.send(sam_startup.startup_sequence[0])
         for frame in sam_startup.startup_sequence[1:]:
             await message.edit(content=frame)
@@ -525,6 +540,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         logger.debug("Starting 24 hour notification loop")
         await asyncio.sleep(24 * 60 * 60)
         channel = await self.fetch_channel(1211454073383952395)
+        if not channel:
+            return
         owner = await self.fetch_user(533009808501112881)
         await channel.send(f"{owner.mention}\n# I have successfully survived 24 Hours!")
         logger.debug("24 hour notification loop finished")
