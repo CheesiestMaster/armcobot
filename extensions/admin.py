@@ -1,11 +1,11 @@
 import os
 from logging import getLogger
-
+from typing import Callable
 from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji, SelectOption, ui
 from discord.ext.commands import GroupCog, Bot
 from discord.ui import Modal, TextInput
 from sqlalchemy.orm import Session
-
+from MessageManager import MessageManager
 from customclient import CustomClient
 from models import Player, Unit, UnitStatus, PlayerUpgrade, Medals
 from utils import has_invalid_url, uses_db
@@ -38,6 +38,23 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     
     def _setup_context_menus(self):
         logger.debug("Setting up context menus for admin commands")
+        commands: list[Callable] = [] # we can't populate this until the end of the function, but we need to define it here
+
+        @self.bot.tree.context_menu(name="Admin Menu")
+        @ac.check(self._is_mod)
+        async def admin_menu(interaction: Interaction, member: Member):
+            mm = MessageManager(interaction)
+            view = ui.View()
+            select = ui.Select(placeholder="Select a command", options=[SelectOption(label=option.__name__, value=option.__name__) for option in commands])
+            async def on_select(interaction: Interaction):
+                # we can't use getattr here, as they are not methods of the class, but values in the list
+                command = [command for command in commands if command.__name__ == select.values[0]][0]
+                await command(interaction, member, mm)
+            select.callback = on_select
+
+            view.add_item(select)
+            await mm.send_message(embed=Embed(title="Admin Menu", description=f"please select a command to use on {member.name}"), view=view, ephemeral=self.bot.use_ephemeral)
+
         @self.bot.tree.context_menu(name="Req Point")
         @ac.check(self._is_mod)
         async def reqpoint_menu(interaction: Interaction, target: Member):
@@ -117,6 +134,8 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 await self._remove_unit(_interaction, target, unit_id)
             remove_unit_modal.on_submit = on_submit
             await interaction.response.send_modal(remove_unit_modal)
+
+        commands = [v for k, v in locals().items() if not k.startswith("_") and callable(v)]
 
     #@ac.command(name="recpoint", description="Give or remove a number of requisition points from a player")
     #@ac.describe(player="The player to give or remove points from")
