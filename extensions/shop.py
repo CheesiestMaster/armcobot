@@ -204,23 +204,53 @@ class Shop(GroupCog):
                 await message_manager.update_message()
                 await interaction.response.defer(thinking=False, ephemeral=True)
                 return
-            existing = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == _unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.id).first()
-            if existing:
-                embed.description = "You already have this upgrade"
-                embed.color = 0xff0000
-                await message_manager.update_message()
+            if upgrade.type == "UPGRADE":
+                existing = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == _unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.id).first()
+                if existing:
+                    embed.description = "You already have this upgrade"
+                    embed.color = 0xff0000
+                    await message_manager.update_message()
+                    await interaction.response.defer(thinking=False, ephemeral=True)
+                    return
+                new_upgrade = PlayerUpgrade(unit_id=_unit.id, shop_upgrade_id=upgrade.id, type=upgrade.type, name=upgrade.name, original_price=upgrade.cost)
+                session.add(new_upgrade)
+                upgrade_name = upgrade.name
+                upgrade_cost = upgrade.cost
+                session.commit()
+                view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
+                embed.description = f"You have bought {upgrade_name} for {upgrade_cost} Req"
+                embed.color = 0x00ff00
+                await message_manager.update_message(view=view, embed=embed)
                 await interaction.response.defer(thinking=False, ephemeral=True)
-                return
-            new_upgrade = PlayerUpgrade(unit_id=_unit.id, shop_upgrade_id=upgrade.id, type=upgrade.type, name=upgrade.name, original_price=upgrade.cost)
-            session.add(new_upgrade)
-            upgrade_name = upgrade.name
-            upgrade_cost = upgrade.cost
-            session.commit()
-            view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
-            embed.description = f"You have bought {upgrade_name} for {upgrade_cost} Req"
-            embed.color = 0x00ff00
-            await message_manager.update_message(view=view, embed=embed)
-            await interaction.response.defer(thinking=False, ephemeral=True)
+            elif upgrade.type == "REFIT":
+                refit_target = upgrade.refit_target
+                refit_cost = upgrade.cost
+                current_upgrades = _unit.upgrades
+                shop_upgrades = [upgrade.shop_upgrade_id for upgrade in current_upgrades]
+                shop_upgrades = session.query(ShopUpgrade).filter(ShopUpgrade.id.in_(current_upgrades)).all()
+                incompatible_upgrades = []
+                for upgrade in shop_upgrades:
+                    compatible = False
+                    for ut in upgrade.unit_types:
+                        if ut.unit_type == refit_target:
+                            compatible = True
+                            break
+                    if not compatible:
+                        incompatible_upgrades.append(upgrade.id)
+                stockpile = session.query(Unit).filter(Unit.player_id == _player.id, Unit.unit_type == "STOCKPILE").first()
+                if not stockpile:
+                    await interaction.response.send_message("You don't have a stockpile unit", ephemeral=True)
+                    return
+                for upgrade in current_upgrades:
+                    if upgrade.shop_upgrade_id in incompatible_upgrades:
+                        upgrade.unit_id = stockpile.id
+                _unit.unit_type = refit_target
+                session.commit()
+                view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
+                embed.description = f"You have bought a refit to {refit_target} for {refit_cost} Req"
+                embed.color = 0x00ff00
+                await message_manager.update_message(view=view, embed=embed)
+                await interaction.response.defer(thinking=False, ephemeral=True)
         select.callback = select_callback
         return view, embed
     
