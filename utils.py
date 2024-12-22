@@ -11,6 +11,11 @@ import time
 
 logger = getLogger(__name__)
 
+async def sleep_monotonic(seconds):
+    end_time = time.monotonic() + seconds
+    while (remaining := end_time - time.monotonic()) > 0:
+        await asyncio.sleep(min(remaining, 3600))  # Sleep in chunks
+
 @lru_cache(maxsize=1)
 def get_url_pattern() -> re.Pattern:
     """
@@ -110,7 +115,7 @@ class RollingCounter:
 
     async def _decrement_after_delay(self, timestamp):
         """Waits for the specified duration, then decrements the counter."""
-        await asyncio.sleep(self.duration)
+        await sleep_monotonic(self.duration)
         if self.tasks and self.timestamps[0] == timestamp:
             self.tasks.popleft()  # Remove the completed task from the queue
             self.timestamps.popleft()
