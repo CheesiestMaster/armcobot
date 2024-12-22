@@ -7,6 +7,8 @@ from logging import getLogger
 import asyncio
 from collections import deque
 from typing import Coroutine
+import time
+
 logger = getLogger(__name__)
 
 @lru_cache(maxsize=1)
@@ -104,19 +106,24 @@ class RollingCounter:
         self.loop = loop or asyncio.get_event_loop()
         self.counter = 0
         self.tasks = deque()
+        self.timestamps = deque()
 
-    async def _decrement_after_delay(self):
+    async def _decrement_after_delay(self, timestamp):
         """Waits for the specified duration, then decrements the counter."""
         await asyncio.sleep(self.duration)
-        self.counter -= 1
-        self.tasks.popleft()  # Remove the completed task from the queue
+        if self.tasks and self.timestamps[0] == timestamp:
+            self.tasks.popleft()  # Remove the completed task from the queue
+            self.timestamps.popleft()
+            self.counter -= 1
 
     def set(self):
         """
         Increments the counter and schedules a task to decrement it after the duration.
         """
         self.counter += 1
-        task = self.loop.create_task(self._decrement_after_delay())
+        timestamp = time.time()
+        self.timestamps.append(timestamp)
+        task = self.loop.create_task(self._decrement_after_delay(timestamp))
         self.tasks.append(task)
 
     def get(self) -> int:
