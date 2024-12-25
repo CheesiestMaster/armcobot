@@ -91,7 +91,7 @@ def string_to_list(string: str) -> list[str]:
     return string
 
 class RollingCounter:
-    def __init__(self, duration: int, loop=None):
+    def __init__(self, duration: int):
         """
         Initializes the RollingCounter with a specified duration and event loop.
 
@@ -101,7 +101,6 @@ class RollingCounter:
         if duration <= 0:
             raise ValueError("Duration must be greater than 0.")
         self.duration = duration
-        self.loop = loop or asyncio.get_event_loop()
         self.counter = 0
         self.tasks = deque()
 
@@ -116,7 +115,7 @@ class RollingCounter:
         Increments the counter and schedules a task to decrement it after the duration.
         """
         self.counter += 1
-        task = self.loop.create_task(self._decrement_after_delay())
+        task = asyncio.create_task(self._decrement_after_delay())
         self.tasks.append(task)
 
     def get(self) -> int:
@@ -140,7 +139,7 @@ class RollingCounter:
         return f"RollingCounter(duration={self.duration}, counter={self.counter})"
 
 class RollingCounterDict:
-    def __init__(self, duration: int, loop=None):
+    def __init__(self, duration: int):
         """
         Initializes a RollingCounterDict with a specified duration for each counter.
 
@@ -150,7 +149,6 @@ class RollingCounterDict:
         if duration <= 0:
             raise ValueError("Duration must be greater than 0.")
         self.duration = duration
-        self.loop = loop or asyncio.get_event_loop()
         self.counters = {}
 
     def set(self, key: str):
@@ -160,7 +158,7 @@ class RollingCounterDict:
         :param key: The key for the counter to increment.
         """
         if key not in self.counters:
-            self.counters[key] = RollingCounter(self.duration, self.loop)
+            self.counters[key] = RollingCounter(self.duration)
         self.counters[key].set()
 
     def get(self, key: str) -> int:
