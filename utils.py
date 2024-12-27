@@ -108,6 +108,7 @@ class RollingCounter:
         """Waits for the specified duration, then decrements the counter."""
         await asyncio.sleep(self.duration)
         self.counter -= 1
+        print(f"decremented counter to {self.counter}")
         self.tasks.popleft()  # Remove the completed task from the queue
 
     def set(self):
@@ -115,7 +116,9 @@ class RollingCounter:
         Increments the counter and schedules a task to decrement it after the duration.
         """
         self.counter += 1
+        print(f"incremented counter to {self.counter}")
         task = asyncio.create_task(self._decrement_after_delay())
+        print(f"created task {task}")
         self.tasks.append(task)
 
     def get(self) -> int:
