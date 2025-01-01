@@ -320,7 +320,7 @@ class Unit(GroupCog):
         await interaction.response.send_message("Please select the unit to rename", view=view, ephemeral=CustomClient().use_ephemeral)
 
     @ac.command(name="transfer_unit", description="Transfer a proposed unit from your company")
-    @ac.check(is_gm)  # only management can transfer units
+    @ac.check(is_management)  # only management can transfer units
     @uses_db(sessionmaker=CustomClient().sessionmaker)
     async def transfer_unit(self, interaction: Interaction, campaign: str, session: Session):
         if not await campaign.is_management(interaction):
