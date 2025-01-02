@@ -10,3 +10,4 @@ __pycache__
 backup.*.xlsx
 backup.*.sql
 sam_startup.py
+upgrades.tsv

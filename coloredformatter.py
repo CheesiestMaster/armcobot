@@ -34,7 +34,7 @@ class ColoredFormatter(logging.Formatter):
         color = self.COLORS.get(record.levelno, AnsiColor.WHT_CLR)
         stats[f"today_{record.levelname}"].set()
         stats["today_total"].set()
-        print(f"RollingCounters incremented")
+         
         stats[f"total_{record.levelname}"] += 1
         stats["total_total"] += 1
         record.msg = f"{color.value}{record.msg}{AnsiColor.RESET.value}"
