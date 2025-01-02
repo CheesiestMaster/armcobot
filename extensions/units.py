@@ -4,9 +4,8 @@ from discord import Interaction, app_commands as ac, Member, ui, ButtonStyle, Se
 from discord.ui import View
 from models import Player, Unit as Unit_model, UnitStatus, Campaign, CampaignInvite
 from customclient import CustomClient
-from utils import uses_db
+from utils import uses_db, is_management
 from sqlalchemy.orm import Session
-from campaigns import is_management, is_gm
 
 import os
 logger = getLogger(__name__)
