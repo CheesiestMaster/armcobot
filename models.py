@@ -184,6 +184,8 @@ class ShopUpgrade(BaseModel):
     cost = Column(Integer, default=0)
     refit_target = Column(String(15), nullable=True)
     required_upgrade_id = Column(Integer, ForeignKey("shop_upgrades.id"), nullable=True)
+    disabled = Column(Boolean, default=False)
+    repeatable = Column(Boolean, default=False)
     player_upgrades = relationship("PlayerUpgrade", back_populates="shop_upgrade", cascade="all, delete-orphan", lazy="subquery")
     unit_types = relationship("ShopUpgradeUnitTypes", back_populates="shop_upgrade", cascade="all, delete-orphan", lazy="subquery")
     required_upgrade = relationship("ShopUpgrade", remote_side=[id], lazy="joined")

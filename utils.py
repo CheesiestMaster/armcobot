@@ -111,7 +111,7 @@ class RollingCounter:
         """Waits for the specified duration, then decrements the counter."""
         await asyncio.sleep(self.duration)
         self.counter -= 1
-        print(f"decremented counter to {self.counter}")
+         
         self.tasks.popleft()  # Remove the completed task from the queue
 
     def set(self):
@@ -119,9 +119,15 @@ class RollingCounter:
         Increments the counter and schedules a task to decrement it after the duration.
         """
         self.counter += 1
-        print(f"incremented counter to {self.counter}")
-        task = asyncio.create_task(self._decrement_after_delay())
-        print(f"created task {task}")
+
+        try:
+            asyncio.get_running_loop()
+            task = asyncio.create_task(self._decrement_after_delay())
+        except RuntimeError:
+            self.counter -= 1
+            print("no loop")
+            return # break early if we're not in an event loop, since we can't make the decrement task
+         
         self.tasks.append(task)
 
     def get(self) -> int:
@@ -264,8 +270,14 @@ async def callback_listener(callback: Coroutine, bind:str):
         finally:
             writer.close()
 
-    server = await asyncio.start_server(listener, address, port)
-    await server.serve_forever()
+
+    try:
+        server = await asyncio.start_server(listener, address, port)
+        await server.serve_forever()
+    except Exception as e:
+        logger.error(f"Error in callback_listener: {e}") # we don't want to crash the bot if the callback happens twice, whcih would OSE 98
+        return
+
 
 async def is_management(interaction: Interaction) -> bool:
     """Check if a user has management permissions"""
@@ -285,3 +297,4 @@ async def is_gm(interaction: Interaction) -> bool:
     if not valid:
         await interaction.response.send_message("You don't have permission to run this command", ephemeral=True)
     return valid
+
