@@ -116,8 +116,14 @@ class RollingCounter:
         Increments the counter and schedules a task to decrement it after the duration.
         """
         self.counter += 1
-         
-        task = asyncio.create_task(self._decrement_after_delay())
+
+        try:
+            asyncio.get_running_loop()
+            task = asyncio.create_task(self._decrement_after_delay())
+        except RuntimeError:
+            self.counter -= 1
+            print("no loop")
+            return # break early if we're not in an event loop, since we can't make the decrement task
          
         self.tasks.append(task)
 
@@ -261,5 +267,9 @@ async def callback_listener(callback: Coroutine, bind:str):
         finally:
             writer.close()
 
-    server = await asyncio.start_server(listener, address, port)
-    await server.serve_forever()
+    try:
+        server = await asyncio.start_server(listener, address, port)
+        await server.serve_forever()
+    except Exception as e:
+        logger.error(f"Error in callback_listener: {e}") # we don't want to crash the bot if the callback happens twice, whcih would OSE 98
+        return

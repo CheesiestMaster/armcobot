@@ -179,9 +179,11 @@ class Shop(GroupCog):
         select = ui.Select(placeholder="Select an upgrade to buy")
         button_template = "{type} {insufficient} {name} - {cost} RP"
         for upgrade in page:
+            if upgrade.disabled:
+                continue
             insufficient = "❌" if upgrade.cost > _player.rec_points else ""
-            type = "🔧" if upgrade.type == "REFIT" else "⚙️"
-            select.add_option(label=button_template.format(type=type, insufficient=insufficient, name=upgrade.name, cost=upgrade.cost), value=str(upgrade.id))
+            utype = "🔧" if upgrade.type == UpgradeType.REFIT else "⚙️"
+            select.add_option(label=button_template.format(type=utype, insufficient=insufficient, name=upgrade.name, cost=upgrade.cost), value=str(upgrade.id))
         if paginator.has_previous():
             previous_button = ui.Button(label="Previous", style=ButtonStyle.secondary)
             # TODO: actually implement the previous button
@@ -194,26 +196,54 @@ class Shop(GroupCog):
         embed.description = f"Please select an upgrade to buy, you have {_player.rec_points} requisition points"
 
         async def select_callback(interaction: Interaction):
+            nonlocal embed
             upgrade_id = int(select.values[0])
+            logger.debug(f"Selected upgrade ID: {upgrade_id}")
+
             upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == upgrade_id).first()
+            if not upgrade:
+                logger.error(f"Upgrade with ID {upgrade_id} not found.")
+                embed.description = "Upgrade not found."
+                embed.color = 0xff0000
+                await message_manager.update_message()
+                await interaction.response.defer(thinking=False, ephemeral=True)
+                return
+
             _player = session.query(Player).filter(Player.id == player_id).first()
             _unit = session.query(Unit).filter(Unit.id == unit_id).first()
+            logger.debug(f"Player: {_player}, Unit: {_unit}")
+
             if upgrade.cost > _player.rec_points:
+                logger.warning(f"Player {interaction.user.name} does not have enough requisition points. Required: {upgrade.cost}, Available: {_player.rec_points}")
                 embed.description = "You don't have enough requisition points to buy this upgrade"
                 embed.color = 0xff0000
                 await message_manager.update_message()
                 await interaction.response.defer(thinking=False, ephemeral=True)
                 return
-            if upgrade.type == "UPGRADE":
+            
+            if upgrade.required_upgrade_id:
+                required_upgrade = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == _unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.required_upgrade_id).first()
+                if not required_upgrade:
+                    logger.warning(f"Player {interaction.user.name} does not have the required upgrade: {upgrade.required_upgrade_id}")
+                    embed.description = "You don't have the required upgrade"
+                    embed.color = 0xff0000
+                    await message_manager.update_message()
+                    await interaction.response.defer(thinking=False, ephemeral=True)
+                    return
+
+            if upgrade.type == UpgradeType.UPGRADE:
                 existing = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == _unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.id).first()
-                if existing:
+                if existing and not upgrade.repeatable:
+                    logger.warning(f"Player {interaction.user.name} already has this upgrade: {upgrade.name}")
                     embed.description = "You already have this upgrade"
                     embed.color = 0xff0000
                     await message_manager.update_message()
                     await interaction.response.defer(thinking=False, ephemeral=True)
                     return
+
                 new_upgrade = PlayerUpgrade(unit_id=_unit.id, shop_upgrade_id=upgrade.id, type=upgrade.type, name=upgrade.name, original_price=upgrade.cost)
                 session.add(new_upgrade)
+                logger.info(f"Player {interaction.user.name} bought upgrade: {upgrade.name} for {upgrade.cost} Req")
                 upgrade_name = upgrade.name
                 upgrade_cost = upgrade.cost
                 session.commit()
@@ -222,13 +252,16 @@ class Shop(GroupCog):
                 embed.color = 0x00ff00
                 await message_manager.update_message(view=view, embed=embed)
                 await interaction.response.defer(thinking=False, ephemeral=True)
-            elif upgrade.type == "REFIT":
+
+            elif upgrade.type == UpgradeType.REFIT:
                 refit_target = upgrade.refit_target
                 refit_cost = upgrade.cost
                 current_upgrades = _unit.upgrades
                 shop_upgrades = [upgrade.shop_upgrade_id for upgrade in current_upgrades]
-                shop_upgrades = session.query(ShopUpgrade).filter(ShopUpgrade.id.in_(current_upgrades)).all()
+                shop_upgrades = session.query(ShopUpgrade).filter(ShopUpgrade.id.in_(shop_upgrades)).all()
                 incompatible_upgrades = []
+                logger.debug(f"Current upgrades: {current_upgrades}, Shop upgrades: {shop_upgrades}")
+
                 for upgrade in shop_upgrades:
                     compatible = False
                     for ut in upgrade.unit_types:
@@ -237,13 +270,17 @@ class Shop(GroupCog):
                             break
                     if not compatible:
                         incompatible_upgrades.append(upgrade.id)
+
                 stockpile = session.query(Unit).filter(Unit.player_id == _player.id, Unit.unit_type == "STOCKPILE").first()
                 if not stockpile:
+                    logger.warning(f"Player {interaction.user.name} does not have a stockpile unit.")
                     await interaction.response.send_message("You don't have a stockpile unit", ephemeral=True)
                     return
+
                 for upgrade in current_upgrades:
                     if upgrade.shop_upgrade_id in incompatible_upgrades:
                         upgrade.unit_id = stockpile.id
+
                 _unit.unit_type = refit_target
                 session.commit()
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
