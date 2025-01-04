@@ -4,8 +4,9 @@ from discord import Interaction, app_commands as ac, Member, ui, ButtonStyle, Se
 from discord.ui import View
 from models import Player, Unit as Unit_model, UnitStatus, Campaign, CampaignInvite
 from customclient import CustomClient
-from utils import uses_db
+from utils import uses_db, is_management
 from sqlalchemy.orm import Session
+
 import os
 logger = getLogger(__name__)
 
@@ -316,6 +317,62 @@ class Unit(GroupCog):
         view = View()
         view.add_item(UnitSelect())
         await interaction.response.send_message("Please select the unit to rename", view=view, ephemeral=CustomClient().use_ephemeral)
+
+    @ac.command(name="transfer_unit", description="Transfer a proposed unit from your company")
+    @ac.check(is_management)  # only management can transfer units
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def transfer_unit(self, interaction: Interaction, campaign: str, session: Session):
+        if not await campaign.is_management(interaction):
+            await interaction.response.send_message("You don't have permission to run this command", ephemeral=True)
+            return
+        player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
+        if not player:
+            await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            return
+        units = session.query(Unit_model).filter(Unit_model.player_id == player.id, Unit_model.status == UnitStatus.PROPOSED).all()
+        if not units:
+            await interaction.response.send_message("You don't have any proposed units", ephemeral=CustomClient().use_ephemeral)
+            return
+    
+        class UnitSelect(ui.Select):
+            def __init__(self):
+                options = [SelectOption(label=unit.name, value=unit.name) for unit in units]
+                super().__init__(placeholder="Select the unit to transfer", options=options)
+                self.player_id = player.id
+                session.expunge(player)
+                for unit in units:
+                    session.expunge(unit)
+    
+            @uses_db(sessionmaker=CustomClient().sessionmaker)
+            async def callback(self, interaction: Interaction, session: Session):
+                unit: Unit_model = session.query(Unit_model).filter(Unit_model.name == self.values[0], Unit_model.player_id == self.player_id).first()
+                if unit.unit_type == "STOCKPILE":
+                    await interaction.response.send_message("Stockpile units cannot be transferred", ephemeral=CustomClient().use_ephemeral)
+                    return
+                await interaction.response.send_message("Please mention the player to transfer the unit to:", ephemeral=CustomClient().use_ephemeral)
+    
+                def check(m):
+                    return m.author == interaction.user and m.mentions
+    
+                msg = await self.bot.wait_for('message', check=check, timeout=60.0)
+                target_player = session.query(Player).filter(Player.discord_id == msg.mentions[0].id).first()
+                if not target_player:
+                    await interaction.followup.send("The mentioned player does not exist", ephemeral=CustomClient().use_ephemeral)
+                    return
+                unit.player_id = target_player.id
+                session.commit()
+                await interaction.followup.send(f"Unit {unit.name} transferred to {target_player.name}", ephemeral=CustomClient().use_ephemeral)
+
+    
+        view = View()
+        try:
+            view.add_item(UnitSelect())
+        except Exception as e:
+            logger.error(f"Error adding unit select to view: {e}")
+            await interaction.response.send_message("Unexpected error, please tell Cheese", ephemeral=CustomClient().use_ephemeral)
+            return
+        await interaction.response.send_message("Please select the unit to transfer", view=view, ephemeral=CustomClient().use_ephemeral)
+
 bot: Bot = None
 async def setup(_bot: Bot):
     global bot

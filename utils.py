@@ -7,6 +7,9 @@ from logging import getLogger
 import asyncio
 from collections import deque
 from typing import Coroutine
+from discord import Interaction
+CustomClient = None
+
 logger = getLogger(__name__)
 
 @lru_cache(maxsize=1)
@@ -267,9 +270,31 @@ async def callback_listener(callback: Coroutine, bind:str):
         finally:
             writer.close()
 
+
     try:
         server = await asyncio.start_server(listener, address, port)
         await server.serve_forever()
     except Exception as e:
         logger.error(f"Error in callback_listener: {e}") # we don't want to crash the bot if the callback happens twice, whcih would OSE 98
         return
+
+
+async def is_management(interaction: Interaction) -> bool:
+    """Check if a user has management permissions"""
+    global CustomClient
+    if CustomClient is None:
+        from customclient import CustomClient
+    valid = any(role in interaction.user.roles for role in [interaction.guild.get_role(role_id) for role_id in CustomClient().mod_roles])
+    logger.info(f"{interaction.user.name} is management: {valid}")
+    return valid
+
+async def is_gm(interaction: Interaction) -> bool:
+    """Check if a user has GM permissions"""
+    is_management_result = await is_management(interaction)
+    is_gm_role = interaction.guild.get_role(CustomClient().gm_role) in interaction.user.roles
+    logger.info(f"{interaction.user.name} is management: {is_management_result}, is gm: {is_gm_role}")
+    valid = is_gm_role or is_management_result
+    if not valid:
+        await interaction.response.send_message("You don't have permission to run this command", ephemeral=True)
+    return valid
+
