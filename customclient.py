@@ -593,6 +593,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             last_ping = datetime.now()
             await interaction.response.send_message(f"Pong! I was last restarted at <t:{int(self.start_time.timestamp())}:F>, <t:{int(self.start_time.timestamp())}:R>")
 
+        @self.tree.command(name="patchnotes", description="Show the patch notes")
+        async def patchnotes(interaction: Interaction):
+            with open("patchnotes.md", "r") as file:
+                content = file.read()
+                if len(content) > 2000:
+                    content = content[:1997] + "..."
+            await interaction.response.send_message(content, ephemeral=True)
+
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
         #await self.load_extension("extensions.configuration") # for initial setup, we want to disable all user commands, so we only load the configuration extension
         await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup", "extensions.search", "extensions.faq", "extensions.campaigns"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
