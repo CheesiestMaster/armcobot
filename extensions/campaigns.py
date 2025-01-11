@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from customclient import CustomClient
 logger = getLogger(__name__)
 class Campaigns(GroupCog):
-    def __init__(self, bot: Bot):
+    def __init__(self, bot: CustomClient):
         self.bot = bot
     
     @staticmethod
@@ -131,6 +131,7 @@ class Campaigns(GroupCog):
             unit.callsign = None
             unit.campaign_id = None
             unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
+            self.bot.queue.put_nowait((1, unit.player, 0))
         # delete all invites because they are no longer valid
         invites = session.query(CampaignInvite).filter(CampaignInvite.campaign_id == _campaign.id).all()
         for invite in invites:
@@ -162,6 +163,7 @@ class Campaigns(GroupCog):
             unit.player.rec_points += base
             if unit.status == UnitStatus.ACTIVE:
                 unit.player.rec_points += survivor
+            self.bot.queue.push_nowait((1, unit.player, 0))
         await interaction.response.send_message(f"Campaign {campaign} payout complete", ephemeral=True)
 
     @ac.command(name="invite", description="Invite a player to a campaign")
@@ -218,6 +220,7 @@ class Campaigns(GroupCog):
             unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
         logger.info(f"Player {player.name} deactivated from {campaign}")
         await interaction.response.send_message(f"Player {player.mention} deactivated from {campaign}", ephemeral=True)
+        self.bot.queue.put_nowait((1, _player, 0))
 
     @ac.command(name="list", description="List all campaigns")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
@@ -241,7 +244,7 @@ class Campaigns(GroupCog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 bot: Bot = None
-async def setup(_bot: Bot):
+async def setup(_bot: CustomClient):
     global bot
     bot = _bot
     await bot.add_cog(Campaigns(bot))

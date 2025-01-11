@@ -34,7 +34,7 @@ class Unit(GroupCog):
             @ui.button(label="Create Unit", style=ButtonStyle.primary)
             @uses_db(sessionmaker=CustomClient().sessionmaker)
             async def create_unit_callback(self, interaction: Interaction, button: ui.Button, session: Session):
-                player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
+                player: Player|None = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
                 if not player:
                     await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
                     return
@@ -64,7 +64,7 @@ class Unit(GroupCog):
                 unit = Unit_model(player_id=player.id, name=unit_name, unit_type=unit_type, active=False)
                 session.add(unit)
                 session.commit()
-                CustomClient().queue.put_nowait((1, unit))
+                CustomClient().queue.put_nowait((1, player, 0))
                 logger.debug(f"Unit {unit.name} created for player {player.name}")
                 button.disabled = True
                 await interaction.response.send_message(f"Unit {unit.name} created", ephemeral=CustomClient().use_ephemeral)
@@ -154,7 +154,7 @@ class Unit(GroupCog):
                 unit.status = UnitStatus.ACTIVE
                 unit.campaign_id = _campaign.id
                 await interaction.response.send_message(f"Unit {unit.name} activated", ephemeral=CustomClient().use_ephemeral)
-
+                self.bot.queue.put_nowait((1, player, 0))
         view = View()
         view.add_item(UnitSelect())
         await interaction.response.send_message("Please select the unit to activate", view=view, ephemeral=CustomClient().use_ephemeral)
@@ -189,7 +189,7 @@ class Unit(GroupCog):
                 logger.debug(f"Removing unit {unit.name}")
                 session.delete(unit)
                 session.commit()
-                CustomClient().queue.put_nowait((1, player))
+                CustomClient().queue.put_nowait((1, player, 0)) # this is a nested class, so we have to invoke the singleton instead of using self.bot.queue
                 await interaction.response.send_message(f"Unit {unit.name} removed", ephemeral=CustomClient().use_ephemeral)
 
         view = View()
@@ -220,6 +220,7 @@ class Unit(GroupCog):
         active_unit.status = UnitStatus.INACTIVE if active_unit.status == UnitStatus.ACTIVE else active_unit.status
         active_unit.callsign = None
         await interaction.response.send_message(f"Unit with callsign {active_unit.callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
+        self.bot.queue.put_nowait((1, player, 0))
 
     @ac.command(name="units", description="Display a list of all Units for a Player")
     @ac.describe(player="The player to deliver results for")
@@ -301,7 +302,7 @@ class Unit(GroupCog):
                         return
                     _unit.name = new_name
                     session.commit()
-                    CustomClient().queue.put_nowait((1, unit))
+                    CustomClient().queue.put_nowait((1, player, 0))
 
                     logger.info(f"Unit renamed to {new_name}")
                     await interaction.response.send_message(f"Unit renamed to {new_name}", ephemeral=CustomClient().use_ephemeral)

@@ -33,6 +33,7 @@ class Company(GroupCog):
         session.add(stockpile)
         logger.debug(f"User {interaction.user.display_name} created a new Meta Campaign company")
         await interaction.response.send_message("You have joined Meta Campaign", ephemeral=self.bot.use_ephemeral)
+        self.bot.queue.put_nowait((0, player, 0)) # this is the only one that gets a 0, all others are 1
 
     @ac.command(name="edit", description="Edit your Meta Campaign company")
     @uses_db(CustomClient().sessionmaker)
@@ -66,6 +67,7 @@ class Company(GroupCog):
                     Player.lore: self.children[1].value
                 })
                 await interaction.response.send_message("Company updated", ephemeral=CustomClient().use_ephemeral)
+                self.bot.queue.put_nowait((1, _player, 0))
 
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:
@@ -99,7 +101,7 @@ class Company(GroupCog):
         if not player:
             await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
             return
-        self.bot.queue.put_nowait((1, player))
+        self.bot.queue.put_nowait((1, player, 0))
         await interaction.response.send_message("Your Meta Campaign company has been refreshed", ephemeral=CustomClient().use_ephemeral)
 
 bot: Bot = None
