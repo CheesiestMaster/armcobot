@@ -8,6 +8,7 @@ import asyncio
 from collections import deque
 from typing import Coroutine
 from discord import Interaction
+import pandas as pd
 CustomClient = None
 
 logger = getLogger(__name__)
@@ -298,3 +299,7 @@ async def is_gm(interaction: Interaction) -> bool:
         await interaction.response.send_message("You don't have permission to run this command", ephemeral=True)
     return valid
 
+def filter_df(df: pd.DataFrame, col_name: str, filter: set[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    mask = df[col_name].astype(str).isin(filter)
+    logger.debug(mask.any())
+    return df[mask], df[~mask]

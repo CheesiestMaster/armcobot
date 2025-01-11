@@ -1,12 +1,17 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
+from discord.ext import tasks
 from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji, SelectOption, ui, ButtonStyle
 from discord.ui import Modal, TextInput
 from models import Player, Unit, UnitStatus, PlayerUpgrade, Medals
 from customclient import CustomClient
 import os
-from utils import has_invalid_url, uses_db, string_to_list
+from utils import has_invalid_url, uses_db, filter_df, is_management
 from sqlalchemy.orm import Session
+import pandas as pd
+import datetime
+import pytz
+import asyncio
 logger = getLogger(__name__)
 
 class Admin(GroupCog, group_name="admin", name="Admin"):
@@ -20,23 +25,19 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         super().__init__()
         self.bot = bot
         if os.getenv("PROD", False):
-            self.interaction_check = self._is_mod
+            self.interaction_check = is_management
 
         self._setup_context_menus()
-
-    async def _is_mod(self, interaction: Interaction):
-        """
-        Check if the user is a moderator with the necessary role.
-        """
-        valid = any(interaction.user.get_role(role) for role in self.bot.mod_roles)
-        if not valid:
-            logger.warning(f"{interaction.user.name} tried to use admin commands")
-        return valid
+        self.bot.add_listener(self.on_ready)
+    
+    # after the bot is ready, we want to start the backpay task
+    async def on_ready(self):
+        self.attempt_backpay.start()
     
     def _setup_context_menus(self):
         logger.debug("Setting up context menus for admin commands")
         @self.bot.tree.context_menu(name="Req Point")
-        @ac.check(self._is_mod)
+        @ac.check(is_management)
         async def reqpoint_menu(interaction: Interaction, target: Member):
             # send a modal to get the point amount, then call the private method to handle the change
             reqpoint_modal = ui.Modal(title="Req Point", custom_id="reqpoint_modal")
@@ -52,7 +53,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             await interaction.response.send_modal(reqpoint_modal)
 
         @self.bot.tree.context_menu(name="Bonus Pay")
-        @ac.check(self._is_mod)
+        @ac.check(is_management)
         async def bonuspay_menu(interaction: Interaction, target: Member):
             bonuspay_modal = ui.Modal(title="Bonus Pay", custom_id="bonuspay_modal")
             bonuspay_modal.add_item(ui.TextInput(label="How many points?", style=TextStyle.short, placeholder="Enter a number"))
@@ -67,7 +68,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             await interaction.response.send_modal(bonuspay_modal)
 
         @self.bot.tree.context_menu(name="Refresh Stats")
-        @ac.check(self._is_mod)
+        @ac.check(is_management)
         async def refresh_stats_menu(interaction: Interaction, target: Member):
             await self._refresh_player(interaction, target)
 
@@ -482,6 +483,60 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         modal = EditCompanyModal(player)
         await interaction.response.send_modal(modal)
 
+    @tasks.loop(count=1)
+    async def align_backpay(self):
+        logger.info("Aligning backpay task")
+        
+        # Get the current time in UTC
+        now_utc = datetime.datetime.now(pytz.utc)
+        
+        # Convert to EST
+        est = pytz.timezone('America/New_York')
+        now_est = now_utc.astimezone(est)
+
+        # Calculate the next Tuesday
+        days_until_tuesday = (1 - now_est.weekday() + 7) % 7  # 1 is Tuesday
+        if days_until_tuesday == 0 and now_est.hour >= 8:
+            days_until_tuesday = 7  # If it's already Tuesday after 8 AM, go to next Tuesday
+
+        next_tuesday = now_est + datetime.timedelta(days=days_until_tuesday)
+        target_time = next_tuesday.replace(hour=8, minute=0, second=0, microsecond=0)
+
+        # Calculate the total time to sleep
+        total_sleep_time = (target_time - now_est).total_seconds()
+
+        # Sleep in chunks of up to 1 hour
+        while (sleep_time := min(total_sleep_time, 3600)) > 0:
+            await asyncio.sleep(sleep_time)
+            total_sleep_time -= sleep_time
+
+        self.attempt_backpay.start()
+        logger.info("Aligning backpay task complete")
+
+    @tasks.loop(hours=7*24) # weekly
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def attempt_backpay(self, session: Session):
+        logger.info("Attempting to backpay players")
+        # get the set of all player ids
+        player_ids = set(session.query(Player.discord_id).all())
+        player_ids = {id[0] for id in player_ids if id is not None}
+        # read the backpay.csv file into a df
+        df = pd.read_csv("backpay.csv")
+        logger.info(f"Found {len(df)} players in the backpay.csv file")
+        existing, missing = filter_df(df, "Discord ID", player_ids)
+        logger.info(f"Found {len(existing)} existing players in the backpay.csv file")
+        logger.info(f"Found {len(missing)} missing players in the backpay.csv file")
+        # for each existing player, edit Player.rec_points by incrementing the value by the "Backpay Owed" column
+        for _, row in existing.iterrows():
+            player_id = row["Discord ID"]
+            player = session.query(Player).filter(Player.discord_id == player_id).first()
+            logger.info(f"Backpaying {player.name} with {row['Backpay Owed']} points")
+            player.rec_points += row["Backpay Owed"]
+            session.commit()
+            self.bot.queue.put_nowait((1, player, 0))
+        # write the missing players back to the same file
+        missing.to_csv("backpay.csv", index=False)
+        logger.info("Backpay complete")
 
 bot: Bot = None
 async def setup(_bot: Bot):

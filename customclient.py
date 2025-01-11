@@ -29,7 +29,7 @@ from singleton import Singleton
 import asyncio
 import templates
 import logging
-from utils import uses_db, RollingCounterDict, callback_listener
+from utils import uses_db, RollingCounterDict, callback_listener, is_management
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
 
@@ -89,6 +89,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self.medal_emotes:dict = _Medal_Emotes.value
         self.use_ephemeral = use_ephemeral
         self.tree.interaction_check = self.check_banned_interaction
+
+    async def no_commands(self, interaction: Interaction):
+        if not is_management(interaction):
+            await interaction.response.send_message(f"# A COMMAND BAN IS IN EFFECT {interaction.user.mention}, WHY ARE YOU TRYING TO RUN A COMMAND?")
+            return False
+        return True
 
     async def check_banned_interaction(self, interaction: Interaction):
         # check if the user.id is in the BANNED_USERS env variable, if so, reply with a message and return False, else return True
@@ -487,7 +493,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 self.startup_animation.start()
             except Exception as e:
                 logger.error(f"Error starting startup animation: {e}")
-        asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345"))
+        asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if getenv("PROD", "false").lower() == "false" else "127.0.0.1:12346"))
     
 
     async def shutdown_callback(self):
