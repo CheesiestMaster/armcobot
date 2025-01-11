@@ -69,6 +69,8 @@ class Shop(GroupCog):
             _player.bonus_pay -= 10
             _player.rec_points += 1
             bonus_button.disabled = _player.bonus_pay < 10
+            session.commit()
+            self.bot.queue.put_nowait((1, _player, 0))
             await message_manager.update_message()  # Update the message manager with the new state
             await interaction.response.defer(thinking=False, ephemeral=True)
             
@@ -140,6 +142,7 @@ class Shop(GroupCog):
                 _unit.status = UnitStatus.INACTIVE
                 _player.rec_points -= 1
                 session.commit()
+                self.bot.queue.put_nowait((1, _player, 0))
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager) # recurse
                 await message_manager.update_message(view=view, embed=embed)
                 await interaction.response.defer(thinking=False, ephemeral=True)
@@ -247,6 +250,7 @@ class Shop(GroupCog):
                 upgrade_name = upgrade.name
                 upgrade_cost = upgrade.cost
                 session.commit()
+                self.bot.queue.put_nowait((1, _player, 0))
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
                 embed.description = f"You have bought {upgrade_name} for {upgrade_cost} Req"
                 embed.color = 0x00ff00
@@ -283,6 +287,7 @@ class Shop(GroupCog):
 
                 _unit.unit_type = refit_target
                 session.commit()
+                self.bot.queue.put_nowait((1, _player, 0))
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
                 embed.description = f"You have bought a refit to {refit_target} for {refit_cost} Req"
                 embed.color = 0x00ff00

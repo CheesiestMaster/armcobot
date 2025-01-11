@@ -209,168 +209,150 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
     # we are going to start subdividing the queue consumer into multiple functions, for clarity
 
-    async def _handle_create_task(self, task: tuple[int, Any], session: Session):
+    async def _handle_create_task(self, task: tuple[int, Player, int], session: Session):
+        """Handle creation tasks for players only"""
         session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
-        requeued = False
-        if task[1].id is None:
-            logger.error(f"Task has a None id, skipping")
+        
+        if not isinstance(task[1], Player):
+            logger.error(f"Task type 0 (create) received non-Player instance: {type(task[1])}")
             return
-        instance  = session.query(task[1].__class__).filter(task[1].__class__.id == task[1].id).first()
-        if isinstance(instance, Player):
-            player = instance
-            if self.config.get("dossier_channel_id"):
-                medals = session.query(Medals).filter(Medals.player_id == player.id).all()
-                # identify what medals have known emotes
-                known_emotes = set(self.medal_emotes.keys())
-                known_medals = {medal.name for medal in medals if medal.name in known_emotes}
-                unknown_medals = {medal.name for medal in medals if medal.name not in known_emotes}
-                known_medals_list = list(known_medals)
-                # make rows of 5 medals that have known emotes
-                rows = [known_medals_list[i:i+5] for i in range(0, len(known_medals_list), 5)]
-                unknown_medals_list = list(unknown_medals)
-                unknown_text = "\n".join(unknown_medals_list)
-                # convert the rows to a string of emotes, with a space between each emote
-                medal_block = "\n".join([" ".join([self.medal_emotes[medal] for medal in row]) for row in rows]) + "\n" + unknown_text
-                mention = await self.fetch_user(player.discord_id)
-                mention = mention.mention if mention else ""
-                # check for an existing dossier message, if it exists, skip creation
-                create_dossier = True
-                existing_dossier = session.query(Dossier).filter(Dossier.player_id == player.id).first()
-                if existing_dossier:
-                    # check if the message itself actually exists
-                    channel = self.get_channel(self.config["dossier_channel_id"])
-                    if channel:
-                        message = await channel.fetch_message(existing_dossier.message_id)
-                        if message:
-                            logger.debug(f"Dossier message for player {player.id} already exists, skipping creation")
-                            create_dossier = False
-                if not player.id:
-                    logger.error(f"missing player id, skipping dossier creation")
-                    return
-                if create_dossier:
-                    dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(templates.Dossier.format(mention=mention, player=player, medals=medal_block))
-                    dossier = Dossier(player_id=player.id, message_id=dossier_message.id)
-                    session.add(dossier)
-                    logger.debug(f"Created dossier for player {player.id} with message ID {dossier_message.id}")
-            if self.config.get("statistics_channel_id"):
-                unit_message = await self.generate_unit_message(player)
-                _player = session.merge(player)
-                discord_id = _player.discord_id
-                mention = await self.fetch_user(discord_id)
-                mention = mention.mention if mention else ""
-                # check for an existing statistics message, if it exists, skip creation
-                existing_statistics = session.query(Statistic).filter(Statistic.player_id == _player.id).first()
-                if existing_statistics:
-                    # check if the message itself actually exists
-                    channel = self.get_channel(self.config["statistics_channel_id"])
-                    if channel:
-                        message = await channel.fetch_message(existing_statistics.message_id)
-                        if message:
-                            logger.debug(f"Statistics message for player {_player.id} already exists, skipping creation")
-                            return
-                if not _player.id:
-                    logger.error(f"missing player id, skipping statistics creation")
-                    return
-                statistics_message = await self.get_channel(self.config["statistics_channel_id"]).send(templates.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
-                statistics = Statistic(player_id=_player.id, message_id=statistics_message.id)
-                session.add(statistics)
-                logger.debug(f"Created statistics for player {_player.id} with message ID {statistics_message.id}")
-        elif isinstance(instance, Unit):
-            player = session.query(Player).filter(Player.id == instance.player_id).first()
-            if player:
-                if not requeued:
-                    self.queue.put_nowait((1, player))
-                    logger.debug(f"Queued update task for player {player.id} due to unit {instance.id} Location 1")
-                    requeued = True
-                else:
-                    logger.debug(f"Already queued update task for player {player.id} due to unit {instance.id} Location 1")
-            else:
-                logger.error(f"Player not found for unit {instance.id}")
-        elif isinstance(instance, PlayerUpgrade):
-            unit = session.query(Unit).filter(Unit.id == instance.unit_id).first()
-            player = session.query(Player).filter(Player.id == unit.player_id).first()
-            if player:
-                if not requeued:
-                    self.queue.put_nowait((1, player))
-                    logger.debug(f"Queued update task for player {player.id} due to upgrade {instance.id} Location 2")
-                    requeued = True
-                else:
-                    logger.debug(f"Already queued update task for player {player.id} due to upgrade {instance.id} Location 2")
-
-    async def _handle_update_task(self, task: tuple[int, Any], session: Session):
-        session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
-        instance = session.query(task[1].__class__).filter(task[1].__class__.id == task[1].id).first()
-        requeued = False
-        if isinstance(instance, Player):
-            logger.debug(f"Updating player: {instance}")
-            player = instance
-            logger.debug("fetching dossier")
-            dossier = session.query(Dossier).filter(Dossier.player_id == player.id).first()
-            if dossier:
-                logger.debug("dossier found, fetching channel")
+        
+        player = session.query(Player).filter(Player.id == task[1].id).first()
+        if not player:
+            logger.error(f"Player with id {task[1].id} not found in database")
+            return
+        
+        if self.config.get("dossier_channel_id"):
+            medals = session.query(Medals).filter(Medals.player_id == player.id).all()
+            # identify what medals have known emotes
+            known_emotes = set(self.medal_emotes.keys())
+            known_medals = {medal.name for medal in medals if medal.name in known_emotes}
+            unknown_medals = {medal.name for medal in medals if medal.name not in known_emotes}
+            known_medals_list = list(known_medals)
+            # make rows of 5 medals that have known emotes
+            rows = [known_medals_list[i:i+5] for i in range(0, len(known_medals_list), 5)]
+            unknown_medals_list = list(unknown_medals)
+            unknown_text = "\n".join(unknown_medals_list)
+            # convert the rows to a string of emotes, with a space between each emote
+            medal_block = "\n".join([" ".join([self.medal_emotes[medal] for medal in row]) for row in rows]) + "\n" + unknown_text
+            mention = await self.fetch_user(player.discord_id)
+            mention = mention.mention if mention else ""
+            
+            # check for an existing dossier message, if it exists, skip creation
+            create_dossier = True
+            existing_dossier = session.query(Dossier).filter(Dossier.player_id == player.id).first()
+            if existing_dossier:
+                # check if the message itself actually exists
                 channel = self.get_channel(self.config["dossier_channel_id"])
                 if channel:
-                    logger.debug("channel found, fetching message")
-                    message = await channel.fetch_message(dossier.message_id)
-                    logger.debug("message found, fetching user")
-                    mention = await self.fetch_user(player.discord_id)
-                    mention = mention.mention if mention else ""
-                    logger.debug("user found, editing message")
-                    await message.edit(content=templates.Dossier.format(mention=mention, player=player, medals=""))
-                    logger.debug(f"Updated dossier for player {player.id} with message ID {dossier.message_id}")
-            else:
-                logger.debug("no dossier found, pushing create task")
-                if not requeued:
-                    self.queue.put_nowait((0, player))
-                    logger.debug(f"Queued create task for player {player.id} due to missing dossier message Location 3")
-                    requeued = True
-                else:
-                    logger.debug(f"Already queued create task for player {player.id} due to missing dossier message Location 3")
-            statistics = session.query(Statistic).filter(Statistic.player_id == player.id).first()
-            if statistics:
+                    message = await channel.fetch_message(existing_dossier.message_id)
+                    if message:
+                        logger.debug(f"Dossier message for player {player.id} already exists, skipping creation")
+                        create_dossier = False
+                        
+            if not player.id:
+                logger.error(f"missing player id, skipping dossier creation")
+                create_dossier = False
+            
+            if create_dossier:
+                dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(
+                    templates.Dossier.format(mention=mention, player=player, medals=medal_block)
+                )
+                dossier = Dossier(player_id=player.id, message_id=dossier_message.id)
+                session.add(dossier)
+                logger.debug(f"Created dossier for player {player.id} with message ID {dossier_message.id}")
+            
+        if self.config.get("statistics_channel_id"):
+            unit_message = await self.generate_unit_message(player)
+            _player = session.merge(player)
+            discord_id = _player.discord_id
+            mention = await self.fetch_user(discord_id)
+            mention = mention.mention if mention else ""
+            
+            # check for an existing statistics message, if it exists, skip creation
+            existing_statistics = session.query(Statistic).filter(Statistic.player_id == _player.id).first()
+            if existing_statistics:
+                # check if the message itself actually exists
                 channel = self.get_channel(self.config["statistics_channel_id"])
                 if channel:
-                    message = await channel.fetch_message(statistics.message_id)
-                    discord_id = player.discord_id
-                    unit_message = await self.generate_unit_message(player)
-                    _player = session.merge(player)
-                    _statistics = session.merge(statistics)
-                    mention = await self.fetch_user(discord_id)
-                    mention = mention.mention if mention else ""
-                    await message.edit(content=templates.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
-                    logger.debug(f"Updated statistics for player {_player.id} with message ID {_statistics.message_id}")
-                else:
-                    # there should be a message, but the discord side was probably deleted by a mod
-                    logger.error(f"No channel found for statistics message of player {player.id}, skipping")
+                    message = await channel.fetch_message(existing_statistics.message_id)
+                    if message:
+                        logger.debug(f"Statistics message for player {_player.id} already exists, skipping creation")
+                        return
+                        
+            if not _player.id:
+                logger.error(f"missing player id, skipping statistics creation")
+                return
+            
+            statistics_message = await self.get_channel(self.config["statistics_channel_id"]).send(
+                templates.Statistics_Player.format(mention=mention, player=_player, units=unit_message)
+            )
+            statistics = Statistic(player_id=_player.id, message_id=statistics_message.id)
+            session.add(statistics)
+            logger.debug(f"Created statistics for player {_player.id} with message ID {statistics_message.id}")
+
+    async def _handle_update_task(self, task: tuple[int, Player, int], session: Session):
+        """Handle update tasks for players only"""
+        session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
+        requeued = False
+        
+        if not isinstance(task[1], Player):
+            logger.error(f"Task type 1 (update) received non-Player instance: {type(task[1])}")
+            return
+        
+        player = session.query(Player).filter(Player.id == task[1].id).first()
+        if not player:
+            logger.error(f"Player with id {task[1].id} not found in database")
+            return
+        
+        logger.debug(f"Updating player: {player}")
+        
+        # Handle dossier update
+        logger.debug("fetching dossier")
+        dossier = session.query(Dossier).filter(Dossier.player_id == player.id).first()
+        if dossier:
+            logger.debug("dossier found, fetching channel")
+            channel = self.get_channel(self.config["dossier_channel_id"])
+            if channel:
+                logger.debug("channel found, fetching message")
+                message = await channel.fetch_message(dossier.message_id)
+                logger.debug("message found, fetching user")
+                mention = await self.fetch_user(player.discord_id)
+                mention = mention.mention if mention else ""
+                logger.debug("user found, editing message")
+                await message.edit(content=templates.Dossier.format(mention=mention, player=player, medals=""))
+                logger.debug(f"Updated dossier for player {player.id} with message ID {dossier.message_id}")
+        else:
+            logger.debug("no dossier found, pushing create task")
+            self.queue.put_nowait((0, player, 0))
+            requeued = True
+            logger.debug(f"Queued create task for player {player.id} due to missing dossier message Location 3")
+        
+        # Handle statistics update
+        statistics = session.query(Statistic).filter(Statistic.player_id == player.id).first()
+        if statistics:
+            channel = self.get_channel(self.config["statistics_channel_id"])
+            if channel:
+                message = await channel.fetch_message(statistics.message_id)
+                discord_id = player.discord_id
+                unit_message = await self.generate_unit_message(player)
+                _player = session.merge(player)
+                _statistics = session.merge(statistics)
+                mention = await self.fetch_user(discord_id)
+                mention = mention.mention if mention else ""
+                await message.edit(content=templates.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
+                logger.debug(f"Updated statistics for player {_player.id} with message ID {_statistics.message_id}")
             else:
-                # user doesn't have a statistics message, push a create task on the user, to fudge it back
-                if not requeued:
-                    self.queue.put_nowait((0, player))
-                    logger.debug(f"Queued create task for player {player.id} due to missing statistics message Location 4")
-                    requeued = True
-                else:
-                    logger.debug(f"Already queued create task for player {player.id} due to missing statistics message Location 4")
-        elif isinstance(instance, Unit):
-            unit = instance
-            player = session.query(Player).filter(Player.id == unit.player_id).first()
-            if player:
-                if not requeued:
-                    self.queue.put_nowait((1, player))
-                    logger.debug(f"Queued update task for player {player.id} due to unit {unit.id} Location 5")
-                    requeued = True
-                else:
-                    logger.debug(f"Already queued update task for player {player.id} due to unit {unit.id} Location 5")
-        elif isinstance(task[1], PlayerUpgrade):
-            upgrade = task[1]
-            unit = session.query(Unit).filter(Unit.id == upgrade.unit_id).first()
-            player = session.query(Player).filter(Player.id == unit.player_id).first()
-            if player:
-                if not requeued:
-                    self.queue.put_nowait((1, player))
-                    logger.debug(f"Queued update task for player {player.id} due to upgrade {upgrade.id} Location 6")
-                    requeued = True
-                else:
-                    logger.debug(f"Already queued update task for player {player.id} due to upgrade {upgrade.id} Location 6")
+                # there should be a message, but the discord side was probably deleted by a mod
+                logger.error(f"No channel found for statistics message of player {player.id}, skipping")
+        else:
+            # user doesn't have a statistics message, push a create task
+            if not requeued:
+                self.queue.put_nowait((0, player, 0))
+                requeued = True
+                logger.debug(f"Queued create task for player {player.id} due to missing statistics message Location 4")
+            else:
+                logger.debug(f"Already queued create task for player {player.id} due to missing dossier message, but the statistics message is also missing Location 5")
 
     async def _handle_delete_task(self, task: tuple[int, Any], session: Session):
         session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
@@ -522,7 +504,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     @tasks.loop(count=1)
     async def startup_animation(self):
         try:
-            import sam_startup
+            import sam_startup # type: ignore
         except ImportError:
             return
         channel = await self.fetch_channel(1211454073383952395)

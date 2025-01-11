@@ -23,27 +23,6 @@ class UnitStatus(PyEnum):
     PROPOSED = "4"
     LEGACY = "5"
 
-# Listeners
-
-def after_insert(mapper, connection, target):
-    logger.debug(f"{target} was inserted into the database")
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((0, target))
-
-def after_update(mapper, connection, target):
-    logger.debug(f"{target} was updated in the database")
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((1, target))
-
-def after_delete(mapper, connection, target):
-    logger.debug(f"{target} was deleted from the database")
-    from customclient import CustomClient
-    queue = CustomClient().queue
-    queue.put_nowait((2, target))
-
-
 class BaseModel(Base):
     __abstract__ = True
     
@@ -196,12 +175,5 @@ class ShopUpgradeUnitTypes(BaseModel):
     shop_upgrade_id = Column(Integer, ForeignKey("shop_upgrades.id"))
     unit_type = Column(String(15))
     shop_upgrade = relationship("ShopUpgrade", back_populates="unit_types", lazy="joined")
-
-# Unit, PlayerUpgrade need all 3 listeners
-# Dossier and Statistic need only after_delete
-
-[event.listen(model, "after_insert", after_insert) for model in [Player, Unit, PlayerUpgrade]]
-[event.listen(model, "after_update", after_update) for model in [Player, Unit, PlayerUpgrade]]
-[event.listen(model, "after_delete", after_delete) for model in [PlayerUpgrade, Dossier, Statistic]]
 
 create_all = Base.metadata.create_all

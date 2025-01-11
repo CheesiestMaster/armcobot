@@ -93,6 +93,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         player.rec_points += points
         logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
         await interaction.response.send_message(f"{player.name} now has {player.rec_points} requisition points", ephemeral=self.bot.use_ephemeral)
+        self.bot.queue.put_nowait((1, player, 0))
 
     @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
     @ac.describe(player="The player to give or remove bonus pay from")
@@ -116,6 +117,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         player.bonus_pay += points
         logger.debug(f"User {player.name} now has {player.bonus_pay} bonus pay")
         await interaction.response.send_message(f"{player.name} now has {player.bonus_pay} bonus pay", ephemeral=self.bot.use_ephemeral)
+        self.bot.queue.put_nowait((1, player, 0))
 
     #@ac.command(name="activateunits", description="Activate multiple units")
     async def activateunits(self, interaction: Interaction):
@@ -271,7 +273,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         upgrade = PlayerUpgrade(name=name, type="SPECIAL", unit_id=_unit.id)
         session.add(upgrade)
         await interaction.response.send_message(f"Special upgrade {name} given to {_player.name}", ephemeral=self.bot.use_ephemeral)
-
+        self.bot.queue.put_nowait((1, _player, 0))
     @ac.command(name="remove_unit", description="Remove a unit from a player")
     @ac.describe(player="The player to remove the unit from")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
@@ -305,11 +307,11 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 if not unit:
                     await interaction.response.send_message("Unit not found", ephemeral=self.bot.use_ephemeral)
                     return
-                self.bot.queue.put_nowait((2, unit))
+                
                 session.delete(unit)
                 logger.debug(f"Unit with the id {unit_id} was deleted from player {player.name}")
                 await interaction.response.send_message(f"Unit {unit.name} has been removed", ephemeral=self.bot.use_ephemeral)
-                
+                self.bot.queue.put_nowait((1, company, 0))
 
         # Checks if the Player has a Meta Company and If that company has a name
         company: Player = session.query(Player).filter(Player.discord_id == player.id).first()
@@ -339,6 +341,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             if unit.status == UnitStatus.INACTIVE:
                 unit.status = UnitStatus.LEGACY
             logger.debug(f"Unit {unit.name} has been set to legacy")
+            self.bot.queue.put_nowait((1, unit.player, 0))
 
         await interaction.response.send_message(f"Unit type {name} removed", ephemeral=self.bot.use_ephemeral)
 
@@ -355,6 +358,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
         unit.callsign = None
         await interaction.response.send_message(f"Unit {unit.name} deactivated", ephemeral=self.bot.use_ephemeral)
+        self.bot.queue.put_nowait((1, unit.player, 0))
 
     @ac.command(name="change_callsign", description="Change the callsign of a unit")
     @ac.describe(old_callsign="The callsign of the unit to change")
@@ -376,6 +380,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             return
         unit.callsign = new_callsign
         await interaction.response.send_message(f"Unit {unit.name} callsign changed to {new_callsign}", ephemeral=self.bot.use_ephemeral)
+        self.bot.queue.put_nowait((1, unit.player, 0))
 
     @ac.command(name="change_status", description="Change the status of a unit")
     @ac.describe(player="The player whose unit you want to change the status of")
@@ -417,6 +422,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 else:
                     self.unit.status = new_status
                 await interaction.response.send_message(f"Unit {self.unit.name} status changed to {new_status.value}", ephemeral=self.bot.use_ephemeral)
+                self.bot.queue.put_nowait((1, self.unit.player, 0))
 
             @uses_db(sessionmaker=CustomClient().sessionmaker)
             async def change_callsign_callback(self, interaction: Interaction, session: Session):
@@ -426,6 +432,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 self.unit.active = True
                 self.unit.status = UnitStatus.ACTIVE
                 await interaction.response.send_message(f"Unit {self.unit.name} activated with callsign {new_callsign}", ephemeral=CustomClient().use_ephemeral)
+                self.bot.queue.put_nowait((1, self.unit.player, 0))
 
         view = ui.View()
         view.add_item(UnitSelect(player))
@@ -464,6 +471,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 self.player.name = self.children[0].value
                 self.player.lore = self.children[1].value
                 await interaction.response.send_message("Company updated", ephemeral=self.bot.use_ephemeral)
+                self.bot.queue.put_nowait((1, self.player, 0))
 
         player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not player:
