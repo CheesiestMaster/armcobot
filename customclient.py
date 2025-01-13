@@ -88,10 +88,10 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             session.commit()
         self.medal_emotes:dict = _Medal_Emotes.value
         self.use_ephemeral = use_ephemeral
-        self.tree.interaction_check = self.check_banned_interaction
+        self.tree.interaction_check = self.check_banned_interaction # self.no_commands # TODO: switch back to check_banned_interaction, this is a temporary measure
 
     async def no_commands(self, interaction: Interaction):
-        if not is_management(interaction):
+        if not await is_management(interaction):
             await interaction.response.send_message(f"# A COMMAND BAN IS IN EFFECT {interaction.user.mention}, WHY ARE YOU TRYING TO RUN A COMMAND?")
             return False
         return True
@@ -158,7 +158,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             else:
                 await asyncio.sleep(5)  # Maintain pacing to avoid hitting downstream timeouts
             logger.debug(f"Queue size: {self.queue.qsize()}")
-            if self.queue.qsize() >= 400:
+            if self.queue.qsize() >= 1200:
                 logger.critical(f"Queue size is {self.queue.qsize()}, this is too high!")
                 # fetch the discord user for the bot owner, message them, then call self.close()
                 owner = await self.fetch_user(533009808501112881)

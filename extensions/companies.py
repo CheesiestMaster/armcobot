@@ -67,7 +67,7 @@ class Company(GroupCog):
                     Player.lore: self.children[1].value
                 })
                 await interaction.response.send_message("Company updated", ephemeral=CustomClient().use_ephemeral)
-                self.bot.queue.put_nowait((1, _player, 0))
+                CustomClient().queue.put_nowait((1, _player, 0))
 
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:

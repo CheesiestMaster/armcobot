@@ -175,7 +175,7 @@ class Shop(GroupCog):
         compatible_upgrades = []
         for upgrade in upgrades:
             for unit_type in upgrade.unit_types:
-                if unit_type.unit_type in _unit.unit_type:
+                if unit_type.unit_type == _unit.unit_type:
                     compatible_upgrades.append(upgrade)
         if not compatible_upgrades:
             embed.description = "No upgrades are available for this unit"
@@ -240,6 +240,7 @@ class Shop(GroupCog):
 
             if upgrade.type == UpgradeType.UPGRADE:
                 existing = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == _unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.id).first()
+                logger.debug(f"Repeatable: {upgrade.repeatable}")
                 if existing and not upgrade.repeatable:
                     logger.warning(f"Player {interaction.user.name} already has this upgrade: {upgrade.name}")
                     embed.description = "You already have this upgrade"
@@ -253,6 +254,7 @@ class Shop(GroupCog):
                 logger.info(f"Player {interaction.user.name} bought upgrade: {upgrade.name} for {upgrade.cost} Req")
                 upgrade_name = upgrade.name
                 upgrade_cost = upgrade.cost
+                _player.rec_points -= upgrade_cost
                 session.commit()
                 self.bot.queue.put_nowait((1, _player, 0))
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
@@ -290,6 +292,7 @@ class Shop(GroupCog):
                         upgrade.unit_id = stockpile.id
 
                 _unit.unit_type = refit_target
+                _player.rec_points -= refit_cost
                 session.commit()
                 self.bot.queue.put_nowait((1, _player, 0))
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
