@@ -265,8 +265,12 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             return
         _unit = session.query(Unit).filter(Unit.player_id == _player.id, Unit.active == True).first()
         if not _unit:
-            await interaction.response.send_message("Player does not have an active unit", ephemeral=self.bot.use_ephemeral)
-            return
+            # check for their stockpile unit, if that also doesn't exist, send a message saying so
+            _stockpile = session.query(Unit).filter(Unit.player_id == _player.id, Unit.unit_type == "STOCKPILE").first()
+            if not _stockpile:
+                await interaction.response.send_message("Player does not have an active unit or stockpile", ephemeral=self.bot.use_ephemeral)
+                return
+            _unit = _stockpile
         # create an PlayerUpgrade with the given name, type "SPECIAL", and the unit as the parent
         if len(name) > 30:
             await interaction.response.send_message("Name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)

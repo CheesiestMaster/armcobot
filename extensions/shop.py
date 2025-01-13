@@ -139,6 +139,10 @@ class Shop(GroupCog):
                     await message_manager.update_message()
                     await interaction.response.defer(thinking=False, ephemeral=True)
                     return
+                if _unit.unit_type == "MECH":
+                    # we need to make an "upgrade" for the mech named "Light Chassis"
+                    light_chassis = PlayerUpgrade(unit_id=_unit.id, name="Light Chassis", type=UpgradeType.MECH_CHASSIS, original_price=0)
+                    session.add(light_chassis)
                 _unit.status = UnitStatus.INACTIVE
                 _player.rec_points -= 1
                 session.commit()

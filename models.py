@@ -14,6 +14,7 @@ class UpgradeType(PyEnum):
     UPGRADE = "0.0"
     REFIT = "1.0"
     SPECIAL = "2.0"
+    MECH_CHASSIS = "3.0"
 
 class UnitStatus(PyEnum):
     ACTIVE = "1"
@@ -113,7 +114,7 @@ class PlayerUpgrade(BaseModel):
     name = Column(String(30), index=True)
     original_price = Column(Integer, default=0)
     unit_id = Column(Integer, ForeignKey("units.id"))
-    shop_upgrade_id = Column(Integer, ForeignKey("shop_upgrades.id"))
+    shop_upgrade_id = Column(Integer, ForeignKey("shop_upgrades.id"), nullable=True)
     # relationships
     unit = relationship("Unit", back_populates="upgrades", lazy="joined")
     shop_upgrade = relationship("ShopUpgrade", back_populates="player_upgrades", lazy="joined")
