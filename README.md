@@ -3,11 +3,23 @@
 ## Overview
 
 This project is a Discord bot designed to manage units within CaptainShacks Meta Campaign system. The bot provides functionalities for unit,company and campaign management.
+
 Discord: https://discord.gg/bYAEX87MCr
 
 ## Features
 
 - use /faq view in the discord for details
+
+## Usage
+
+1. /company create 
+    - this will register u as a user
+1.1 optional
+    /company edit
+    -   add a cool name and you company lore 
+2. /unit create
+    - creates a unit u can use too participate in a campaign
+
 
 ## Setup Guide
 
