@@ -12,13 +12,15 @@ Discord: https://discord.gg/bYAEX87MCr
 
 ## Usage
 
-1. /company create 
-    - this will register u as a user
-1.1 optional
-    /company edit
-    -   add a cool name and you company lore 
-2. /unit create
-    - creates a unit u can use too participate in a campaign
+    1. /company create 
+        - this will register u as a user
+
+    1.1 /company edit
+        - add a cool name and you company lore 
+        - this is optional
+        
+    2. /unit create
+        - creates a unit u can use too participate in a campaign
 
 
 ## Setup Guide
