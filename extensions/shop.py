@@ -142,7 +142,9 @@ class Shop(GroupCog):
                 if _unit.unit_type == "MECH":
                     # we need to make an "upgrade" for the mech named "Light Chassis"
                     light_chassis = PlayerUpgrade(unit_id=_unit.id, name="Light Chassis", type=UpgradeType.MECH_CHASSIS, original_price=0)
+                    light_laser = PlayerUpgrade(unit_id=_unit.id, name="Light Laser", type=UpgradeType.UPGRADE, original_price=0)
                     session.add(light_chassis)
+                    session.add(light_laser)
                 _unit.status = UnitStatus.INACTIVE
                 _player.rec_points -= 1
                 session.commit()
