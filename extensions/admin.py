@@ -33,6 +33,8 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     # after the bot is ready, we want to start the backpay task
     async def on_ready(self):
         self.align_backpay.start()
+        #self.attempt_backpay.start()
+        
     
     def _setup_context_menus(self):
         logger.debug("Setting up context menus for admin commands")

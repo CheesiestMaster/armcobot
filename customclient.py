@@ -23,7 +23,7 @@ from os import getenv
 from sqlalchemy.orm import Session
 from models import *
 from sqlalchemy import text
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable
 from singleton import Singleton
 import asyncio
@@ -157,9 +157,13 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 nosleep = False
             else:
                 await asyncio.sleep(5)  # Maintain pacing to avoid hitting downstream timeouts
-            logger.debug(f"Queue size: {self.queue.qsize()}")
-            if self.queue.qsize() >= 1200:
-                logger.critical(f"Queue size is {self.queue.qsize()}, this is too high!")
+            queue_size = self.queue.qsize()
+            eta = timedelta(seconds=queue_size * 5)
+            logger.debug(f"Queue size: {queue_size}, Empty in {eta}")
+            await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign" if queue_size == 0 else f"Updating {queue_size} dossiers, Finished in {eta}", type=ActivityType.playing))
+            
+            if queue_size >= 1200:
+                logger.critical(f"Queue size is {queue_size}, this is too high!")
                 # fetch the discord user for the bot owner, message them, then call self.close()
                 owner = await self.fetch_user(533009808501112881)
                 if owner:
@@ -222,7 +226,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         if not isinstance(task[1], Player):
             logger.error(f"Task type 0 (create) received non-Player instance: {type(task[1])}")
             return
-        
+        requeued = False
         player = session.query(Player).filter(Player.id == task[1].id).first()
         if not player:
             logger.error(f"Player with id {task[1].id} not found in database")
@@ -254,7 +258,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     message = await channel.fetch_message(existing_dossier.message_id)
                     if message:
                         logger.debug(f"Dossier message for player {player.id} already exists, skipping creation")
+                        self.queue.put_nowait((1, player, 0))
                         create_dossier = False
+                        requeued = True
                         
             if not player.id:
                 logger.error(f"missing player id, skipping dossier creation")
@@ -284,6 +290,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     message = await channel.fetch_message(existing_statistics.message_id)
                     if message:
                         logger.debug(f"Statistics message for player {_player.id} already exists, skipping creation")
+                        if not requeued:
+                            self.queue.put_nowait((1, _player, 0))
+                            requeued = True
                         return
                         
             if not _player.id:
@@ -590,8 +599,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             await interaction.response.send_message(content, ephemeral=True)
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
-        #await self.load_extension("extensions.configuration") # for initial setup, we want to disable all user commands, so we only load the configuration extension
-        await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup", "extensions.search", "extensions.faq", "extensions.campaigns"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
+        await self.load_extensions(["extensions.configuration", "extensions.admin", "extensions.faq", "extensions.companies", "extensions.units", "extensions.shop"]) # for initial setup, we want to disable all user commands, so we only load the configuration extension
+        #await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup", "extensions.search", "extensions.faq", "extensions.campaigns"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
 
         logger.debug("Syncing slash commands")
         await self.tree.sync()

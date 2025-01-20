@@ -3,7 +3,7 @@ from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, SelectOption, TextStyle
 from models import Faq as Faq_model
 from templates import faq_response
-from utils import uses_db, chunk_list
+from utils import uses_db, chunk_list, RollingCounterDict
 from customclient import CustomClient
 from sqlalchemy.orm import Session
 logger = getLogger(__name__)
@@ -16,10 +16,11 @@ async def is_answerer(interaction: Interaction):
         if not valid:
             await interaction.response.send_message("You are not authorized to use this command", ephemeral=True)
         return valid
-
+counters = RollingCounterDict(24*60*60)
 class Faq(GroupCog):
     def __init__(self, bot: Bot):
         self.bot = bot
+        
  
 
     @ac.command(name="how", description="How to use the FAQ")
@@ -48,6 +49,7 @@ class Faq(GroupCog):
             @uses_db(CustomClient().sessionmaker)
             async def callback(self, interaction: Interaction, session: Session):
                 selected_question = session.query(Faq_model).filter(Faq_model.id == int(self.values[0])).first()
+                counters[selected_question.question] += 1
                 await interaction.response.send_message(faq_response.format(selected=selected_question), ephemeral=True)
         faq_dropdowns = [FaqDropdown(placeholder="Select a question", options=chunk) for chunk in faq_chunks]
         view = ui.View()
@@ -76,6 +78,7 @@ class Faq(GroupCog):
         async def modal_callback(interaction: Interaction, session: Session):
             session.add(Faq_model(question=question.value, answer=answer.value))
             await interaction.response.send_message("Question added to the FAQ", ephemeral=True)
+            logger.debug(f"Added question {question.value} with answer {answer.value}")
         modal.on_submit = modal_callback
         await interaction.response.send_modal(modal)
 
@@ -99,6 +102,7 @@ class Faq(GroupCog):
             @uses_db(CustomClient().sessionmaker)
             async def callback(self, interaction: Interaction, session: Session):
                 selected_question = session.query(Faq_model).filter(Faq_model.id == int(self.values[0])).first()
+                logger.debug(f"Removing question {selected_question.question}")
                 session.delete(selected_question)
                 await interaction.response.send_message("Question removed from the FAQ", ephemeral=True)
         faq_dropdowns = [FaqDropdown(placeholder="Select a question", options=chunk) for chunk in faq_chunks]
@@ -136,9 +140,11 @@ class Faq(GroupCog):
                 modal.add_item(answer)
                 @uses_db(CustomClient().sessionmaker)
                 async def modal_callback(interaction: Interaction, session: Session):
-                    selected_question.question = question.value
-                    selected_question.answer = answer.value
+                    _selected_question = session.merge(selected_question)
+                    _selected_question.question = question.value
+                    _selected_question.answer = answer.value
                     await interaction.response.send_message("Question edited in the FAQ", ephemeral=True)
+                    logger.debug(f"Edited question {_selected_question.question} with answer {_selected_question.answer}")
                 modal.on_submit = modal_callback
                 await interaction.response.send_modal(modal)
         faq_dropdowns = [FaqDropdown(placeholder="Select a question", options=chunk) for chunk in faq_chunks]
@@ -157,6 +163,14 @@ class Faq(GroupCog):
         faq_questions_str = "\n".join([f"{index + 1}. {question[0]}" for index, question in enumerate(faq_questions)])
         await interaction.response.send_message(faq_questions_str, ephemeral=True)
 
+    @ac.command(name="stats", description="View the FAQ stats")
+    async def stats(self, interaction: Interaction):
+        """
+        Views the FAQ stats
+        """
+        response = "FAQ stats:\n" + str(counters)
+        response = response[:2000]
+        await interaction.response.send_message(response, ephemeral=True)
 
 bot: Bot | None = None
 async def setup(_bot: Bot):

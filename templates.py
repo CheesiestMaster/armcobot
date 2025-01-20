@@ -1,12 +1,12 @@
-Dossier = """{mention}
+Dossier = """{mention} V1.0
 # {player.name}
 
 {player.lore}
 
 {medals}
-``````"""
+"""
 
-Statistics_Player = """{mention}
+Statistics_Player = """{mention} V1.0
 ## {player.name}
 
 Requisition Points: {player.rec_points}
@@ -14,7 +14,7 @@ Bonus Pay: {player.bonus_pay}
 
 Units:
 {units}
-``````"""
+"""
 
 Statistics_Unit = """### {unit.name} {callsign} ({unit.unit_type}) {unit.status.name}
 {upgrades}"""

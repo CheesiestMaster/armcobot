@@ -150,6 +150,13 @@ class RollingCounter:
     
     def __repr__(self):
         return f"RollingCounter(duration={self.duration}, counter={self.counter})"
+    
+    def __iadd__(self, _):
+        """
+        Increment the counter by 1, regardless of the value of the argument, and return the counter
+        """
+        self.set()
+        return self
 
 class RollingCounterDict:
     def __init__(self, duration: int):
@@ -201,6 +208,12 @@ class RollingCounterDict:
         :return: The current value of the counter or 0.0.
         """
         return self.get(key)
+
+    def __str__(self):
+        """
+        Returns a newline-separated string of the keys and their counts
+        """
+        return "\n".join([f"{key}: {self.get(key)}" for key in self.counters])
     
 def chunk_list(lst: list, chunk_size: int) -> list[list]:
     """Splits a list into chunks of specified size."""
