@@ -316,3 +316,16 @@ def filter_df(df: pd.DataFrame, col_name: str, filter: set[str]) -> tuple[pd.Dat
     mask = df[col_name].astype(str).isin(filter)
     logger.debug(mask.any())
     return df[mask], df[~mask]
+
+async def toggle_command_ban(desired_state: bool, initiator: str):
+    current_state = CustomClient().interaction_check == CustomClient().check_banned_interaction
+    if current_state == desired_state:
+        return current_state
+    CustomClient().interaction_check = CustomClient().check_banned_interaction if desired_state else CustomClient().no_commands
+    if not desired_state:
+        comm_net = await CustomClient().get_channel(1211454073383952395)
+        await comm_net.send(f"# Command ban has been enabled by {initiator}")
+    else:
+        comm_net = await CustomClient().get_channel(1211454073383952395)
+        await comm_net.send(f"# Command ban has been disabled by {initiator}")
+    return desired_state

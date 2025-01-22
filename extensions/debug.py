@@ -8,7 +8,7 @@ from models import Player
 from asyncio import QueueEmpty
 import random
 from customclient import CustomClient
-from utils import uses_db
+from utils import uses_db, toggle_command_ban
 from sqlalchemy.orm import Session
 from coloredformatter import stats
 from templates import stats_template
@@ -214,6 +214,17 @@ class Debug(GroupCog):
 
         view.add_item(select)
         await mm.send_message(embed=Embed(title="Debug Menu", description="please select a command"), view=view, ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="commandban", description="Temporarily disable all commands for non mod users")
+    async def commandban(self, interaction: Interaction, check: bool = False):
+        # if check is true, compare CustomClient().interaction_check with CustomClient().no_commands
+        is_banned = CustomClient().interaction_check == CustomClient().no_commands
+        if check:
+            await interaction.response.send_message(f"Command ban is {'enabled' if is_banned else 'disabled'}", ephemeral=self.bot.use_ephemeral)
+            return
+        await toggle_command_ban(is_banned, interaction.user.mention)
+        await interaction.response.send_message(f"Command ban {'enabled' if is_banned else 'disabled'}", ephemeral=self.bot.use_ephemeral)
+        
 
 bot: Bot = None
 async def setup(_bot: CustomClient):
