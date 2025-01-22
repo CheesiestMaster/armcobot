@@ -14,6 +14,7 @@ async def is_mod(interaction: Interaction):
     """
     valid = any(interaction.user.get_role(role) for role in CustomClient().mod_roles)
     if not valid:
+        await interaction.response.send_message("You don't have the necessary role to use this command", ephemeral=True)
         logger.warning(f"{interaction.user.name} tried to use shop admin commands")
     return valid
 
