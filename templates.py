@@ -42,3 +42,8 @@ Warning logs: today: {today_WARNING} total: {total_WARNING}
 Error logs: today: {today_ERROR} total: {total_ERROR}
 Critical logs: today: {today_CRITICAL} total: {total_CRITICAL}
 Total logs: today: {today_total} total: {total_total}"""
+
+general_stats = """Players: {players}
+Units: Total: {units} Purchased: {purchased} Active: {active} KIA/MIA: {dead}
+Upgrades: {upgrades}
+"""
