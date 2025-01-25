@@ -29,7 +29,7 @@ from singleton import Singleton
 import asyncio
 import templates
 import logging
-from utils import uses_db, RollingCounterDict, callback_listener, is_management
+from utils import uses_db, RollingCounterDict, callback_listener, is_management, toggle_command_ban
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
 
@@ -150,6 +150,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         }
         ratelimit = RollingCounterDict(30)
         nosleep = True
+        queue_banned = False
+        size_at_ban = None
         
         while True:
             if nosleep:
@@ -162,13 +164,28 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             logger.debug(f"Queue size: {queue_size}, Empty in {eta}")
             await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign" if queue_size == 0 else f"Updating {queue_size} dossiers, Finished in {eta}", type=ActivityType.playing))
             
-            if queue_size >= 1200:
+            if queue_size >= 1200 and not queue_banned:
                 logger.critical(f"Queue size is {queue_size}, this is too high!")
                 # fetch the discord user for the bot owner, message them, then call self.close()
                 owner = await self.fetch_user(533009808501112881)
                 if owner:
-                    await owner.send("Queue size is too high, terminating")
-                await self.close()
+                    await owner.send("Queue size is too high, Initiating a System Ban")
+                await toggle_command_ban(True, self.user.mention)
+                queue_banned = True
+                size_at_ban = queue_size
+            if queue_banned and queue_size < 100:
+                logger.debug("Queue size is below 100, disabling command ban")
+                await toggle_command_ban(False, self.user.mention)
+                queue_banned = False
+                size_at_ban = None
+            if queue_banned and queue_size >= size_at_ban+200:
+                logger.debug("Queue is still growing, Purging")
+                owner = await self.fetch_user(533009808501112881)
+                if owner:
+                    await owner.send("Queue is still growing, Purging")
+                while not self.queue.empty():
+                    self.queue.get_nowait()
+                    self.queue.task_done()
             task = await self.queue.get()
             if not isinstance(task, tuple):
                 logger.error("Task is not a tuple, skipping")
