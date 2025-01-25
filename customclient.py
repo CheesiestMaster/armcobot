@@ -615,6 +615,28 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     content = content[:1997] + "..."
             await interaction.response.send_message(content, ephemeral=True)
 
+        last_stats_fetch = None
+        last_stats_message = None
+        @self.tree.command(name="stats", description="Show the stats")
+        async def stats(interaction: Interaction):
+            nonlocal last_stats_fetch, last_stats_message
+            if last_stats_fetch and (datetime.now() - last_stats_fetch).total_seconds() < 10:
+                await interaction.response.send_message(last_stats_message, ephemeral=True)
+                return
+            last_stats_fetch = datetime.now()
+            with self.sessionmaker() as session:
+                stats_dict = {
+                    "players": session.query(Player).count(),
+                    "units": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").count(),
+                    "purchased": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status != "PROPOSED").count(),
+                    "active": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status == "ACTIVE").count(),
+                    "dead": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status == "KIA" or Unit.status == "MIA").count(),
+                    "upgrades": session.query(PlayerUpgrade).filter(PlayerUpgrade.original_price > 0).count()
+                }
+            stats = templates.general_stats.format(stats_dict)
+            last_stats_message = stats
+            await interaction.response.send_message(stats, ephemeral=True)
+
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
         await self.load_extensions(["extensions.configuration", "extensions.admin", "extensions.faq", "extensions.companies", "extensions.units", "extensions.shop"]) # for initial setup, we want to disable all user commands, so we only load the configuration extension
         #await self.load_extensions(["extensions.admin", "extensions.configuration", "extensions.units", "extensions.shop", "extensions.companies", "extensions.backup", "extensions.search", "extensions.faq", "extensions.campaigns"]) # remaining extensions are currently loaded automatically, but will later support only autoloading extension that were active when it was last stopped
