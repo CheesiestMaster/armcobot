@@ -22,7 +22,7 @@ from discord.ext import tasks
 from os import getenv
 from sqlalchemy.orm import Session
 from models import *
-from sqlalchemy import text
+from sqlalchemy import text, func
 from datetime import datetime, timedelta
 from typing import Any, Callable
 from singleton import Singleton
@@ -91,7 +91,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self.tree.interaction_check = self.check_banned_interaction # self.no_commands # TODO: switch back to check_banned_interaction, this is a temporary measure
 
     async def no_commands(self, interaction: Interaction):
-        if not await is_management(interaction):
+        if not await is_management(interaction, silent=True):
             await interaction.response.send_message(f"# A COMMAND BAN IS IN EFFECT {interaction.user.mention}, WHY ARE YOU TRYING TO RUN A COMMAND?")
             return False
         return True
@@ -627,13 +627,16 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             with self.sessionmaker() as session:
                 stats_dict = {
                     "players": session.query(Player).count(),
+                    "rec_points": session.query(func.sum(Player.rec_points)).scalar() or 0,
+                    "bonus_pay": session.query(func.sum(Player.bonus_pay)).scalar() or 0,
                     "units": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").count(),
                     "purchased": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status != "PROPOSED").count(),
                     "active": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status == "ACTIVE").count(),
                     "dead": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status == "KIA" or Unit.status == "MIA").count(),
                     "upgrades": session.query(PlayerUpgrade).filter(PlayerUpgrade.original_price > 0).count()
                 }
-            stats = templates.general_stats.format(stats_dict)
+            logger.debug(f"Stats: {stats_dict}")
+            stats = templates.general_stats.format(**stats_dict)
             last_stats_message = stats
             await interaction.response.send_message(stats, ephemeral=True)
 

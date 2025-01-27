@@ -43,7 +43,7 @@ Error logs: today: {today_ERROR} total: {total_ERROR}
 Critical logs: today: {today_CRITICAL} total: {total_CRITICAL}
 Total logs: today: {today_total} total: {total_total}"""
 
-general_stats = """Players: {players}
+general_stats = """Players: {players} Rec Points: {rec_points} Bonus Pay: {bonus_pay}
 Units: Total: {units} Purchased: {purchased} Active: {active} KIA/MIA: {dead}
 Upgrades: {upgrades}
 """

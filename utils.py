@@ -293,20 +293,22 @@ async def callback_listener(callback: Coroutine, bind:str):
         return
 
 
-async def is_management(interaction: Interaction) -> bool:
+async def is_management(interaction: Interaction, silent: bool = False) -> bool:
     """Check if a user has management permissions"""
     global CustomClient
     if CustomClient is None:
         from customclient import CustomClient
     valid = any(role in interaction.user.roles for role in [interaction.guild.get_role(role_id) for role_id in CustomClient().mod_roles])
-    logger.info(f"{interaction.user.name} is management: {valid}")
+    if not silent:
+        logger.info(f"{interaction.user.name} is management: {valid}")
     return valid
-
-async def is_gm(interaction: Interaction) -> bool:
+    
+async def is_gm(interaction: Interaction, silent: bool = False) -> bool:
     """Check if a user has GM permissions"""
-    is_management_result = await is_management(interaction)
+    is_management_result = await is_management(interaction, silent)
     is_gm_role = interaction.guild.get_role(CustomClient().gm_role) in interaction.user.roles
-    logger.info(f"{interaction.user.name} is management: {is_management_result}, is gm: {is_gm_role}")
+    if not silent:
+        logger.info(f"{interaction.user.name} is management: {is_management_result}, is gm: {is_gm_role}")
     valid = is_gm_role or is_management_result
     if not valid:
         await interaction.response.send_message("You don't have permission to run this command", ephemeral=True)
@@ -318,14 +320,19 @@ def filter_df(df: pd.DataFrame, col_name: str, filter: set[str]) -> tuple[pd.Dat
     return df[mask], df[~mask]
 
 async def toggle_command_ban(desired_state: bool, initiator: str):
-    current_state = CustomClient().interaction_check == CustomClient().check_banned_interaction
+    global CustomClient
+    if CustomClient is None:
+        from customclient import CustomClient
+    current_state = CustomClient().tree.interaction_check == CustomClient().check_banned_interaction
     if current_state == desired_state:
         return current_state
-    CustomClient().interaction_check = CustomClient().check_banned_interaction if desired_state else CustomClient().no_commands
+    CustomClient().tree.interaction_check = CustomClient().check_banned_interaction if desired_state else CustomClient().no_commands
     if not desired_state:
-        comm_net = await CustomClient().get_channel(1211454073383952395)
+        comm_net = CustomClient().get_channel(1211454073383952395)
         await comm_net.send(f"# Command ban has been enabled by {initiator}")
+        logger.info(f"Command ban enabled by {initiator}")
     else:
-        comm_net = await CustomClient().get_channel(1211454073383952395)
+        comm_net = CustomClient().get_channel(1211454073383952395)
         await comm_net.send(f"# Command ban has been disabled by {initiator}")
+        logger.info(f"Command ban disabled by {initiator}")
     return desired_state

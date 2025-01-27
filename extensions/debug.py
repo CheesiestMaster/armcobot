@@ -217,13 +217,13 @@ class Debug(GroupCog):
 
     @ac.command(name="commandban", description="Temporarily disable all commands for non mod users")
     async def commandban(self, interaction: Interaction, check: bool = False):
-        # if check is true, compare CustomClient().interaction_check with CustomClient().no_commands
-        is_banned = CustomClient().interaction_check == CustomClient().no_commands
+        # if check is true, compare CustomClient().tree.interaction_check with CustomClient().no_commands
+        is_banned = self.bot.tree.interaction_check == self.bot.no_commands
         if check:
             await interaction.response.send_message(f"Command ban is {'enabled' if is_banned else 'disabled'}", ephemeral=self.bot.use_ephemeral)
             return
         await toggle_command_ban(is_banned, interaction.user.mention)
-        await interaction.response.send_message(f"Command ban {'enabled' if is_banned else 'disabled'}", ephemeral=self.bot.use_ephemeral)
+        await interaction.response.send_message(f"Command ban {'disabled' if is_banned else 'enabled'}", ephemeral=self.bot.use_ephemeral)
         
 
 bot: Bot = None
