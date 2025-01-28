@@ -215,6 +215,12 @@ class RollingCounterDict:
         """
         return "\n".join([f"{key}: {self.get(key)}" for key in self.counters])
     
+    def values(self) -> list[int]:
+        """
+        Returns a list of the values of the counters
+        """
+        return [self.get(key) for key in self.counters]
+    
 def chunk_list(lst: list, chunk_size: int) -> list[list]:
     """Splits a list into chunks of specified size."""
     if chunk_size <= 0:

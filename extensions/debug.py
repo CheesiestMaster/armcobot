@@ -17,15 +17,20 @@ from psutil import Process
 from MessageManager import MessageManager
 logger = getLogger(__name__)
 
+process: Process = None
+
 class Debug(GroupCog):
     def __init__(self, bot: CustomClient):
+        global process
         self.bot = bot
  
         self.interaction_check = self._is_mod
         # get the list of extensions from the disk, and create a list of them for the autocomplete
         self.extensions = [f.stem for f in Path("extensions").glob("*.py") if f.stem != "__init__"]
 
-        self.process = Process() # get the current process
+        process = Process() # get the current process
+        with open("PID", "w") as f:
+            f.write(str(process.pid))
         self._setup_context_menus() # context menus cannot be instance methods, so we need to nest them
 
     async def _autocomplete_extensions(self, interaction: Interaction, current: str):

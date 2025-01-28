@@ -12,3 +12,4 @@ backup.*.sql
 sam_startup.py
 upgrades.tsv
 backpay.csv
+PID

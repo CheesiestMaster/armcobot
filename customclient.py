@@ -568,6 +568,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         Puts a termination signal in the queue, resyncs configuration, commits database changes,
         and closes the session.
         """
+        import prometheus
+        prometheus.poll_metrics.stop()
         await self.queue.put((4, None))
         await self.resync_config(session=session)
         await self.change_presence(status=Status.offline, activity=None)
@@ -632,7 +634,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     "units": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").count(),
                     "purchased": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status != "PROPOSED").count(),
                     "active": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status == "ACTIVE").count(),
-                    "dead": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status == "KIA" or Unit.status == "MIA").count(),
+                    "dead": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status.in_(["KIA", "MIA"])).count(),
                     "upgrades": session.query(PlayerUpgrade).filter(PlayerUpgrade.original_price > 0).count()
                 }
             logger.debug(f"Stats: {stats_dict}")
@@ -647,6 +649,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         logger.debug("Syncing slash commands")
         await self.tree.sync()
         logger.debug("Slash commands synced")
+        import prometheus
 
         # wrap all the consumer methods in uses_db now, since we can access the sessionmaker after init
         decorator = uses_db(sessionmaker=self.sessionmaker)
