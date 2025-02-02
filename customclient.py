@@ -520,7 +520,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             except Exception as e:
                 logger.error(f"Error starting startup animation: {e}")
         asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if getenv("PROD", "false").lower() == "false" else "127.0.0.1:12346"))
-    
 
     async def shutdown_callback(self):
         try:

@@ -124,6 +124,11 @@ class Unit(GroupCog):
             logger.error(f"Player {player.id} does not have the required role to activate a unit for campaign {_campaign.name}")
             await interaction.response.send_message("You do not have the required role to activate a unit for this campaign", ephemeral=CustomClient().use_ephemeral)
             return
+        # GM cannot activate units for their own campaigns
+        if _campaign.gm == interaction.user.id:
+            logger.warning(f"GM {interaction.user.name} is trying to activate a unit for campaign {_campaign.name}, which they are the GM of")
+            await interaction.response.send_message("GMs cannot activate units for their own campaigns", ephemeral=CustomClient().use_ephemeral)
+            return
         class UnitSelect(ui.Select):
             def __init__(self):
                 options = [SelectOption(label=unit.name, value=unit.name) for unit in units]

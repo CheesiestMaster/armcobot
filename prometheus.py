@@ -1,8 +1,7 @@
 from prometheus_client import start_http_server, Gauge
 from discord.ext.tasks import loop
 from customclient import CustomClient # just needed so we can get a bunch of the stats, and a sessionmaker for the db stats
-from extensions.faq import counters
-from extensions.debug import process
+from extensions.faq import total_views
 from coloredformatter import stats
 from datetime import datetime
 from sqlalchemy import func
@@ -22,22 +21,19 @@ purchased_units = Gauge("purchased_units", "The number of units purchased")
 active_units = Gauge("active_units", "The number of active units")
 dead_units = Gauge("dead_units", "The number of dead units")
 upgrades = Gauge("upgrades", "The number of upgrades purchased")
-resident_memory = Gauge("resident_memory", "The resident memory of the bot")
-cpu_time = Gauge("cpu_time", "The duration of CPU used by the bot")
 log_counts = Gauge("log_counts", "The number of logs", labelnames=["count_type", "log_level"])
 up = Gauge("up", "Is the bot up?")
-
+as_of = Gauge("as_of", "The time the metrics were last updated", labelnames=['loop'])
+units_by_type = Gauge("units_by_type", "The number of units by type", labelnames=['unit_type'])
 @loop(seconds=15)
-async def poll_metrics():
-    bot = CustomClient()
+async def poll_metrics_fast():
+    bot: CustomClient = CustomClient()
     up.set(True)
+    as_of.labels(loop="fast").set(int(datetime.now().timestamp()))
     uptime.set((datetime.now() - bot.start_time).total_seconds())
     start_time.set(int(bot.start_time.timestamp()))
     queue_size.set(bot.queue.qsize())
-    faq_queries.set(sum(counters.values()))
-    if process is not None:
-        resident_memory.set(process.memory_info().rss)
-        cpu_time.set(process.cpu_times().user + process.cpu_times().system)
+    faq_queries.set(total_views)
     log_counts.labels(count_type="today", log_level="DEBUG").set(stats["today_DEBUG"].get())
     log_counts.labels(count_type="today", log_level="INFO").set(stats["today_INFO"].get())
     log_counts.labels(count_type="today", log_level="WARNING").set(stats["today_WARNING"].get())
@@ -50,6 +46,11 @@ async def poll_metrics():
     log_counts.labels(count_type="total", log_level="ERROR").set(stats["total_ERROR"])
     log_counts.labels(count_type="total", log_level="CRITICAL").set(stats["total_CRITICAL"])
     log_counts.labels(count_type="total", log_level="total").set(stats["total_total"])
+
+@loop(seconds=60)
+async def poll_metrics_slow():
+    bot: CustomClient = CustomClient()
+    as_of.labels(loop="slow").set(int(datetime.now().timestamp()))
     with bot.sessionmaker() as session:
         db_stats_dict = {
                     "players": session.query(Player).count(),
@@ -59,7 +60,8 @@ async def poll_metrics():
                     "purchased": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status != "PROPOSED").count(),
                     "active": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status == "ACTIVE").count(),
                     "dead": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status.in_(["KIA", "MIA"])).count(),
-                    "upgrades": session.query(PlayerUpgrade).filter(PlayerUpgrade.original_price > 0).count()
+                    "upgrades": session.query(PlayerUpgrade).filter(PlayerUpgrade.original_price > 0).count(),
+                    "units_by_type": session.query(Unit.unit_type, func.count()).filter(Unit.unit_type != "STOCKPILE").group_by(Unit.unit_type).all()
                 }
     player_count.set(db_stats_dict["players"])
     rec_points.set(db_stats_dict["rec_points"])
@@ -69,9 +71,11 @@ async def poll_metrics():
     active_units.set(db_stats_dict["active"])
     dead_units.set(db_stats_dict["dead"])
     upgrades.set(db_stats_dict["upgrades"])
-
+    for unit_type, count in db_stats_dict["units_by_type"]:
+        units_by_type.labels(unit_type=unit_type).set(count)
 
 start_wrapper = lambda: start_http_server(9108 if getenv("PROD", "false").lower() == "true" else 9107)
 _thread = Thread(target=start_wrapper)
 _thread.start()
-poll_metrics.start()
+poll_metrics_fast.start()
+poll_metrics_slow.start()

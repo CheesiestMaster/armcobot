@@ -170,7 +170,7 @@ class Shop(GroupCog):
 
     @uses_db(CustomClient().sessionmaker)
     async def shop_inactive_view_factory(self, unit_id: int, player_id: int, message_manager: MessageManager, embed: Embed, view: ui.View, session: Session):
-        upgrades = session.query(ShopUpgrade).order_by(case((ShopUpgrade.type == "REFIT", 0), else_=1)).all()
+        upgrades = session.query(ShopUpgrade).filter(ShopUpgrade.disabled == False).order_by(case((ShopUpgrade.type == "REFIT", 0), else_=1)).all()
         _player = session.query(Player).filter(Player.id == player_id).first()
         _unit = session.query(Unit).filter(Unit.id == unit_id).first()
 

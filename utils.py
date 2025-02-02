@@ -169,7 +169,7 @@ class RollingCounterDict:
         if duration <= 0:
             raise ValueError("Duration must be greater than 0.")
         self.duration = duration
-        self.counters = {}
+        self.counters: dict[str, RollingCounter] = {}
 
     def set(self, key: str):
         """

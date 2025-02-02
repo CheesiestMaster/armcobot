@@ -17,6 +17,7 @@ async def is_answerer(interaction: Interaction):
             await interaction.response.send_message("You are not authorized to use this command", ephemeral=True)
         return valid
 counters = RollingCounterDict(24*60*60)
+total_views = 0
 class Faq(GroupCog):
     def __init__(self, bot: Bot):
         self.bot = bot
@@ -48,8 +49,10 @@ class Faq(GroupCog):
                 super().__init__(*args, **kwargs)
             @uses_db(CustomClient().sessionmaker)
             async def callback(self, interaction: Interaction, session: Session):
+                global total_views
                 selected_question = session.query(Faq_model).filter(Faq_model.id == int(self.values[0])).first()
                 counters[selected_question.question] += 1
+                total_views += 1
                 await interaction.response.send_message(faq_response.format(selected=selected_question), ephemeral=True)
         faq_dropdowns = [FaqDropdown(placeholder="Select a question", options=chunk) for chunk in faq_chunks]
         view = ui.View()

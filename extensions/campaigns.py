@@ -1,7 +1,7 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, Member, Role, Embed
-from models import Campaign, UnitStatus, CampaignInvite, Player
+from models import Campaign, UnitStatus, CampaignInvite, Player, Unit
 from utils import uses_db
 from sqlalchemy.orm import Session
 from customclient import CustomClient
@@ -146,7 +146,7 @@ class Campaigns(GroupCog):
     @ac.command(name="payout", description="Payout a campaign")
     @ac.check(is_gm)
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def payout(self, interaction: Interaction, campaign: str, session: Session, base: int, survivor: int):
+    async def payout(self, interaction: Interaction, campaign: str, session: Session, base_req: int, survivor_req: int, base_bp: int, survivor_bp: int):
         # do checks, then payout all players in the campaign
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
         if not _campaign:
@@ -160,9 +160,11 @@ class Campaigns(GroupCog):
             return
         # payout all players in the campaign
         for unit in _campaign.units:
-            unit.player.rec_points += base
+            unit.player.rec_points += base_req
+            unit.player.bonus_pay += base_bp
             if unit.status == UnitStatus.ACTIVE:
-                unit.player.rec_points += survivor
+                unit.player.rec_points += survivor_req
+                unit.player.bonus_pay += survivor_bp
             self.bot.queue.push_nowait((1, unit.player, 0))
         await interaction.response.send_message(f"Campaign {campaign} payout complete", ephemeral=True)
 
@@ -242,6 +244,31 @@ class Campaigns(GroupCog):
         if len(campaigns) == 0:
             embed.add_field(name="No campaigns", value="There are no campaigns")
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @ac.command(name="kill", description="Kill a unit")
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def kill(self, interaction: Interaction, session: Session, callsign: str, is_mia: bool = False):
+        # do gm checks, then kill the unit, if is_mia is true, set the status to MIA, otherwise set the status to KIA
+        _unit = session.query(Unit).filter(Unit.callsign == callsign).first()
+        if not _unit:
+            logger.error(f"Unit {callsign} not found")
+            await interaction.response.send_message("Unit not found", ephemeral=True)
+            return
+        # check if the user has permission, either management or this campaign's GM
+        if not await self.is_management(interaction) and interaction.user.id != int(_unit.campaign.gm):
+            logger.error(f"{interaction.user.name} does not have permission to kill unit {callsign}")
+            await interaction.response.send_message("You don't have permission to kill this unit", ephemeral=True)
+            return
+        # check if the unit is Active, if not fail
+        if _unit.status != UnitStatus.ACTIVE:
+            logger.error(f"Unit {callsign} is not active")
+            await interaction.response.send_message("Unit is not active", ephemeral=True)
+            return
+        # kill the unit
+        _unit.status = UnitStatus.KIA if not is_mia else UnitStatus.MIA
+        logger.info(f"Unit {callsign} killed" + (" as MIA" if is_mia else ""))
+        await interaction.response.send_message(f"Unit {callsign} killed" + (" as MIA" if is_mia else ""), ephemeral=True)
+
 
 bot: Bot = None
 async def setup(_bot: CustomClient):
