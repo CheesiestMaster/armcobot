@@ -1,6 +1,8 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, SelectOption, TextStyle
+from io import BytesIO
+import discord
 from models import Faq as Faq_model
 from templates import faq_response
 from utils import uses_db, chunk_list, RollingCounterDict
@@ -174,6 +176,20 @@ class Faq(GroupCog):
         response = "FAQ stats:\n" + str(counters)
         response = response[:2000]
         await interaction.response.send_message(response, ephemeral=True)
+
+    @ac.command(name="questionfile", description="Get the question file")
+    @ac.check(is_answerer)
+    @uses_db(CustomClient().sessionmaker)
+    async def questionfile(self, interaction: Interaction, session: Session):
+        """
+        Gets the question file
+        """
+        questions = session.query(Faq_model).all()
+        questions_text = [faq_response.format(selected=question) for question in questions]
+        questions_text = "\n\n".join(questions_text)
+        file = BytesIO(questions_text.encode())
+        dfile = discord.File(file, filename="faq.md")
+        await interaction.response.send_message("Here is the question file", ephemeral=True, file=dfile)
 
 bot: Bot | None = None
 async def setup(_bot: Bot):

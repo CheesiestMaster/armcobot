@@ -5,6 +5,7 @@ from models import Campaign, UnitStatus, CampaignInvite, Player, Unit
 from utils import uses_db
 from sqlalchemy.orm import Session
 from customclient import CustomClient
+import random
 logger = getLogger(__name__)
 class Campaigns(GroupCog):
     def __init__(self, bot: CustomClient):
@@ -269,8 +270,62 @@ class Campaigns(GroupCog):
         logger.info(f"Unit {callsign} killed" + (" as MIA" if is_mia else ""))
         await interaction.response.send_message(f"Unit {callsign} killed" + (" as MIA" if is_mia else ""), ephemeral=True)
 
+    @ac.command(name="raffle", description="Bring the unit count down through random selection")
+    @ac.check(is_gm)
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def raffle(self, interaction: Interaction, session: Session, campaign: str, count: int):
+        # do gm checks, then bring the unit count down through random selection
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        # check if the user has permission, either management or this campaign's GM
+        if not await self.is_management(interaction) and interaction.user.id != int(_campaign.gm):
+            logger.error(f"{interaction.user.name} does not have permission to raffle units from campaign {campaign}")
+            await interaction.response.send_message("You don't have permission to raffle units", ephemeral=True)
+            return
+        # raffle the units
+        units: list[Unit] = [unit for unit in _campaign.units if unit.status == UnitStatus.ACTIVE]
+        units: set[Unit] = set(units)
+        if len(units) < count:
+            logger.error(f"Campaign {campaign} has less than {count} active units but a raffle was attempted")
+            await interaction.response.send_message("Campaign has less than the requested number of active units", ephemeral=True)
+            return
+        if count <= 0:
+            logger.error(f"Raffle count {count} is less than 0")
+            await interaction.response.send_message("Raffle count must be greater than 0", ephemeral=True)
+            return
+        dropped_units = random.sample(units, len(units) - count)
+        kept_units = units - set(dropped_units)
+        for unit in dropped_units:
+            unit.status = UnitStatus.INACTIVE
+            unit.callsign = None
+            unit.campaign_id = None
+            self.bot.queue.put_nowait((1, unit.player, 0))
+        logger.info(f"Raffled {count} units from {campaign}")
+        await interaction.response.send_message(f"Raffled {count} units from {campaign}", ephemeral=True)
+        for unit in kept_units:
+            try:
+                player: Player = unit.player
+                member: Member|None = await interaction.guild.fetch_member(player.discord_id)
+                if member:
+                    await member.send(f"Your unit {unit.callsign} was kept in the campaign {campaign}")
+                else:
+                    logger.error(f"Player {player.discord_id} not found")
+            except Exception as e:
+                logger.error(f"Error sending message to player {player.discord_id}: {e}")
+        for unit in dropped_units:
+            try:
+                player: Player = unit.player
+                member: Member|None = await interaction.guild.fetch_member(player.discord_id)
+                if member:
+                    await member.send(f"Your unit {unit.name} was dropped from the campaign {campaign}")
+                else:
+                    logger.error(f"Player {player.discord_id} not found")
+            except Exception as e:
+                logger.error(f"Error sending message to player {player.discord_id}: {e}")
 
-bot: Bot = None
 async def setup(_bot: CustomClient):
     global bot
     bot = _bot

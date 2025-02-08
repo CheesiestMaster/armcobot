@@ -139,6 +139,11 @@ class Unit(GroupCog):
                 nonlocal player, _campaign
                 player = session.merge(player)
                 _campaign = session.merge(_campaign)
+                # check if the campaign has a player limit and if it is full
+                if _campaign.player_limit and len(_campaign.units) >= _campaign.player_limit:
+                    logger.error(f"Campaign {_campaign.name} is full")
+                    await interaction.response.send_message("This campaign is full", ephemeral=CustomClient().use_ephemeral)
+                    return
                 unit: Unit_model = session.query(Unit_model).filter(Unit_model.name == self.values[0]).filter(Unit_model.player_id == player.id).first()
                 if not unit.status == UnitStatus.INACTIVE:
                     await interaction.response.send_message("That unit is not inactive", ephemeral=CustomClient().use_ephemeral)

@@ -12,7 +12,13 @@ import pandas as pd
 import datetime
 import pytz
 import asyncio
+from prometheus_client import Gauge
+from prometheus import as_of
 logger = getLogger(__name__)
+
+# create backpay gauges
+players_remaining = Gauge("players_remaining", "The number of players remaining to be backpaid")
+paid_today = Gauge("paid_today", "The number of players paid today")
 
 class Admin(GroupCog, group_name="admin", name="Admin"):
     """
@@ -532,6 +538,9 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         existing, missing = filter_df(df, "Discord ID", player_ids)
         logger.info(f"Found {len(existing)} existing players in the backpay.csv file")
         logger.info(f"Found {len(missing)} missing players in the backpay.csv file")
+        paid_today.set(len(existing))
+        players_remaining.set(len(missing))
+        as_of.labels(loop="backpay").set(int(datetime.now().timestamp()))
         # for each existing player, edit Player.rec_points by incrementing the value by the "Backpay Owed" column
         for _, row in existing.iterrows():
             player_id = row["Discord ID"]
