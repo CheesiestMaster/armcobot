@@ -77,7 +77,7 @@ class Unit(GroupCog):
     @uses_db(sessionmaker=CustomClient().sessionmaker)
     async def activateunit(self, interaction: Interaction, callsign: str, campaign: str, session: Session):
         logger.debug(f"Activating unit for {interaction.user.global_name} with callsign {callsign}")
-        if len(callsign) > 10:
+        if len(callsign) > 7:
             await interaction.response.send_message("Callsign is too long, please use a shorter callsign", ephemeral=CustomClient().use_ephemeral)
             return
         if any(char in callsign for char in os.getenv("BANNED_CHARS", "")):
