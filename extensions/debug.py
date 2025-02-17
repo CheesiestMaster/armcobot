@@ -195,9 +195,14 @@ class Debug(GroupCog):
     async def stats(self, interaction: Interaction, _: MessageManager):
         uptime: timedelta = datetime.now() - self.bot.start_time
         start_time = f"<t:{int(self.bot.start_time.timestamp())}:F>"
-        resident = self.process.memory_info().rss / 1024 ** 2 # resident memory in MB
-        cpu_time = self.process.cpu_times().user + self.process.cpu_times().system # total CPU time in seconds
-        average_cpu = cpu_time / uptime.total_seconds() if uptime.total_seconds() > 0 else 0 # average CPU usage
+        if process:
+            resident = process.memory_info().rss / 1024 ** 2 # resident memory in MB
+            cpu_time = process.cpu_times().user + process.cpu_times().system # total CPU time in seconds
+            average_cpu = cpu_time / uptime.total_seconds() if uptime.total_seconds() > 0 else 0 # average CPU usage
+        else:
+            resident = "N/A"
+            cpu_time = "N/A"
+            average_cpu = "N/A"
         await interaction.response.send_message(stats_template.format(**stats, **locals()), ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="menu", description="Show the menu")

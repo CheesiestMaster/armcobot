@@ -342,3 +342,11 @@ async def toggle_command_ban(desired_state: bool, initiator: str):
         await comm_net.send(f"# Command ban has been disabled by {initiator}")
         logger.info(f"Command ban disabled by {initiator}")
     return desired_state
+
+async def is_server(interaction: Interaction) -> bool:
+    """Check if a command is being run in a server"""
+    return interaction.guild is not None
+
+async def is_dm(interaction: Interaction) -> bool:
+    """Check if a command is being run in a DM"""
+    return interaction.guild is None

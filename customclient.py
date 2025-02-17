@@ -568,7 +568,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         and closes the session.
         """
         import prometheus
-        prometheus.poll_metrics.stop()
+        prometheus.poll_metrics_fast.stop()
+        prometheus.poll_metrics_slow.stop()
         await self.queue.put((4, None))
         await self.resync_config(session=session)
         await self.change_presence(status=Status.offline, activity=None)

@@ -164,7 +164,7 @@ class Unit(GroupCog):
                 unit.status = UnitStatus.ACTIVE
                 unit.campaign_id = _campaign.id
                 await interaction.response.send_message(f"Unit {unit.name} activated", ephemeral=CustomClient().use_ephemeral)
-                self.bot.queue.put_nowait((1, player, 0))
+                CustomClient().queue.put_nowait((1, player, 0))
         view = View()
         view.add_item(UnitSelect())
         await interaction.response.send_message("Please select the unit to activate", view=view, ephemeral=CustomClient().use_ephemeral)

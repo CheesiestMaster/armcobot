@@ -1,11 +1,13 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, Member, Role, Embed
+from discord import Interaction, app_commands as ac, Member, Role, Embed, File
 from models import Campaign, UnitStatus, CampaignInvite, Player, Unit
 from utils import uses_db
 from sqlalchemy.orm import Session
 from customclient import CustomClient
 import random
+from io import BytesIO
+from asyncio import gather
 logger = getLogger(__name__)
 class Campaigns(GroupCog):
     def __init__(self, bot: CustomClient):
@@ -231,6 +233,9 @@ class Campaigns(GroupCog):
         # no checks, return the list of all campaigns, their status, and the mention of the GM
         campaigns = session.query(Campaign).all()
         embed = Embed(title="Campaigns", type="rich")
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be run in a server", ephemeral=True)
+            return
         for campaign in campaigns:
             gm: Member|None = await interaction.guild.fetch_member(campaign.gm)
             if campaign.required_role:
@@ -296,6 +301,7 @@ class Campaigns(GroupCog):
             logger.error(f"Raffle count {count} is less than 0")
             await interaction.response.send_message("Raffle count must be greater than 0", ephemeral=True)
             return
+        interaction.response.defer(ephemeral=True)
         dropped_units = random.sample(units, len(units) - count)
         kept_units = units - set(dropped_units)
         for unit in dropped_units:
@@ -304,7 +310,7 @@ class Campaigns(GroupCog):
             unit.campaign_id = None
             self.bot.queue.put_nowait((1, unit.player, 0))
         logger.info(f"Raffled {count} units from {campaign}")
-        await interaction.response.send_message(f"Raffled {count} units from {campaign}", ephemeral=True)
+        await interaction.followup.send(f"Raffled {count} units from {campaign}", ephemeral=True)
         for unit in kept_units:
             try:
                 player: Player = unit.player
@@ -325,6 +331,35 @@ class Campaigns(GroupCog):
                     logger.error(f"Player {player.discord_id} not found")
             except Exception as e:
                 logger.error(f"Error sending message to player {player.discord_id}: {e}")
+
+    @ac.command(name="list_players", description="List all players in a campaign")
+    @ac.check(is_gm)
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def list_players(self, interaction: Interaction, session: Session, campaign: str):
+        
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        logger.debug(f"Listing players for campaign {campaign}")
+        units = _campaign.units
+        logger.debug(f"Found {len(units)} units")
+        text = ""
+        await interaction.response.defer(ephemeral=True)
+        async def make_text(unit: Unit):
+            player: Player = unit.player
+            member: Member|None = interaction.guild.get_member(int(player.discord_id))
+            if member:
+                return f"{member.display_name} - {unit.callsign} - {unit.unit_type}\n"
+            else:
+                return f"{player.discord_id} - {unit.callsign} - {unit.unit_type}\n"
+        texts = await gather(*[make_text(unit) for unit in units])
+        text = "".join(texts)
+        logger.debug(f"Text generated")
+        file = BytesIO(text.encode())
+        attachment = File(file, filename="players.txt")
+        await interaction.followup.send("Here are the players in the campaign", ephemeral=True, file=attachment)    
 
 async def setup(_bot: CustomClient):
     global bot

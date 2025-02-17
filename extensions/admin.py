@@ -9,7 +9,7 @@ import os
 from utils import has_invalid_url, uses_db, filter_df, is_management
 from sqlalchemy.orm import Session
 import pandas as pd
-import datetime
+from datetime import datetime, timedelta
 import pytz
 import asyncio
 from prometheus_client import Gauge
@@ -17,8 +17,8 @@ from prometheus import as_of
 logger = getLogger(__name__)
 
 # create backpay gauges
-players_remaining = Gauge("players_remaining", "The number of players remaining to be backpaid")
-paid_today = Gauge("paid_today", "The number of players paid today")
+players_remaining = Gauge("players_remaining", "The number of players remaining to be backpaid", labelnames=["backpay_type"])
+paid_today = Gauge("paid_today", "The number of players paid today", labelnames=["backpay_type"])
 
 class Admin(GroupCog, group_name="admin", name="Admin"):
     """
@@ -39,7 +39,9 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     # after the bot is ready, we want to start the backpay task
     async def on_ready(self):
         self.align_backpay.start()
+        #self.single_backpay = True
         #self.attempt_backpay.start()
+        #self.single_backpay = False
         
     
     def _setup_context_menus(self):
@@ -500,7 +502,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         logger.info("Aligning backpay task")
         
         # Get the current time in UTC
-        now_utc = datetime.datetime.now(pytz.utc)
+        now_utc = datetime.now(pytz.utc)
         
         # Convert to EST
         est = pytz.timezone('America/New_York')
@@ -511,7 +513,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         if days_until_tuesday == 0 and now_est.hour >= 8:
             days_until_tuesday = 7  # If it's already Tuesday after 8 AM, go to next Tuesday
 
-        next_tuesday = now_est + datetime.timedelta(days=days_until_tuesday)
+        next_tuesday = now_est + timedelta(days=days_until_tuesday)
         target_time = next_tuesday.replace(hour=8, minute=0, second=0, microsecond=0)
 
         # Calculate the total time to sleep
@@ -538,8 +540,8 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         existing, missing = filter_df(df, "Discord ID", player_ids)
         logger.info(f"Found {len(existing)} existing players in the backpay.csv file")
         logger.info(f"Found {len(missing)} missing players in the backpay.csv file")
-        paid_today.set(len(existing))
-        players_remaining.set(len(missing))
+        paid_today.labels(backpay_type="backpay").set(len(existing))
+        players_remaining.labels(backpay_type="backpay").set(len(missing))
         as_of.labels(loop="backpay").set(int(datetime.now().timestamp()))
         # for each existing player, edit Player.rec_points by incrementing the value by the "Backpay Owed" column
         for _, row in existing.iterrows():
@@ -552,6 +554,28 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         # write the missing players back to the same file
         missing.to_csv("backpay.csv", index=False)
         logger.info("Backpay complete")
+
+        # do the same, but for backbonuspay.csv
+        if os.path.exists("backbonuspay.csv"):
+            df = pd.read_csv("backbonuspay.csv")
+            logger.info(f"Found {len(df)} players in the backbonuspay.csv file")
+            existing, missing = filter_df(df, "Discord ID", player_ids)
+            logger.info(f"Found {len(existing)} existing players in the backbonuspay.csv file")
+            logger.info(f"Found {len(missing)} missing players in the backbonuspay.csv file")
+            paid_today.labels(backpay_type="backbonuspay").set(len(existing))
+            players_remaining.labels(backpay_type="backbonuspay").set(len(missing))
+            as_of.labels(loop="backbonuspay").set(int(datetime.now().timestamp()))
+            # for each existing player, edit Player.rec_points by incrementing the value by the "Backpay Owed" column
+            for _, row in existing.iterrows():
+                player_id = row["Discord ID"]
+                player = session.query(Player).filter(Player.discord_id == player_id).first()
+                logger.info(f"Backbonuspaying {player.name} with {row['Backbonus Owed']} points")
+                player.bonus_pay += row["Backbonus Owed"]
+                session.commit()
+                self.bot.queue.put_nowait((1, player, 0))
+
+        if self.single_backpay:
+            self.attempt_backpay.stop()
 
 bot: Bot = None
 async def setup(_bot: Bot):
