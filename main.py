@@ -3,10 +3,7 @@ import logging
 from dotenv import load_dotenv
 import sys
 import os
-from utils import uses_db
-import asyncio
-loop = asyncio.get_event_loop()
-asyncio.set_event_loop(loop)
+
 from coloredformatter import ColoredFormatter
 if not os.path.exists("global.env"):
     raise FileNotFoundError("global.env not found")
@@ -42,7 +39,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from models import Base
 from customclient import CustomClient
-
+import asyncio
+loop = asyncio.get_event_loop()
+asyncio.set_event_loop(loop)
 
 logger = logging.getLogger(__name__)
 

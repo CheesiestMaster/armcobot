@@ -145,6 +145,9 @@ class Unit(GroupCog):
                     await interaction.response.send_message("This campaign is full", ephemeral=CustomClient().use_ephemeral)
                     return
                 unit: Unit_model = session.query(Unit_model).filter(Unit_model.name == self.values[0]).filter(Unit_model.player_id == player.id).first()
+                if unit.status == UnitStatus.PROPOSED:
+                    await interaction.response.send_message("You must first buy the unit with the `/shop open` command", ephemeral=CustomClient().use_ephemeral)
+                    return
                 if not unit.status == UnitStatus.INACTIVE:
                     await interaction.response.send_message("That unit is not inactive", ephemeral=CustomClient().use_ephemeral)
                     return

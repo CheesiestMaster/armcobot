@@ -1,9 +1,11 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, Member, Role, Embed, File
+from discord import Interaction, app_commands as ac, Member, Role, Embed, File, TextStyle
+from discord.ui import Modal, TextInput
 from models import Campaign, UnitStatus, CampaignInvite, Player, Unit
 from utils import uses_db
 from sqlalchemy.orm import Session
+from sqlalchemy import text, not_
 from customclient import CustomClient
 import random
 from io import BytesIO
@@ -243,7 +245,7 @@ class Campaigns(GroupCog):
             else:
                 required_role = None
             logger.debug(f"Campaign '{campaign.name}' has {len(campaign.units)} players")
-            embed.add_field(name=campaign.name, value=f"Status: {campaign.open}, "
+            embed.add_field(name=campaign.name, value=f"Status: {'Open' if campaign.open else 'Closed'}, "
                             f"GM: {gm.mention if gm else 'Unknown'}, "
                             f"Players: {len(campaign.units)}, "
                             f"Required Role: {required_role.mention if required_role else 'None'}")
@@ -301,13 +303,14 @@ class Campaigns(GroupCog):
             logger.error(f"Raffle count {count} is less than 0")
             await interaction.response.send_message("Raffle count must be greater than 0", ephemeral=True)
             return
-        interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
         dropped_units = random.sample(units, len(units) - count)
         kept_units = units - set(dropped_units)
         for unit in dropped_units:
             unit.status = UnitStatus.INACTIVE
             unit.callsign = None
             unit.campaign_id = None
+            unit.active = False
             self.bot.queue.put_nowait((1, unit.player, 0))
         logger.info(f"Raffled {count} units from {campaign}")
         await interaction.followup.send(f"Raffled {count} units from {campaign}", ephemeral=True)
@@ -359,7 +362,86 @@ class Campaigns(GroupCog):
         logger.debug(f"Text generated")
         file = BytesIO(text.encode())
         attachment = File(file, filename="players.txt")
-        await interaction.followup.send("Here are the players in the campaign", ephemeral=True, file=attachment)    
+        await interaction.followup.send("Here are the players in the campaign", ephemeral=True, file=attachment)  
+
+    @ac.command(name="counts_by_unit_type", description="List the number of units by unit type")
+    #@ac.check(is_gm)
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def counts_by_unit_type(self, interaction: Interaction, session: Session, campaign: str):
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        query = text("""
+        SELECT 
+            u.unit_type, 
+            COUNT(*) AS unit_count, 
+            COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () AS percentage
+        FROM units u
+        JOIN campaigns c ON u.campaign_id = c.id
+        WHERE c.name = :campaign_name
+        GROUP BY u.unit_type;
+    """)
+        result = session.execute(query, {"campaign_name": campaign})
+        columns = result.keys()
+        rows = result.fetchall()
+        ouptput = "\n".join(['\t'.join(columns)] + ["\t".join(map(str, row)) for row in rows])
+        file = BytesIO(ouptput.encode())
+        attachment = File(file, filename="counts_by_unit_type.txt")
+        await interaction.response.send_message("Here are the counts by unit type", ephemeral=True, file=attachment)
+
+    @ac.command(name="limit_types", description="Limit the types of units that can be used in a campaign")
+    @ac.check(is_gm)
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def limit_types(self, interaction: Interaction, session: Session, campaign: str):
+        # do checks, then give a modal to take the list of unit types as a NSV string
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        # check if you are the GM or a bot manager
+        if not await self.is_management(interaction) and interaction.user.id != int(_campaign.gm):
+            logger.error(f"{interaction.user.name} does not have permission to limit types for campaign {campaign}")
+            await interaction.response.send_message("You don't have permission to limit types for this campaign", ephemeral=True)
+            return
+        modal = Modal(title="Limit Types", custom_id="limit_types", components=[TextInput(label="Unit Types", style=TextStyle.paragraph, custom_id="unit_types")])
+        async def on_submit(interaction: Interaction):
+            await interaction.response.defer(ephemeral=True)
+            campaign_id = session.query(Campaign.id).filter(Campaign.name == campaign).scalar()
+            if not campaign_id:
+                logger.error(f"Campaign {campaign} not found")
+                await interaction.followup.send("Campaign not found", ephemeral=True)
+                return
+            unit_types = interaction.data["components"][0]["components"][0]["value"]
+            logger.debug(f"Unit types: {unit_types}")
+            # unit_types is a NSV string, split it into a list of types for the query
+            unit_types = unit_types.split("\n")
+            unit_types = [unit_type.strip() for unit_type in unit_types if unit_type.strip()]
+            # use not_ in_ to get all invalid units
+            invalid_units = session.query(Unit).filter(not_(Unit.unit_type.in_(unit_types)), Unit.campaign_id == campaign_id).all()
+            for unit in invalid_units:
+                unit.status = UnitStatus.INACTIVE
+                unit.callsign = None
+                unit.campaign_id = None
+                unit.active = False
+                self.bot.queue.put_nowait((1, unit.player, 0))
+            await interaction.followup.send(f"Unit types: {unit_types}", ephemeral=True)
+            logger.info(f"Limited unit types for campaign {campaign}")
+            for unit in invalid_units:
+                try:
+                    player: Player = unit.player
+                    member: Member|None = await interaction.guild.fetch_member(player.discord_id)
+                    if member:
+                        await member.send(f"Your unit {unit.name} was dropped from the campaign {campaign} because it is not one of the allowed types")
+                    else:
+                        logger.error(f"Player {player.discord_id} not found")
+                except Exception as e:
+                    logger.error(f"Error sending message to player {player.discord_id}: {e}")
+
+        modal.on_submit = on_submit
+        await interaction.response.send_modal(modal)
 
 async def setup(_bot: CustomClient):
     global bot
@@ -368,15 +450,3 @@ async def setup(_bot: CustomClient):
 
 async def teardown():
     bot.remove_cog(Campaigns.__name__) # remove_cog takes a string, not a class
-
-"""
-you need either GM or Management to run any campaign commands
-/campaign create name: gm:self - only Management can input a GM, for GMs it's always self
-/campaign open role: limit: - allows the campaign to be selected in unit activate, role if specified requires that role to sign up, limit if specified limits the player count
-/campaign invite member: - sends someone an invite
-/campaign deactivate member: - removes a player from the campaign
-/campaign close - blocks signups
-/campaign payout base: survivor: - pays out all active units {base} req and all living active units an additional {survivor} req
-/campaign remove - deletes a campaign
-/campaign list - lists all campaigns
-all commands give a dropdown with the valid campaigns, if you have management valid is all campaigns, otherwise it's only campaigns you are the GM"""
