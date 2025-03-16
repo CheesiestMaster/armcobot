@@ -43,7 +43,7 @@ class Campaigns(GroupCog):
                 await interaction.response.send_message(f"GMs cannot create campaigns for other GMs, ask a bot Manager to do this", ephemeral=True)
                 return
         # check if the gm has either management or GM role, bot.mod_roles is a set, bot.gm_role is an int
-        is_gm = interaction.guild.get_role(self.bot.gm_role) in interaction.user.roles
+        is_gm = interaction.guild.get_role(self.bot.gm_role) in gm.roles
         management_roles = [interaction.guild.get_role(role_id) for role_id in self.bot.mod_roles if role_id != self.bot.gm_role]
         if not any(role in interaction.user.roles for role in management_roles) and not is_gm:
             logger.error(f"{gm.name} doesn't have the GM role, and is not in the management role list")
@@ -52,6 +52,10 @@ class Campaigns(GroupCog):
         if len(name) > 30:
             logger.error(f"Campaign name {name} is too long")
             await interaction.response.send_message("Campaign name must be less than 30 characters", ephemeral=True)
+            return
+        if '#' in name:
+            logger.error(f"Campaign name {name} contains a '#'")
+            await interaction.response.send_message("Campaign name cannot contain a '#' due to discord autocompletion", ephemeral=True)
             return
         # check if the campaign name is already taken
         if session.query(Campaign).filter(Campaign.name == name).first():
@@ -170,7 +174,7 @@ class Campaigns(GroupCog):
             if unit.status == UnitStatus.ACTIVE:
                 unit.player.rec_points += survivor_req
                 unit.player.bonus_pay += survivor_bp
-            self.bot.queue.push_nowait((1, unit.player, 0))
+            self.bot.queue.put_nowait((1, unit.player, 0))
         await interaction.response.send_message(f"Campaign {campaign} payout complete", ephemeral=True)
 
     @ac.command(name="invite", description="Invite a player to a campaign")

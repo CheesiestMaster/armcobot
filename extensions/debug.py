@@ -116,7 +116,7 @@ class Debug(GroupCog):
     @ac.command(name="query", description="Run a SQL query")
     @ac.describe(query="SQL query to run")
     @uses_db(CustomClient().sessionmaker)
-    async def query(self, interaction: Interaction, query: str, session: Session):
+    async def query(self, interaction: Interaction, query: str, session: Session) -> None:
         try:
             logger.info(f"Running query: {query}")
             result = session.execute(text(query))
@@ -246,3 +246,5 @@ async def setup(_bot: CustomClient):
 async def teardown():
     logger.debug("Tearing down Debug cog")
     bot.remove_cog(Debug.__name__) # remove_cog takes a string, not a class
+
+Debug.query

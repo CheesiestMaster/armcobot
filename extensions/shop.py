@@ -99,6 +99,8 @@ class Shop(GroupCog):
 
         view.add_item(select)
         view.add_item(bonus_button)
+        embed.description = f"Please select a unit to buy upgrades for, you have {_player.rec_points} requisition points"
+        embed.set_footer(text=f"ALL SALES ARE FINAL AND NO REFUNDS WILL BE GIVEN")
         return view, embed
 
     @uses_db(CustomClient().sessionmaker)
