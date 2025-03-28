@@ -1,14 +1,14 @@
 from logging import getLogger
 from pathlib import Path
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, ui, TextStyle, ButtonStyle, Embed, SelectOption, Forbidden, HTTPException, Message
+from discord import Interaction, app_commands as ac, ui, TextStyle, Embed, SelectOption, Forbidden, HTTPException, Message, NotFound, TextChannel
 from sqlalchemy import text, func
 import os
-from models import Player
+from models import Player, Statistic, Dossier
 from asyncio import QueueEmpty
 import random
 from customclient import CustomClient
-from utils import uses_db, toggle_command_ban
+from utils import uses_db, toggle_command_ban, is_server
 from sqlalchemy.orm import Session
 from coloredformatter import stats
 from templates import stats_template
@@ -235,6 +235,52 @@ class Debug(GroupCog):
         await toggle_command_ban(is_banned, interaction.user.mention)
         await interaction.response.send_message(f"Command ban {'disabled' if is_banned else 'enabled'}", ephemeral=self.bot.use_ephemeral)
         
+    @ac.command(name="fkcheck", description="Validate External Foreign Keys")
+    async def fkcheck(self, interaction: Interaction):
+        if not await is_server(interaction):
+            await interaction.response.send_message("This command cannot be run in a DM", ephemeral=True)
+            return
+        await interaction.response.send_message("Checking External Foreign Keys")
+        # get the 3 tables that have external foreign keys (Player, Statistics, Dossiers)
+        players = self.bot.sessionmaker.query(Player).all()
+        invalid_players = {}
+        for player in players:
+            # check if the player.discord_id returns a valid result from fetch_member
+            try:
+                member = await interaction.guild.fetch_member(player.discord_id)
+            except NotFound:
+                invalid_players[player.name] = player.discord_id
+        if invalid_players:
+            await interaction.followup.send(f"Invalid players: {invalid_players}")
+        else:
+            await interaction.followup.send("No invalid players found")
+        invalid_statistics = {}
+        statistics = self.bot.sessionmaker.query(Statistic).all()
+        stats_channel: TextChannel = self.bot.get_channel(self.bot.config["statistics_channel_id"])
+        if stats_channel:
+            for statistic in statistics:
+                try:
+                    message = await stats_channel.fetch_message(statistic.message_id)
+                except NotFound:
+                    invalid_statistics[statistic.player.name] = statistic.message_id
+        if invalid_statistics:
+            await interaction.followup.send(f"Invalid statistics: {invalid_statistics}")
+        else:
+            await interaction.followup.send("No invalid statistics found")
+        invalid_dossiers = {}
+        dossiers = self.bot.sessionmaker.query(Dossier).all()
+        dossier_channel: TextChannel = self.bot.get_channel(self.bot.config["dossier_channel_id"])
+        if dossier_channel:
+            for dossier in dossiers:
+                try:
+                    message = await dossier_channel.fetch_message(dossier.message_id)
+                except NotFound:
+                    invalid_dossiers[dossier.player.name] = dossier.message_id
+        if invalid_dossiers:
+            await interaction.followup.send(f"Invalid dossiers: {invalid_dossiers}")
+        else:
+            await interaction.followup.send("No invalid dossiers found")
+        await interaction.followup.send("External Foreign Key check complete")
 
 bot: Bot = None
 async def setup(_bot: CustomClient):

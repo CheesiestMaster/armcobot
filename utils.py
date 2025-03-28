@@ -2,11 +2,12 @@ import re
 import os
 from functools import lru_cache, wraps
 from inspect import Signature
+import traceback
 from sqlalchemy.orm import scoped_session
 from logging import getLogger
 import asyncio
 from collections import deque
-from typing import Coroutine
+from typing import Coroutine, Callable
 from discord import Interaction
 import pandas as pd
 CustomClient = None
@@ -298,7 +299,21 @@ async def callback_listener(callback: Coroutine, bind:str):
         logger.error(f"Error in callback_listener: {e}") # we don't want to crash the bot if the callback happens twice, whcih would OSE 98
         return
 
+def check_notify(message: str = "You are not allowed to run this command"):
+    message = message.strip() 
+    def decorator(func: Callable[[Interaction], bool]):
+        @wraps(func)
+        async def wrapper(interaction: Interaction, *args, **kwargs):
+            result = await func(interaction, *args, **kwargs)
+            if not result:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(message, ephemeral=True)
+            return result
+        return wrapper
+    return decorator
 
+
+@check_notify(message="You don't have permission to run this command")
 async def is_management(interaction: Interaction, silent: bool = False) -> bool:
     """Check if a user has management permissions"""
     global CustomClient
@@ -350,3 +365,33 @@ async def is_server(interaction: Interaction) -> bool:
 async def is_dm(interaction: Interaction) -> bool:
     """Check if a command is being run in a DM"""
     return interaction.guild is None
+
+def error_reporting(verbose: None | bool = None):
+    
+    print(f"Applying @error_reporting with verbose={verbose}")
+
+    format_error = (
+        (lambda e: f"```\n{''.join(traceback.format_exception(e)).strip()[:1990]}\n```") if verbose is True
+        else (lambda e: f"Something went wrong: `{type(e).__name__}`") if verbose is False
+        else (lambda _: "Something went wrong.")
+    )
+
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(interaction: Interaction, *args, **kwargs):
+            try:
+                return await func(interaction, *args, **kwargs)
+            except Exception as e:
+                error_msg = format_error(e)
+
+                if interaction.response.is_done():
+                    await interaction.followup.send(error_msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(error_msg, ephemeral=True)
+
+                raise
+
+        return wrapper
+
+    return decorator
+

@@ -3,7 +3,7 @@ from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, Member, Role, Embed, File, TextStyle
 from discord.ui import Modal, TextInput
 from models import Campaign, UnitStatus, CampaignInvite, Player, Unit
-from utils import uses_db
+from utils import uses_db, is_dm, check_notify
 from sqlalchemy.orm import Session
 from sqlalchemy import text, not_
 from customclient import CustomClient
@@ -17,12 +17,20 @@ class Campaigns(GroupCog):
     
     @staticmethod
     async def is_management(interaction: Interaction):
+        logger.debug(f"Checking if {interaction.user.name} is management")
+        if await is_dm(interaction):
+            return False
         valid = any(role in interaction.user.roles for role in [interaction.guild.get_role(role_id) for role_id in CustomClient().mod_roles])
         logger.info(f"{interaction.user.name} is management: {valid}")
         return valid
     
     @staticmethod
+    @check_notify(message="You are not a Game Master, and cannot run this command")
     async def is_gm(interaction: Interaction):
+        logger.debug(f"Checking if {interaction.user.name} is GM")
+        if await is_dm(interaction):
+            await interaction.response.send_message("This command cannot be run in a DM", ephemeral=True)
+            return False
         is_management = await Campaigns.is_management(interaction)
         is_gm = interaction.guild.get_role(CustomClient().gm_role) in interaction.user.roles
         logger.info(f"{interaction.user.name} is management: {is_management}, is gm: {is_gm}")
@@ -169,12 +177,16 @@ class Campaigns(GroupCog):
             return
         # payout all players in the campaign
         for unit in _campaign.units:
+            logger.debug(f"Paying out {unit.callsign} for {campaign}")
             unit.player.rec_points += base_req
             unit.player.bonus_pay += base_bp
             if unit.status == UnitStatus.ACTIVE:
                 unit.player.rec_points += survivor_req
                 unit.player.bonus_pay += survivor_bp
-            self.bot.queue.put_nowait((1, unit.player, 0))
+        session.commit()
+        for unit in _campaign.units:
+            logger.debug(f"Putting {unit.callsign} in update queue for {campaign}")
+            self.bot.queue.put_nowait((1, unit.player, 0)) # we have to split the payout and reporting into two separate loops, because otherwise we get a deadlock
         await interaction.response.send_message(f"Campaign {campaign} payout complete", ephemeral=True)
 
     @ac.command(name="invite", description="Invite a player to a campaign")
@@ -446,6 +458,39 @@ class Campaigns(GroupCog):
 
         modal.on_submit = on_submit
         await interaction.response.send_modal(modal)
+
+    @ac.command(name="merge", description="Merge two campaigns")
+    @ac.check(is_gm)
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def merge(self, interaction: Interaction, session: Session, campaign: str, other_campaign: str):
+        # do checks, then merge the two campaigns
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        _other_campaign = session.query(Campaign).filter(Campaign.name == other_campaign).first()
+        if not _other_campaign:
+            logger.error(f"Campaign {other_campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        # check if the user has permission, either management or this campaign's GM
+        if not await self.is_management(interaction):
+            if interaction.user.id != int(_campaign.gm) or interaction.user.id != int(_other_campaign.gm):
+                logger.error(f"{interaction.user.name} does not have permission to merge campaigns {campaign} and {other_campaign}")
+                await interaction.response.send_message("You don't have permission to merge these campaigns", ephemeral=True)
+                return
+        # merge the two campaigns
+        units = _other_campaign.units
+        for unit in units:
+            unit.campaign_id = _campaign.id
+        invites = _other_campaign.invites
+        for invite in invites:
+            session.delete(invite)
+        session.delete(_other_campaign)
+        session.commit()
+        logger.info(f"Merged campaigns {campaign} and {other_campaign}")
+        await interaction.followup.send(f"Merged campaigns {campaign} and {other_campaign}", ephemeral=True)
 
 async def setup(_bot: CustomClient):
     global bot

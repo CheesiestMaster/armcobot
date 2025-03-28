@@ -232,6 +232,7 @@ class Unit(GroupCog):
         active_unit.active = False
         active_unit.status = UnitStatus.INACTIVE if active_unit.status == UnitStatus.ACTIVE else active_unit.status
         active_unit.callsign = None
+        active_unit.campaign_id = None
         await interaction.response.send_message(f"Unit with callsign {active_unit.callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
         self.bot.queue.put_nowait((1, player, 0))
 
@@ -301,7 +302,7 @@ class Unit(GroupCog):
                         logger.error(f"Unit with name {new_name} already exists for rename command")
                         await interaction.response.send_message("You already have a unit with that name", ephemeral=CustomClient().use_ephemeral)
                         return
-                    if len(new_name) > 32:
+                    if len(new_name) > 30:
                         logger.error("Unit name is too long for rename command")
                         await interaction.response.send_message("Unit name is too long, please use a shorter name", ephemeral=CustomClient().use_ephemeral)
                         return
