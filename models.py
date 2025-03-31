@@ -153,8 +153,8 @@ class Medals(BaseModel):
 class Faq(BaseModel):
     __tablename__ = "faq"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    question = Column(String(255), index=True)
-    answer = Column(String(1718))
+    question = Column(String(100), index=True)
+    answer = Column(String(1873))
 
 class ShopUpgrade(BaseModel):
     __tablename__ = "shop_upgrades"

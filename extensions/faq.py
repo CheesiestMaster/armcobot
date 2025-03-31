@@ -75,7 +75,7 @@ class Faq(GroupCog):
             await interaction.response.send_message("You cannot add more than 125 questions to the FAQ", ephemeral=True)
             return
         modal = ui.Modal(title="Add a question to the FAQ")
-        question = ui.TextInput(label="Question", placeholder="Enter the question here", max_length=255)
+        question = ui.TextInput(label="Question", placeholder="Enter the question here", max_length=100)
         answer = ui.TextInput(label="Answer", placeholder="Enter the answer here", style=TextStyle.paragraph, max_length=1718)
         modal.add_item(question)
         modal.add_item(answer)
@@ -139,7 +139,7 @@ class Faq(GroupCog):
                 selected_question = session.query(Faq_model).filter(Faq_model.id == int(self.values[0])).first()
                 # send a modal for the question and answer
                 modal = ui.Modal(title="Edit a question in the FAQ")
-                question = ui.TextInput(label="Question", placeholder="Enter the question here", max_length=255, default=selected_question.question)
+                question = ui.TextInput(label="Question", placeholder="Enter the question here", max_length=100, default=selected_question.question)
                 answer = ui.TextInput(label="Answer", placeholder="Enter the answer here", style=TextStyle.paragraph, max_length=1718, default=selected_question.answer)
                 modal.add_item(question)
                 modal.add_item(answer)

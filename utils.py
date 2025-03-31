@@ -323,7 +323,17 @@ async def is_management(interaction: Interaction, silent: bool = False) -> bool:
     if not silent:
         logger.info(f"{interaction.user.name} is management: {valid}")
     return valid
-    
+
+async def is_management_no_notify(interaction: Interaction, silent: bool = False) -> bool:
+    """Check if a user has management permissions"""
+    global CustomClient
+    if CustomClient is None:
+        from customclient import CustomClient
+    valid = any(role in interaction.user.roles for role in [interaction.guild.get_role(role_id) for role_id in CustomClient().mod_roles])
+    if not silent:
+        logger.info(f"{interaction.user.name} is management: {valid}")
+    return valid
+
 async def is_gm(interaction: Interaction, silent: bool = False) -> bool:
     """Check if a user has GM permissions"""
     is_management_result = await is_management(interaction, silent)

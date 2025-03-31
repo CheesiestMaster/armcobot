@@ -282,6 +282,13 @@ class Debug(GroupCog):
             await interaction.followup.send("No invalid dossiers found")
         await interaction.followup.send("External Foreign Key check complete")
 
+    @ac.command(name="guilds", description="Show all guilds the bot is in")
+    async def guilds(self, interaction: Interaction):
+        message = "Guilds:\n"
+        for guild in self.bot.guilds:
+            message += f"{guild.name}\n"
+        await interaction.response.send_message(message, ephemeral=self.bot.use_ephemeral)
+
 bot: Bot = None
 async def setup(_bot: CustomClient):
     global bot

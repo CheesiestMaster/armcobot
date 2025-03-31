@@ -29,7 +29,7 @@ from singleton import Singleton
 import asyncio
 import templates
 import logging
-from utils import uses_db, RollingCounterDict, callback_listener, is_management, toggle_command_ban
+from utils import uses_db, RollingCounterDict, callback_listener, is_management, toggle_command_ban, is_management_no_notify
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
 
@@ -91,7 +91,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self.tree.interaction_check = self.check_banned_interaction # self.no_commands # TODO: switch back to check_banned_interaction, this is a temporary measure
 
     async def no_commands(self, interaction: Interaction):
-        if not await is_management(interaction, silent=True):
+        if not await is_management_no_notify(interaction, silent=True):
             await interaction.response.send_message(f"# A COMMAND BAN IS IN EFFECT {interaction.user.mention}, WHY ARE YOU TRYING TO RUN A COMMAND?")
             return False
         return True
