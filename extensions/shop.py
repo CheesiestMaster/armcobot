@@ -308,7 +308,7 @@ class Shop(GroupCog):
         select.callback = select_callback
         return view, embed
     
-    @ac.command(name="replace_stockpile", description="Create a new stockpile unit if you don't have one")
+    #@ac.command(name="replace_stockpile", description="Create a new stockpile unit if you don't have one")
     @uses_db(CustomClient().sessionmaker)
     async def replace_stockpile(self, interaction: Interaction, session: Session):
         _player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
