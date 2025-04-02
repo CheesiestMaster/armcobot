@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Enum, ForeignKey, PickleType, Boolean, BigInteger, event
-from sqlalchemy.orm import relationship, backref, declarative_base
+from sqlalchemy import Column, Integer, String, Enum, ForeignKey, PickleType, Boolean, BigInteger
+from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.ext.hybrid import hybrid_property
 from enum import Enum as PyEnum
 import logging
 
@@ -105,6 +106,16 @@ class Player(BaseModel):
     statistic = relationship("Statistic", back_populates="player")
     medals = relationship("Medals", back_populates="player", cascade="none")
     campaign_invites = relationship("CampaignInvite", back_populates="player", cascade="none")
+
+    @hybrid_property
+    def stockpile(self) -> Unit | None:
+        """
+        Returns the player's stockpile unit, if it exists
+        """
+        for unit in self.units:
+            if unit.unit_type == "STOCKPILE":
+                return unit
+        return None
 
 class PlayerUpgrade(BaseModel):
     __tablename__ = "player_upgrades"

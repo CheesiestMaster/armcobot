@@ -6,7 +6,7 @@ from utils import uses_db
 from customclient import CustomClient
 from MessageManager import MessageManager
 from sqlalchemy.orm import Session
-from models import Player
+from models import Player, Unit, PlayerUpgrade
 logger = getLogger(__name__)
 bot: Bot = None
 class Stockpile(GroupCog):
@@ -39,8 +39,43 @@ class Stockpile(GroupCog):
         async def unit_select_callback(interaction: Interaction, session: Session):
             _player: Player = session.query(Player).filter(Player.id == interaction.user.id).first()
             if _player is None:
-                await message_manager.send_message(content="You don't have a company yet, please create one with `/company create`", ephemeral=self.bot.use_ephemeral)
+                await message_manager.update_message(content="Something went wrong, please try again or contact Cheese", ephemeral=self.bot.use_ephemeral)
                 return
+            upgrade_select = Select(placeholder="Select an upgrade")
+            unit = session.query(Unit).filter(Unit.id == unit_select.values[0]).first()
+            if unit is None:
+                await message_manager.update_message(content="Something went wrong, please try again or contact Cheese", ephemeral=self.bot.use_ephemeral)
+                return
+            if unit.upgrades:
+                for upgrade in unit.upgrades:
+                    upgrade_select.add_option(label=upgrade.name, value=upgrade.id)
+            else:
+                upgrade_select.add_option(label="This unit has no upgrades", value=None, default=True)
+                upgrade_select.disabled = True
+            _view = View()
+            _view.add_item(unit_select)
+            _view.add_item(upgrade_select)
+            await message_manager.update_message(view=_view, ephemeral=self.bot.use_ephemeral)
+            @uses_db(CustomClient().sessionmaker)
+            async def upgrade_select_callback(interaction: Interaction, session: Session):
+                _player: Player = session.query(Player).filter(Player.id == interaction.user.id).first()
+                if _player is None:
+                    await message_manager.update_message(content="Something went wrong, please try again or contact Cheese", ephemeral=self.bot.use_ephemeral)
+                    return
+                upgrade = session.query(PlayerUpgrade).filter(PlayerUpgrade.id == upgrade_select.values[0]).first()
+                if upgrade is None:
+                    await message_manager.update_message(content="Something went wrong, please try again or contact Cheese", ephemeral=self.bot.use_ephemeral)
+                    return
+                stockpile = _player.stockpile
+                if stockpile is None:
+                    await message_manager.update_message(content="Something went wrong, please try again or contact Cheese", ephemeral=self.bot.use_ephemeral)
+                    return
+                if upgrade.unit_id == stockpile.id:
+                    await message_manager.update_message(content="This upgrade is already in your stockpile", ephemeral=self.bot.use_ephemeral)
+                    return
+                upgrade.unit = stockpile
+                session.commit()
+                await message_manager.update_message(content="Upgrade stored in stockpile", ephemeral=self.bot.use_ephemeral)
             
 
     @ac.command(name="retrieve", description="Retrieve an upgrade from your stockpile")
