@@ -16,7 +16,7 @@ Units:
 {units}
 """
 
-Statistics_Unit = """### {unit.name} {callsign} ({unit.unit_type}) {unit.status.name}
+Statistics_Unit = """### {unit.name} {callsign} ({unit.unit_type}) {unit.status.name} {campaign_name}
 {upgrades}"""
 
 Statistics_Unit_Active = """### {unit.name} ({unit.unit_type}) {unit.status.name}

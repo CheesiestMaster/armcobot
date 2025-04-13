@@ -322,12 +322,12 @@ class Campaigns(GroupCog):
         await interaction.response.defer(ephemeral=True)
         dropped_units = random.sample(units, len(units) - count)
         kept_units = units - set(dropped_units)
+        dropped_players = set([unit.player for unit in dropped_units])
         for unit in dropped_units:
             unit.status = UnitStatus.INACTIVE
             unit.callsign = None
             unit.campaign_id = None
             unit.active = False
-            self.bot.queue.put_nowait((1, unit.player, 0))
         logger.info(f"Raffled {count} units from {campaign}")
         await interaction.followup.send(f"Raffled {count} units from {campaign}", ephemeral=True)
         for unit in kept_units:
@@ -350,6 +350,9 @@ class Campaigns(GroupCog):
                     logger.error(f"Player {player.discord_id} not found")
             except Exception as e:
                 logger.error(f"Error sending message to player {player.discord_id}: {e}")
+        session.commit()
+        for player in dropped_players:
+            self.bot.queue.put_nowait((1, player, 0))
 
     @ac.command(name="list_players", description="List all players in a campaign")
     @ac.check(is_gm)
@@ -422,7 +425,8 @@ class Campaigns(GroupCog):
             logger.error(f"{interaction.user.name} does not have permission to limit types for campaign {campaign}")
             await interaction.response.send_message("You don't have permission to limit types for this campaign", ephemeral=True)
             return
-        modal = Modal(title="Limit Types", custom_id="limit_types", components=[TextInput(label="Unit Types", style=TextStyle.paragraph, custom_id="unit_types")])
+        modal = Modal(title="Limit Types", custom_id="limit_types")
+        modal.add_item(TextInput(label="Unit Types", style=TextStyle.paragraph, custom_id="unit_types"))
         async def on_submit(interaction: Interaction):
             await interaction.response.defer(ephemeral=True)
             campaign_id = session.query(Campaign.id).filter(Campaign.name == campaign).scalar()
@@ -490,7 +494,7 @@ class Campaigns(GroupCog):
         session.delete(_other_campaign)
         session.commit()
         logger.info(f"Merged campaigns {campaign} and {other_campaign}")
-        await interaction.followup.send(f"Merged campaigns {campaign} and {other_campaign}", ephemeral=True)
+        await interaction.response.send_message(f"Merged campaigns {campaign} and {other_campaign}", ephemeral=True)
 
 async def setup(_bot: CustomClient):
     global bot

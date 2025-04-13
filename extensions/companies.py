@@ -1,6 +1,6 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, ui, TextStyle, Member
+from discord import Interaction, app_commands as ac, ui, TextStyle, Member, User
 from models import Player, Unit, UnitStatus
 from customclient import CustomClient
 import templates
@@ -81,7 +81,7 @@ class Company(GroupCog):
     @ac.command(name="show", description="Displays a Players Meta Campaign company")
     @ac.describe(member="The players Meta Campaign company to show")
     @uses_db(CustomClient().sessionmaker)
-    async def show(self, interaction: Interaction, session: Session, member: Member):
+    async def show(self, interaction: Interaction, session: Session, member: Member|User):
         player = session.query(Player).filter(Player.discord_id == member.id).first()
         if not player:
             await interaction.response.send_message(f"{member.display_name} doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)

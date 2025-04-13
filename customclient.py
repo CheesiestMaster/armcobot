@@ -158,9 +158,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 await asyncio.sleep(0)
                 nosleep = False
             else:
-                await asyncio.sleep(5)  # Maintain pacing to avoid hitting downstream timeouts
+                await asyncio.sleep(7)  # Maintain pacing to avoid hitting downstream timeouts
             queue_size = self.queue.qsize()
-            eta = timedelta(seconds=queue_size * 5)
+            eta = timedelta(seconds=queue_size * 7)
             logger.debug(f"Queue size: {queue_size}, Empty in {eta}")
             await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign" if queue_size == 0 else f"Updating {queue_size} dossiers, Finished in {eta}", type=ActivityType.playing))
             
@@ -469,7 +469,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         logger.debug(f"Generating unit message for player: {player.id}")
         unit_messages = []
 
-        # Query inactive units
         units = session.query(Unit).filter(Unit.player_id == player.id).all()
         logger.debug(f"Found {len(units)} units for player: {player.id}")
         for unit in units:
@@ -477,7 +476,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             upgrade_list = ", ".join([upgrade.name for upgrade in upgrades])
             logger.debug(f"Unit {unit.name} of type {unit.unit_type} has status {unit.status.name}")
             logger.debug(f"Unit {unit.id} has upgrades: {upgrade_list}")
-            unit_messages.append(templates.Statistics_Unit.format(unit=unit, upgrades=upgrade_list, callsign=('\"' + unit.callsign + '\"') if unit.callsign else ""))
+            unit_messages.append(templates.Statistics_Unit.format(unit=unit, upgrades=upgrade_list, callsign=('\"' + unit.callsign + '\"') if unit.callsign else "", campaign_name=f"In {unit.campaign.name}" if unit.campaign else ""))
 
         # Combine all unit messages into a single string
         combined_message = "\n".join(unit_messages)
@@ -543,12 +542,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         channel = await self.fetch_channel(1211454073383952395)
         if not channel:
             return
-        message =await channel.send(sam_startup.startup_sequence[0])
-        for frame in sam_startup.startup_sequence[1:]:
+        startup_sequence = sam_startup.get_startup_sequence()
+        message =await channel.send(startup_sequence[0])
+        for frame in startup_sequence[1:]:
             await message.edit(content=frame)
             await asyncio.sleep(1)
         self.startup_animation.cancel()
         self.notify_on_24_hours.start()
+        sam_startup.reconnect = True # sets flag so if the bot reconnects, it will use the alternate startup sequence for reconnects
 
     @tasks.loop(count=1)
     async def notify_on_24_hours(self):

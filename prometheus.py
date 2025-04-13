@@ -25,6 +25,10 @@ log_counts = Gauge("log_counts", "The number of logs", labelnames=["count_type",
 up = Gauge("up", "Is the bot up?")
 as_of = Gauge("as_of", "The time the metrics were last updated", labelnames=['loop'])
 units_by_type = Gauge("units_by_type", "The number of units by type", labelnames=['unit_type'])
+purchased_by_type = Gauge("purchased_by_type", "The number of units purchased by type", labelnames=['unit_type'])
+live_by_type = Gauge("live_by_type", "The number of units live by type", labelnames=['unit_type'])
+units_by_type_and_campaign = Gauge("units_by_type_and_campaign", "The number of units by type and campaign", labelnames=['unit_type', 'campaign_id'])
+
 @loop(seconds=15)
 async def poll_metrics_fast():
     bot: CustomClient = CustomClient()
@@ -61,7 +65,10 @@ async def poll_metrics_slow():
                     "active": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status == "ACTIVE").count(),
                     "dead": session.query(Unit).filter(Unit.unit_type != "STOCKPILE").filter(Unit.status.in_(["KIA", "MIA"])).count(),
                     "upgrades": session.query(PlayerUpgrade).filter(PlayerUpgrade.original_price > 0).count(),
-                    "units_by_type": session.query(Unit.unit_type, func.count()).filter(Unit.unit_type != "STOCKPILE").group_by(Unit.unit_type).all()
+                    "units_by_type": session.query(Unit.unit_type, func.count()).filter(Unit.unit_type != "STOCKPILE").group_by(Unit.unit_type).all(),
+                    "purchased_by_type": session.query(Unit.unit_type, func.count()).filter(Unit.unit_type != "STOCKPILE", Unit.status != "PROPOSED").group_by(Unit.unit_type).all(),
+                    "live_by_type": session.query(Unit.unit_type, func.count()).filter(Unit.unit_type != "STOCKPILE", ~Unit.status.in_(["PROPOSED", "KIA", "MIA"])).group_by(Unit.unit_type).all(),
+                    "units_by_type_and_campaign": session.query(Unit.unit_type, Unit.campaign_id, func.count()).filter(Unit.unit_type != "STOCKPILE").group_by(Unit.unit_type, Unit.campaign_id).all()
                 }
     player_count.set(db_stats_dict["players"])
     rec_points.set(db_stats_dict["rec_points"])
@@ -73,6 +80,12 @@ async def poll_metrics_slow():
     upgrades.set(db_stats_dict["upgrades"])
     for unit_type, count in db_stats_dict["units_by_type"]:
         units_by_type.labels(unit_type=unit_type).set(count)
+    for unit_type, count in db_stats_dict["purchased_by_type"]:
+        purchased_by_type.labels(unit_type=unit_type).set(count)
+    for unit_type, count in db_stats_dict["live_by_type"]:
+        live_by_type.labels(unit_type=unit_type).set(count)
+    for unit_type, campaign_id, count in db_stats_dict["units_by_type_and_campaign"]:
+        units_by_type_and_campaign.labels(unit_type=unit_type, campaign_id=campaign_id).set(count)
 
 start_wrapper = lambda: start_http_server(9108 if getenv("PROD", "false").lower() == "true" else 9107)
 _thread = Thread(target=start_wrapper)
