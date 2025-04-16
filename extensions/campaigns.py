@@ -426,7 +426,10 @@ class Campaigns(GroupCog):
             await interaction.response.send_message("You don't have permission to limit types for this campaign", ephemeral=True)
             return
         modal = Modal(title="Limit Types", custom_id="limit_types")
-        modal.add_item(TextInput(label="Unit Types", style=TextStyle.paragraph, custom_id="unit_types"))
+        modal.add_item(TextInput(label="Instructions", style=TextStyle.short, placeholder="Delete the types you don't want to allow, There is no need to edit this text", max_length=1)) # only allow 1 character because it's just instructions
+        type_list = session.query(Unit.unit_type).filter(Unit.campaign_id == _campaign.id).distinct().all()
+        type_list = [unit_type[0] for unit_type in type_list]
+        modal.add_item(TextInput(label="Unit Types", style=TextStyle.paragraph, custom_id="unit_types", default="\n".join(type_list)))
         async def on_submit(interaction: Interaction):
             await interaction.response.defer(ephemeral=True)
             campaign_id = session.query(Campaign.id).filter(Campaign.name == campaign).scalar()
@@ -434,7 +437,7 @@ class Campaigns(GroupCog):
                 logger.error(f"Campaign {campaign} not found")
                 await interaction.followup.send("Campaign not found", ephemeral=True)
                 return
-            unit_types = interaction.data["components"][0]["components"][0]["value"]
+            unit_types = interaction.data["components"][0]["components"][1]["value"]
             logger.debug(f"Unit types: {unit_types}")
             # unit_types is a NSV string, split it into a list of types for the query
             unit_types = unit_types.split("\n")
