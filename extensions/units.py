@@ -269,9 +269,7 @@ class Unit(GroupCog):
         unit_table = f"```| {'Unit Name':^30} | {'Callsign':^8} | {'Unit Type':^10} | {'Status':^8} |\n"
         unit_table += f"|-{"-" * 30}-|-{"-" * 7}-|-{"-" * 10 }-|-{"-" * 8}-|\n"
         for unit in units:
-            unit_table += f"| {unit.name:^30} | {unit.callsign.__str__():^8} | {unit.unit_type:^10} | {unit.status[11:]:^8} |\n" 
-            #unit.status[7:] should cut off the leading "UnitStatus." from the output
-            #__str__() call is needed on callsign due to possibility of NoneType
+            unit_table += f"| {unit.name:^30} | {str(unit.callsign):^8} | {unit.unit_type:^10} | {unit.status.name:^8} |\n" 
         unit_table += "```"
 
         # Send the table to the user
