@@ -163,7 +163,7 @@ class Campaigns(GroupCog):
     @ac.command(name="payout", description="Payout a campaign")
     @ac.check(is_gm)
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def payout(self, interaction: Interaction, campaign: str, session: Session, base_req: int, survivor_req: int, base_bp: int, survivor_bp: int):
+    async def payout(self, interaction: Interaction, campaign: str, session: Session, base_req: int=0, survivor_req: int=0, base_bp: int=0, survivor_bp: int=0):
         # do checks, then payout all players in the campaign
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
         if not _campaign:

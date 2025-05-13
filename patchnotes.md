@@ -1,3 +1,4 @@
+**V1.0.2**: Updated workflow for /unit activate to use a dropdown for campaign selection
 **V1.0.af**: made no changes at all
 **V1.0.1**: /stats, /debug commandban, automatic command ban if too many changes occur
 **V1**: RELEASE, DB Reset

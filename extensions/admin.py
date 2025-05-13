@@ -39,9 +39,10 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     # after the bot is ready, we want to start the backpay task
     async def on_ready(self):
         self.align_backpay.start()
-        # self.single_backpay = True
-        # self.attempt_backpay.start()
-        # self.single_backpay = False
+        if os.getenv("BACKPAY_ON_START", "false").lower() == "true":
+            self.single_backpay = True
+            self.attempt_backpay.start()
+        self.single_backpay = False # this line must be left uncommented even when single backpay is disabled, or backpays will crash
         
     
     def _setup_context_menus(self):
