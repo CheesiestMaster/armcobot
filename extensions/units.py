@@ -263,10 +263,16 @@ class Unit(GroupCog):
             return
         
         # Create a table with unit details
-        unit_table = "| Unit Name | Callsign | Unit Type | Status |\n"
-        unit_table += "|-----------|-----------|-----------|--------|\n"
+        # The {str : {padding}^ int} format allows you to pad both sides of the string using padding until the desired width of (int) characters is achieved
+        # ``` is used to use discord markdown to turn it into a codeblock, for monospaced font.
+
+        unit_table = f"```| {'Unit Name':^30} | {'Callsign':^8} | {'Unit Type':^10} | {'Status':^8} |\n"
+        unit_table += f"|-{"-" * 30}-|-{"-" * 7}-|-{"-" * 10 }-|-{"-" * 8}-|\n"
         for unit in units:
-            unit_table += f"| {unit.name} | {unit.callsign} | {unit.unit_type} | {unit.status} |\n"
+            unit_table += f"| {unit.name:^30} | {unit.callsign.__str__():^8} | {unit.unit_type:^10} | {unit.status[11:]:^8} |\n" 
+            #unit.status[7:] should cut off the leading "UnitStatus." from the output
+            #__str__() call is needed on callsign due to possibility of NoneType
+        unit_table += "```"
 
         # Send the table to the user
         await interaction.response.send_message(f"Here are {player.name}'s Units:\n\n{unit_table}", ephemeral=CustomClient().use_ephemeral)
