@@ -55,19 +55,26 @@ class Unit(BaseModel):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String(30), index=True)
     player_id = Column(Integer, ForeignKey("players.id"), index=True, nullable=False)
-    unit_type = Column(String(15))
-    status = Column(Enum(UnitStatus), default=UnitStatus.PROPOSED) # status is still an enum, but type is a string now
+    unit_type = Column(String(15), ForeignKey("unit_types.unit_type"))
+    status = Column(Enum(UnitStatus), default=UnitStatus.PROPOSED)
     legacy = Column(Boolean, default=False)
     active = Column(Boolean, default=False)
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     callsign = Column(String(15), index=True, unique=True)
     area_operation = Column(String(30), default="ARMCO")
-    original_type = Column(String(15), nullable=True)
+    original_type = Column(String(15), ForeignKey("unit_types.unit_type"), nullable=True)
     
     # relationships
     player = relationship("Player", back_populates="units")
-    upgrades = relationship("PlayerUpgrade", back_populates="unit", cascade="all, delete-orphan", lazy="subquery") # subquery for parent sides, joined for child sides
+    upgrades = relationship("PlayerUpgrade", back_populates="unit", cascade="all, delete-orphan", lazy="subquery")
     campaign = relationship("Campaign", back_populates="units", lazy="joined")
+    type_info = relationship("UnitType", foreign_keys=[unit_type], lazy="joined")
+    original_type_info = relationship("UnitType", foreign_keys=[original_type], lazy="joined")
+    available_upgrades = relationship("ShopUpgrade", 
+        secondary="shop_upgrade_unit_types",
+        primaryjoin="Unit.unit_type==ShopUpgradeUnitTypes.unit_type",
+        secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
+        lazy="subquery")
 
 class Campaign(BaseModel):
     __tablename__ = "campaigns"
@@ -173,19 +180,35 @@ class ShopUpgrade(BaseModel):
     name = Column(String(30), index=True)
     type = Column(Enum(UpgradeType))
     cost = Column(Integer, default=0)
-    refit_target = Column(String(15), nullable=True)
+    refit_target = Column(String(15), ForeignKey("unit_types.unit_type"), nullable=True)
     required_upgrade_id = Column(Integer, ForeignKey("shop_upgrades.id"), nullable=True)
     disabled = Column(Boolean, default=False)
     repeatable = Column(Boolean, default=False)
     player_upgrades = relationship("PlayerUpgrade", back_populates="shop_upgrade", cascade="all, delete-orphan", lazy="subquery")
     unit_types = relationship("ShopUpgradeUnitTypes", back_populates="shop_upgrade", cascade="all, delete-orphan", lazy="subquery")
     required_upgrade = relationship("ShopUpgrade", remote_side=[id], lazy="joined")
+    target_type_info = relationship("UnitType", foreign_keys=[refit_target], lazy="joined")
+    compatible_units = relationship("Unit", 
+        secondary="shop_upgrade_unit_types",
+        primaryjoin="Unit.unit_type==ShopUpgradeUnitTypes.unit_type",
+        secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
+        lazy="subquery")
 
 class ShopUpgradeUnitTypes(BaseModel):
     __tablename__ = "shop_upgrade_unit_types"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     shop_upgrade_id = Column(Integer, ForeignKey("shop_upgrades.id"))
-    unit_type = Column(String(15))
+    unit_type = Column(String(15), ForeignKey("unit_types.unit_type"))
     shop_upgrade = relationship("ShopUpgrade", back_populates="unit_types", lazy="joined")
+    type_info = relationship("UnitType", lazy="joined")
+
+class UnitType(BaseModel):
+    __tablename__ = "unit_types"
+    unit_type = Column(String(15), primary_key=True, index=True)
+    is_base = Column(Boolean, default=False)
+    units = relationship("Unit", foreign_keys="Unit.unit_type", backref="type", lazy="subquery")
+    original_units = relationship("Unit", foreign_keys="Unit.original_type", backref="original_type_rel", lazy="subquery")
+    refit_targets = relationship("ShopUpgrade", foreign_keys="ShopUpgrade.refit_target", backref="refit_target_rel", lazy="subquery")
+    upgrade_types = relationship("ShopUpgradeUnitTypes", backref="type", lazy="subquery")
 
 create_all = Base.metadata.create_all
