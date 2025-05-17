@@ -56,6 +56,11 @@ engine = create_engine(
 
 logger.debug("Database engine created with URL: %s", os.getenv("DATABASE_URL"))
 
+# logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG)
+# logging.getLogger("sqlalchemy.pool").setLevel(logging.DEBUG)
+# logging.getLogger("sqlalchemy.orm").setLevel(logging.DEBUG)
+# logging.getLogger("sqlalchemy.dialects.mysql").setLevel(logging.DEBUG)
+
 # create the tables
 Base.metadata.create_all(bind=engine)
 logger.info("Database tables created successfully.")
