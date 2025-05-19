@@ -1,4 +1,4 @@
-from typing import Optional, Type, Union
+from typing import Optional, Type, Union, Any
 import discord
 from discord.ui import View
 
@@ -22,7 +22,7 @@ class MessageManager:
         self.embed = embed_type() if embed_type else None
         self.message = None
 
-    async def send_message(self, embed: Optional[discord.Embed] = None, view: Optional[View] = None, **kwargs):
+    async def send_message(self, embed: Optional[discord.Embed] = None, view: Optional[View] = None, **kwargs: Any):
         """
         Sends the message to the destination.
         Automatically determines whether to use Interaction.response or Channel.send.
@@ -42,7 +42,7 @@ class MessageManager:
         else:
             self.message = await self.destination.send(embed=self.embed, view=self.view, **kwargs)
 
-    async def update_message(self, view: Optional[View] = None, embed: Optional[discord.Embed] = None, **kwargs):
+    async def update_message(self, view: Optional[View] = None, embed: Optional[discord.Embed] = None, **kwargs: Any):
         """
         Updates the existing message with the current View and Embed.
         
