@@ -90,10 +90,10 @@ class Shop(GroupCog):
                 return view, embed
 
             # Generate the unit view based on its status
+            await interaction.response.defer(thinking=False, ephemeral=True)
             unit_view, unit_embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
             
             await message_manager.update_message(embed=unit_embed, view=unit_view)  # Update the embed in the MessageManager
-            await interaction.response.defer(thinking=False, ephemeral=True)
 
         select.callback = select_callback
 
@@ -177,6 +177,7 @@ class Shop(GroupCog):
         _unit = session.query(Unit).filter(Unit.id == unit_id).first()
 
         # we need to filter the upgrades based on the unit types, but we cannot do it directly in the query
+        logger.debug("Generating compatible upgrades")
         compatible_upgrades = []
         for upgrade in upgrades:
             for unit_type in upgrade.unit_types:
@@ -186,6 +187,7 @@ class Shop(GroupCog):
             embed.description = "No upgrades are available for this unit"
             embed.color = 0xff0000
             return view, embed
+        logger.debug(f"Compatible upgrades generated")
         paginator = Paginator(compatible_upgrades, 25)
         page = paginator.current()
         select = ui.Select(placeholder="Select an upgrade to buy")
