@@ -49,8 +49,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         - `config`: (dict) Bot configuration loaded from the database.
         - `uses_db`: (Callable) A decorator for database operations.
     """
-    mod_roles = {1308924912936685609, 1302095620231794698}
-    gm_role = 1308925031069388870
+    mod_roles: set[int] = {1308924912936685609, 1302095620231794698}
+    gm_role: int = 1308925031069388870
     session: Session
     use_ephemeral: bool
     config: dict
