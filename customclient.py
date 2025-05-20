@@ -646,7 +646,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             await interaction.response.send_message(stats, ephemeral=True)
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
-        await self.load_extensions(["extensions.configuration", "extensions.admin", "extensions.faq", "extensions.companies", "extensions.units", "extensions.shop", "extensions.campaigns"]) # for initial setup, we want to disable all user commands, so we only load the configuration extension
+        await self.load_extensions(["extensions.configuration", "extensions.admin", "extensions.faq", "extensions.companies", "extensions.units", "extensions.shop", "extensions.campaigns", "extensions.stockpile"]) # for initial setup, we want to disable all user commands, so we only load the configuration extension
 
         logger.debug("Syncing slash commands")
         await self.tree.sync()
