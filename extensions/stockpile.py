@@ -54,7 +54,7 @@ class Stockpile(GroupCog):
                 for upgrade in unit.upgrades:
                     upgrade_select.add_option(label=upgrade.name, value=upgrade.id)
             else:
-                upgrade_select.add_option(label="This unit has no upgrades", value=None, default=True)
+                upgrade_select.add_option(label="This unit has no upgrades", value="None", default=True)
                 upgrade_select.disabled = True
             _view = View()
             _view.add_item(unit_select)
@@ -137,8 +137,10 @@ class Stockpile(GroupCog):
                 if upgrade.shop_upgrade in _unit.available_upgrades:
                     upgrade_select.add_option(label=upgrade.name, value=upgrade.id)
             if len(upgrade_select.options) == 0:
-                upgrade_select.add_option(label="This unit has no upgrades", value=None, default=True)
+                upgrade_select.add_option(label="This unit has no upgrades", value="None", default=True)
                 upgrade_select.disabled = True
+            if len(view.children) == 2: # there is already an upgrade select, so we need to remove that one first
+                view.remove_item(view.children[1])
             view.add_item(upgrade_select)
             await message_manager.update_message(view=view)
             await interaction.response.defer(thinking=False)
