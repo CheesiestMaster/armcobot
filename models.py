@@ -197,6 +197,13 @@ class ShopUpgrade(BaseModel):
         back_populates="available_upgrades",
         overlaps="unit_types,type_info",
         lazy="subquery")
+    compatible_unit_types = relationship("UnitType",
+        secondary="shop_upgrade_unit_types",
+        primaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
+        secondaryjoin="UnitType.unit_type==ShopUpgradeUnitTypes.unit_type",
+        back_populates="available_upgrades",
+        overlaps="unit_types,type_info",
+        lazy="subquery")
 
 class ShopUpgradeUnitTypes(BaseModel):
     __tablename__ = "shop_upgrade_unit_types"
@@ -214,5 +221,13 @@ class UnitType(BaseModel):
     original_units = relationship("Unit", foreign_keys="Unit.original_type", back_populates="original_type_info", overlaps="original_type_info", lazy="subquery")
     refit_targets = relationship("ShopUpgrade", foreign_keys="ShopUpgrade.refit_target", back_populates="target_type_info", overlaps="target_type_info", lazy="subquery")
     upgrade_types = relationship("ShopUpgradeUnitTypes", back_populates="type_info", overlaps="available_upgrades,compatible_units,type_info")
+
+    available_upgrades = relationship("ShopUpgrade",
+        secondary="shop_upgrade_unit_types",
+        primaryjoin="UnitType.unit_type==ShopUpgradeUnitTypes.unit_type",
+        secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
+        back_populates="compatible_unit_types",
+        overlaps="unit_types,type_info",
+        lazy="subquery")
 
 create_all = Base.metadata.create_all

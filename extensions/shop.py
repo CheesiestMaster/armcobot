@@ -209,7 +209,8 @@ class Shop(GroupCog):
             view.add_item(next_button)
         embed.description = f"Please select an upgrade to buy, you have {_player.rec_points} requisition points"
 
-        async def select_callback(interaction: Interaction):
+        @uses_db(CustomClient().sessionmaker)
+        async def select_callback(interaction: Interaction, session: Session):
             nonlocal embed
             upgrade_id = int(select.values[0])
             logger.debug(f"Selected upgrade ID: {upgrade_id}")
@@ -273,29 +274,19 @@ class Shop(GroupCog):
             elif upgrade.type == UpgradeType.REFIT:
                 refit_target = upgrade.refit_target
                 refit_cost = upgrade.cost
-                current_upgrades = _unit.upgrades
-                shop_upgrades = [upgrade.shop_upgrade_id for upgrade in current_upgrades]
-                shop_upgrades = session.query(ShopUpgrade).filter(ShopUpgrade.id.in_(shop_upgrades)).all()
-                incompatible_upgrades = []
-                logger.debug(f"Current upgrades: {current_upgrades}, Shop upgrades: {shop_upgrades}")
+                current_upgrades: list[PlayerUpgrade] = _unit.upgrades
+                current_upgrade_set: set[ShopUpgrade] = {upgrade.shop_upgrade for upgrade in current_upgrades}
+                compatible_upgrades: set[ShopUpgrade] = set(upgrade.target_type_info.available_upgrades)
+                incompatible_upgrades = current_upgrade_set - compatible_upgrades
 
-                for upgrade in shop_upgrades:
-                    compatible = False
-                    for ut in upgrade.unit_types:
-                        if ut.unit_type == refit_target:
-                            compatible = True
-                            break
-                    if not compatible:
-                        incompatible_upgrades.append(upgrade.id)
-
-                stockpile = session.query(Unit).filter(Unit.player_id == _player.id, Unit.unit_type == "STOCKPILE").first()
+                stockpile = _player.stockpile
                 if not stockpile:
                     logger.warning(f"Player {interaction.user.name} does not have a stockpile unit.")
                     await interaction.response.send_message("You don't have a stockpile unit", ephemeral=True)
                     return
 
                 for upgrade in current_upgrades:
-                    if upgrade.shop_upgrade_id in incompatible_upgrades:
+                    if upgrade.shop_upgrade in incompatible_upgrades:
                         upgrade.unit_id = stockpile.id
 
                 _unit.unit_type = refit_target
