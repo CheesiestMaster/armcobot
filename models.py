@@ -49,6 +49,11 @@ class BaseModel(Base):
 
 # Models
 
+class Extension(BaseModel):
+    __tablename__ = "extensions"
+    # column
+    name = Column(String(264), primary_key=True) # this table is just a list of loaded extensions, hence only one column and no relationships
+
 class Unit(BaseModel):
     __tablename__ = "units"
     # columns

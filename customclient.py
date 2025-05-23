@@ -490,9 +490,33 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         Args:
             extensions (List[str]): List of extension names to load.
         """
-        for extension in extensions:
-            await self.load_extension(extension)
-        logger.debug(f"Loaded extensions: {', '.join(extensions)}")
+        results = await asyncio.gather(
+            *[self.load_extension(ext) for ext in extensions if not ext in self.extensions.keys()],
+            return_exceptions=True
+        )
+        success = []
+        failed = []
+        for ext, res in zip(extensions, results):
+            if isinstance(res, Exception):
+                failed.append(f"{ext}: {res}")
+            else:
+                success.append(ext)
+        if failed:
+            logger.error(f"Failed to load extensions: {', '.join(failed)}")
+        if success:
+            logger.debug(f"Loaded extensions: {', '.join(success)}")
+
+    async def load_extension(self, extension: str):
+        await super().load_extension(extension)
+        with self.sessionmaker() as session:
+            session.merge(Extension(name=extension)) # merge so we don't get integrity errors
+            session.commit()
+
+    async def unload_extension(self, extension: str):
+        await super().unload_extension(extension)
+        with self.sessionmaker() as session:
+            session.query(Extension).filter(Extension.name == extension).delete()
+            session.commit()
 
     async def set_bot_nick(self, nick: str):
         """
@@ -646,7 +670,11 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             await interaction.response.send_message(stats, ephemeral=True)
 
         await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
-        await self.load_extensions(["extensions.configuration", "extensions.admin", "extensions.faq", "extensions.companies", "extensions.units", "extensions.shop", "extensions.campaigns", "extensions.stockpile"]) # for initial setup, we want to disable all user commands, so we only load the configuration extension
+        with self.sessionmaker() as session:
+            if len(session.query(Extension.name).all()) > 0:
+                await self.load_extensions([ext[0] for ext in session.query(Extension.name).all()])
+            else:
+                await self.load_extensions(["extensions.configuration", "extensions.admin", "extensions.faq", "extensions.companies", "extensions.units", "extensions.shop", "extensions.campaigns", "extensions.stockpile"])
 
         logger.debug("Syncing slash commands")
         await self.tree.sync()
