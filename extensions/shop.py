@@ -142,12 +142,12 @@ class Shop(GroupCog):
                     await message_manager.update_message()
                     await interaction.response.defer(thinking=False, ephemeral=True)
                     return
-                if _unit.unit_type == "MECH":
-                    # we need to make an "upgrade" for the mech named "Light Chassis"
-                    light_chassis = PlayerUpgrade(unit_id=_unit.id, name="Light Chassis", type=UpgradeType.MECH_CHASSIS, original_price=0)
-                    light_laser = PlayerUpgrade(unit_id=_unit.id, name="Light Laser", type=UpgradeType.UPGRADE, original_price=0)
-                    session.add(light_chassis)
-                    session.add(light_laser)
+                if _unit.type_info.free_upgrade_1:
+                    free_upgrade_1 = PlayerUpgrade(unit_id=_unit.id, name=_unit.type_info.free_upgrade_1_info.name, type=_unit.type_info.free_upgrade_1_info.type, original_price=0, non_transferable=True, shop_upgrade_id=_unit.type_info.free_upgrade_1)
+                    session.add(free_upgrade_1)
+                if _unit.type_info.free_upgrade_2:
+                    free_upgrade_2 = PlayerUpgrade(unit_id=_unit.id, name=_unit.type_info.free_upgrade_2_info.name, type=_unit.type_info.free_upgrade_2_info.type, original_price=0, non_transferable=True, shop_upgrade_id=_unit.type_info.free_upgrade_2)
+                    session.add(free_upgrade_2)
                 _unit.status = UnitStatus.INACTIVE
                 _player.rec_points -= 1
                 session.commit()
@@ -246,7 +246,7 @@ class Shop(GroupCog):
                     await interaction.response.defer(thinking=False, ephemeral=True)
                     return
 
-            if upgrade.type == UpgradeType.UPGRADE:
+            if upgrade.type in [UpgradeType.UPGRADE, UpgradeType.MECH_CHASSIS]:
                 existing = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == _unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.id).first()
                 logger.debug(f"Repeatable: {upgrade.repeatable}")
                 if existing and not upgrade.repeatable:
