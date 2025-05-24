@@ -140,6 +140,7 @@ class PlayerUpgrade(BaseModel):
     original_price = Column(Integer, default=0)
     unit_id = Column(Integer, ForeignKey("units.id"))
     shop_upgrade_id = Column(Integer, ForeignKey("shop_upgrades.id"), nullable=True)
+    non_transferable = Column(Boolean, default=False)
     # relationships
     unit = relationship("Unit", back_populates="upgrades", lazy="joined")
     shop_upgrade = relationship("ShopUpgrade", back_populates="player_upgrades", lazy="joined")
@@ -220,12 +221,19 @@ class ShopUpgradeUnitTypes(BaseModel):
 
 class UnitType(BaseModel):
     __tablename__ = "unit_types"
+    # columns
     unit_type = Column(String(15), primary_key=True, index=True)
     is_base = Column(Boolean, default=False)
+    free_upgrade_1 = Column(ForeignKey("shop_upgrades.id"), nullable=True)
+    free_upgrade_2 = Column(ForeignKey("shop_upgrades.id"), nullable=True)
+
+    # relationships
     units = relationship("Unit", foreign_keys="Unit.unit_type", back_populates="type_info", lazy="subquery")
     original_units = relationship("Unit", foreign_keys="Unit.original_type", back_populates="original_type_info", overlaps="original_type_info", lazy="subquery")
     refit_targets = relationship("ShopUpgrade", foreign_keys="ShopUpgrade.refit_target", back_populates="target_type_info", overlaps="target_type_info", lazy="subquery")
     upgrade_types = relationship("ShopUpgradeUnitTypes", back_populates="type_info", overlaps="available_upgrades,compatible_units,type_info")
+    free_upgrade_1_info = relationship("ShopUpgrade", foreign_keys="ShopUpgrade.free_upgrade_1", back_populates="target_type_info", overlaps="target_type_info", lazy="subquery")
+    free_upgrade_2_info = relationship("ShopUpgrade", foreign_keys="ShopUpgrade.free_upgrade_2", back_populates="target_type_info", overlaps="target_type_info", lazy="subquery")
 
     available_upgrades = relationship("ShopUpgrade",
         secondary="shop_upgrade_unit_types",
