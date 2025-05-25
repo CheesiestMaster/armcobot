@@ -1,6 +1,9 @@
 from functools import wraps
+from typing import TYPE_CHECKING, TypeVar
 
-def Singleton(_cls: type):
+T = TypeVar("T", bound=type)
+
+def Singleton(_cls: type[T]) -> type[T]:
     """
     A decorator to make a class a singleton. It overrides __new__ and __init__ methods.
 
@@ -48,4 +51,4 @@ def Singleton(_cls: type):
         }
     )
     
-    return SingletonClass
+    return SingletonClass if not TYPE_CHECKING else _cls
