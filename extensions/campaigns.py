@@ -1,23 +1,36 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, Member, Role, Embed
-from models import Campaign, UnitStatus, CampaignInvite, Player
-from utils import uses_db
+from discord import Interaction, app_commands as ac, Member, Role, Embed, File, TextStyle
+from discord.ui import Modal, TextInput
+from models import Campaign, UnitStatus, CampaignInvite, Player, Unit
+from utils import uses_db, is_dm, check_notify
 from sqlalchemy.orm import Session
+from sqlalchemy import text, not_
 from customclient import CustomClient
+import random
+from io import BytesIO
+from asyncio import gather
 logger = getLogger(__name__)
 class Campaigns(GroupCog):
-    def __init__(self, bot: Bot):
+    def __init__(self, bot: CustomClient):
         self.bot = bot
     
     @staticmethod
     async def is_management(interaction: Interaction):
+        logger.debug(f"Checking if {interaction.user.name} is management")
+        if await is_dm(interaction):
+            return False
         valid = any(role in interaction.user.roles for role in [interaction.guild.get_role(role_id) for role_id in CustomClient().mod_roles])
         logger.info(f"{interaction.user.name} is management: {valid}")
         return valid
     
     @staticmethod
+    @check_notify(message="You are not a Game Master, and cannot run this command")
     async def is_gm(interaction: Interaction):
+        logger.debug(f"Checking if {interaction.user.name} is GM")
+        if await is_dm(interaction):
+            await interaction.response.send_message("This command cannot be run in a DM", ephemeral=True)
+            return False
         is_management = await Campaigns.is_management(interaction)
         is_gm = interaction.guild.get_role(CustomClient().gm_role) in interaction.user.roles
         logger.info(f"{interaction.user.name} is management: {is_management}, is gm: {is_gm}")
@@ -38,7 +51,7 @@ class Campaigns(GroupCog):
                 await interaction.response.send_message(f"GMs cannot create campaigns for other GMs, ask a bot Manager to do this", ephemeral=True)
                 return
         # check if the gm has either management or GM role, bot.mod_roles is a set, bot.gm_role is an int
-        is_gm = interaction.guild.get_role(self.bot.gm_role) in interaction.user.roles
+        is_gm = interaction.guild.get_role(self.bot.gm_role) in gm.roles
         management_roles = [interaction.guild.get_role(role_id) for role_id in self.bot.mod_roles if role_id != self.bot.gm_role]
         if not any(role in interaction.user.roles for role in management_roles) and not is_gm:
             logger.error(f"{gm.name} doesn't have the GM role, and is not in the management role list")
@@ -47,6 +60,10 @@ class Campaigns(GroupCog):
         if len(name) > 30:
             logger.error(f"Campaign name {name} is too long")
             await interaction.response.send_message("Campaign name must be less than 30 characters", ephemeral=True)
+            return
+        if '#' in name:
+            logger.error(f"Campaign name {name} contains a '#'")
+            await interaction.response.send_message("Campaign name cannot contain a '#' due to discord autocompletion", ephemeral=True)
             return
         # check if the campaign name is already taken
         if session.query(Campaign).filter(Campaign.name == name).first():
@@ -131,6 +148,7 @@ class Campaigns(GroupCog):
             unit.callsign = None
             unit.campaign_id = None
             unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
+            self.bot.queue.put_nowait((1, unit.player, 0))
         # delete all invites because they are no longer valid
         invites = session.query(CampaignInvite).filter(CampaignInvite.campaign_id == _campaign.id).all()
         for invite in invites:
@@ -145,7 +163,7 @@ class Campaigns(GroupCog):
     @ac.command(name="payout", description="Payout a campaign")
     @ac.check(is_gm)
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def payout(self, interaction: Interaction, campaign: str, session: Session, base: int, survivor: int):
+    async def payout(self, interaction: Interaction, campaign: str, session: Session, base_req: int=0, survivor_req: int=0, base_bp: int=0, survivor_bp: int=0):
         # do checks, then payout all players in the campaign
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
         if not _campaign:
@@ -159,9 +177,16 @@ class Campaigns(GroupCog):
             return
         # payout all players in the campaign
         for unit in _campaign.units:
-            unit.player.rec_points += base
+            logger.debug(f"Paying out {unit.callsign} for {campaign}")
+            unit.player.rec_points += base_req
+            unit.player.bonus_pay += base_bp
             if unit.status == UnitStatus.ACTIVE:
-                unit.player.rec_points += survivor
+                unit.player.rec_points += survivor_req
+                unit.player.bonus_pay += survivor_bp
+        session.commit()
+        for unit in _campaign.units:
+            logger.debug(f"Putting {unit.callsign} in update queue for {campaign}")
+            self.bot.queue.put_nowait((1, unit.player, 0)) # we have to split the payout and reporting into two separate loops, because otherwise we get a deadlock
         await interaction.response.send_message(f"Campaign {campaign} payout complete", ephemeral=True)
 
     @ac.command(name="invite", description="Invite a player to a campaign")
@@ -218,6 +243,7 @@ class Campaigns(GroupCog):
             unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
         logger.info(f"Player {player.name} deactivated from {campaign}")
         await interaction.response.send_message(f"Player {player.mention} deactivated from {campaign}", ephemeral=True)
+        self.bot.queue.put_nowait((1, _player, 0))
 
     @ac.command(name="list", description="List all campaigns")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
@@ -225,6 +251,9 @@ class Campaigns(GroupCog):
         # no checks, return the list of all campaigns, their status, and the mention of the GM
         campaigns = session.query(Campaign).all()
         embed = Embed(title="Campaigns", type="rich")
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be run in a server", ephemeral=True)
+            return
         for campaign in campaigns:
             gm: Member|None = await interaction.guild.fetch_member(campaign.gm)
             if campaign.required_role:
@@ -232,7 +261,7 @@ class Campaigns(GroupCog):
             else:
                 required_role = None
             logger.debug(f"Campaign '{campaign.name}' has {len(campaign.units)} players")
-            embed.add_field(name=campaign.name, value=f"Status: {campaign.open}, "
+            embed.add_field(name=campaign.name, value=f"Status: {'Open' if campaign.open else 'Closed'}, "
                             f"GM: {gm.mention if gm else 'Unknown'}, "
                             f"Players: {len(campaign.units)}, "
                             f"Required Role: {required_role.mention if required_role else 'None'}")
@@ -240,23 +269,240 @@ class Campaigns(GroupCog):
             embed.add_field(name="No campaigns", value="There are no campaigns")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-bot: Bot = None
-async def setup(_bot: Bot):
+    @ac.command(name="kill", description="Kill a unit")
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def kill(self, interaction: Interaction, session: Session, callsign: str, is_mia: bool = False):
+        # do gm checks, then kill the unit, if is_mia is true, set the status to MIA, otherwise set the status to KIA
+        _unit = session.query(Unit).filter(Unit.callsign == callsign).first()
+        if not _unit:
+            logger.error(f"Unit {callsign} not found")
+            await interaction.response.send_message("Unit not found", ephemeral=True)
+            return
+        # check if the user has permission, either management or this campaign's GM
+        if not await self.is_management(interaction) and interaction.user.id != int(_unit.campaign.gm):
+            logger.error(f"{interaction.user.name} does not have permission to kill unit {callsign}")
+            await interaction.response.send_message("You don't have permission to kill this unit", ephemeral=True)
+            return
+        # check if the unit is Active, if not fail
+        if _unit.status != UnitStatus.ACTIVE:
+            logger.error(f"Unit {callsign} is not active")
+            await interaction.response.send_message("Unit is not active", ephemeral=True)
+            return
+        # kill the unit
+        _unit.status = UnitStatus.KIA if not is_mia else UnitStatus.MIA
+        logger.info(f"Unit {callsign} killed" + (" as MIA" if is_mia else ""))
+        await interaction.response.send_message(f"Unit {callsign} killed" + (" as MIA" if is_mia else ""), ephemeral=True)
+
+    @ac.command(name="raffle", description="Bring the unit count down through random selection")
+    @ac.check(is_gm)
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def raffle(self, interaction: Interaction, session: Session, campaign: str, count: int):
+        # do gm checks, then bring the unit count down through random selection
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        # check if the user has permission, either management or this campaign's GM
+        if not await self.is_management(interaction) and interaction.user.id != int(_campaign.gm):
+            logger.error(f"{interaction.user.name} does not have permission to raffle units from campaign {campaign}")
+            await interaction.response.send_message("You don't have permission to raffle units", ephemeral=True)
+            return
+        # raffle the units
+        units: list[Unit] = [unit for unit in _campaign.units if unit.status == UnitStatus.ACTIVE]
+        units: set[Unit] = set(units)
+        if len(units) < count:
+            logger.error(f"Campaign {campaign} has less than {count} active units but a raffle was attempted")
+            await interaction.response.send_message("Campaign has less than the requested number of active units", ephemeral=True)
+            return
+        if count <= 0:
+            logger.error(f"Raffle count {count} is less than 0")
+            await interaction.response.send_message("Raffle count must be greater than 0", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        dropped_units = random.sample(units, len(units) - count)
+        kept_units = units - set(dropped_units)
+        dropped_players = set([unit.player for unit in dropped_units])
+        for unit in dropped_units:
+            unit.status = UnitStatus.INACTIVE
+            unit.callsign = None
+            unit.campaign_id = None
+            unit.active = False
+        logger.info(f"Raffled {count} units from {campaign}")
+        await interaction.followup.send(f"Raffled {count} units from {campaign}", ephemeral=True)
+        for unit in kept_units:
+            try:
+                player: Player = unit.player
+                member: Member|None = await interaction.guild.fetch_member(player.discord_id)
+                if member:
+                    await member.send(f"Your unit {unit.callsign} was kept in the campaign {campaign}")
+                else:
+                    logger.error(f"Player {player.discord_id} not found")
+            except Exception as e:
+                logger.error(f"Error sending message to player {player.discord_id}: {e}")
+        for unit in dropped_units:
+            try:
+                player: Player = unit.player
+                member: Member|None = await interaction.guild.fetch_member(player.discord_id)
+                if member:
+                    await member.send(f"Your unit {unit.name} was dropped from the campaign {campaign}")
+                else:
+                    logger.error(f"Player {player.discord_id} not found")
+            except Exception as e:
+                logger.error(f"Error sending message to player {player.discord_id}: {e}")
+        session.commit()
+        for player in dropped_players:
+            self.bot.queue.put_nowait((1, player, 0))
+
+    @ac.command(name="list_players", description="List all players in a campaign")
+    @ac.check(is_gm)
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def list_players(self, interaction: Interaction, session: Session, campaign: str):
+        
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        logger.debug(f"Listing players for campaign {campaign}")
+        units = _campaign.units
+        logger.debug(f"Found {len(units)} units")
+        text = ""
+        await interaction.response.defer(ephemeral=True)
+        async def make_text(unit: Unit):
+            player: Player = unit.player
+            member: Member|None = interaction.guild.get_member(int(player.discord_id))
+            if member:
+                return f"{member.display_name} - {unit.callsign} - {unit.unit_type}\n"
+            else:
+                return f"{player.discord_id} - {unit.callsign} - {unit.unit_type}\n"
+        texts = await gather(*[make_text(unit) for unit in units])
+        text = "".join(texts)
+        logger.debug(f"Text generated")
+        file = BytesIO(text.encode())
+        attachment = File(file, filename="players.txt")
+        await interaction.followup.send("Here are the players in the campaign", ephemeral=True, file=attachment)  
+
+    @ac.command(name="counts_by_unit_type", description="List the number of units by unit type")
+    #@ac.check(is_gm)
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def counts_by_unit_type(self, interaction: Interaction, session: Session, campaign: str):
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        query = text("""
+        SELECT 
+            u.unit_type, 
+            COUNT(*) AS unit_count, 
+            COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () AS percentage
+        FROM units u
+        JOIN campaigns c ON u.campaign_id = c.id
+        WHERE c.name = :campaign_name
+        GROUP BY u.unit_type;
+    """)
+        result = session.execute(query, {"campaign_name": campaign})
+        columns = result.keys()
+        rows = result.fetchall()
+        ouptput = "\n".join(['\t'.join(columns)] + ["\t".join(map(str, row)) for row in rows])
+        file = BytesIO(ouptput.encode())
+        attachment = File(file, filename="counts_by_unit_type.txt")
+        await interaction.response.send_message("Here are the counts by unit type", ephemeral=True, file=attachment)
+
+    @ac.command(name="limit_types", description="Limit the types of units that can be used in a campaign")
+    @ac.check(is_gm)
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def limit_types(self, interaction: Interaction, session: Session, campaign: str):
+        # do checks, then give a modal to take the list of unit types as a NSV string
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        # check if you are the GM or a bot manager
+        if not await self.is_management(interaction) and interaction.user.id != int(_campaign.gm):
+            logger.error(f"{interaction.user.name} does not have permission to limit types for campaign {campaign}")
+            await interaction.response.send_message("You don't have permission to limit types for this campaign", ephemeral=True)
+            return
+        modal = Modal(title="Limit Types", custom_id="limit_types")
+        modal.add_item(TextInput(label="Instructions", style=TextStyle.short, placeholder="Delete the types you don't want to allow, There is no need to edit this text", max_length=1)) # only allow 1 character because it's just instructions
+        type_list = session.query(Unit.unit_type).filter(Unit.campaign_id == _campaign.id).distinct().all()
+        type_list = [unit_type[0] for unit_type in type_list]
+        modal.add_item(TextInput(label="Unit Types", style=TextStyle.paragraph, custom_id="unit_types", default="\n".join(type_list)))
+        async def on_submit(interaction: Interaction):
+            await interaction.response.defer(ephemeral=True)
+            campaign_id = session.query(Campaign.id).filter(Campaign.name == campaign).scalar()
+            if not campaign_id:
+                logger.error(f"Campaign {campaign} not found")
+                await interaction.followup.send("Campaign not found", ephemeral=True)
+                return
+            unit_types = interaction.data["components"][0]["components"][1]["value"]
+            logger.debug(f"Unit types: {unit_types}")
+            # unit_types is a NSV string, split it into a list of types for the query
+            unit_types = unit_types.split("\n")
+            unit_types = [unit_type.strip() for unit_type in unit_types if unit_type.strip()]
+            # use not_ in_ to get all invalid units
+            invalid_units = session.query(Unit).filter(not_(Unit.unit_type.in_(unit_types)), Unit.campaign_id == campaign_id).all()
+            for unit in invalid_units:
+                unit.status = UnitStatus.INACTIVE
+                unit.callsign = None
+                unit.campaign_id = None
+                unit.active = False
+                self.bot.queue.put_nowait((1, unit.player, 0))
+            await interaction.followup.send(f"Unit types: {unit_types}", ephemeral=True)
+            logger.info(f"Limited unit types for campaign {campaign}")
+            for unit in invalid_units:
+                try:
+                    player: Player = unit.player
+                    member: Member|None = await interaction.guild.fetch_member(player.discord_id)
+                    if member:
+                        await member.send(f"Your unit {unit.name} was dropped from the campaign {campaign} because it is not one of the allowed types")
+                    else:
+                        logger.error(f"Player {player.discord_id} not found")
+                except Exception as e:
+                    logger.error(f"Error sending message to player {player.discord_id}: {e}")
+
+        modal.on_submit = on_submit
+        await interaction.response.send_modal(modal)
+
+    @ac.command(name="merge", description="Merge two campaigns")
+    @ac.check(is_gm)
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def merge(self, interaction: Interaction, session: Session, campaign: str, other_campaign: str):
+        # do checks, then merge the two campaigns
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        _other_campaign = session.query(Campaign).filter(Campaign.name == other_campaign).first()
+        if not _other_campaign:
+            logger.error(f"Campaign {other_campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        # check if the user has permission, either management or this campaign's GM
+        if not await self.is_management(interaction):
+            if interaction.user.id != int(_campaign.gm) or interaction.user.id != int(_other_campaign.gm):
+                logger.error(f"{interaction.user.name} does not have permission to merge campaigns {campaign} and {other_campaign}")
+                await interaction.response.send_message("You don't have permission to merge these campaigns", ephemeral=True)
+                return
+        # merge the two campaigns
+        units = _other_campaign.units
+        for unit in units:
+            unit.campaign_id = _campaign.id
+        invites = _other_campaign.invites
+        for invite in invites:
+            session.delete(invite)
+        session.delete(_other_campaign)
+        session.commit()
+        logger.info(f"Merged campaigns {campaign} and {other_campaign}")
+        await interaction.response.send_message(f"Merged campaigns {campaign} and {other_campaign}", ephemeral=True)
+
+async def setup(_bot: CustomClient):
     global bot
     bot = _bot
     await bot.add_cog(Campaigns(bot))
 
 async def teardown():
     bot.remove_cog(Campaigns.__name__) # remove_cog takes a string, not a class
-
-"""
-you need either GM or Management to run any campaign commands
-/campaign create name: gm:self - only Management can input a GM, for GMs it's always self
-/campaign open role: limit: - allows the campaign to be selected in unit activate, role if specified requires that role to sign up, limit if specified limits the player count
-/campaign invite member: - sends someone an invite
-/campaign deactivate member: - removes a player from the campaign
-/campaign close - blocks signups
-/campaign payout base: survivor: - pays out all active units {base} req and all living active units an additional {survivor} req
-/campaign remove - deletes a campaign
-/campaign list - lists all campaigns
-all commands give a dropdown with the valid campaigns, if you have management valid is all campaigns, otherwise it's only campaigns you are the GM"""

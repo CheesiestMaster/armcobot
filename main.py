@@ -1,11 +1,9 @@
+#!/usr/bin/env python3
 import logging
 from dotenv import load_dotenv
 import sys
 import os
-from utils import uses_db
-import asyncio
-loop = asyncio.get_event_loop()
-asyncio.set_event_loop(loop)
+
 from coloredformatter import ColoredFormatter
 if not os.path.exists("global.env"):
     raise FileNotFoundError("global.env not found")
@@ -41,7 +39,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from models import Base
 from customclient import CustomClient
-
+import asyncio
+loop = asyncio.get_event_loop()
+asyncio.set_event_loop(loop)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,11 @@ engine = create_engine(
     max_overflow=20)
 
 logger.debug("Database engine created with URL: %s", os.getenv("DATABASE_URL"))
+
+# logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG)
+# logging.getLogger("sqlalchemy.pool").setLevel(logging.DEBUG)
+# logging.getLogger("sqlalchemy.orm").setLevel(logging.DEBUG)
+# logging.getLogger("sqlalchemy.dialects.mysql").setLevel(logging.DEBUG)
 
 # create the tables
 Base.metadata.create_all(bind=engine)

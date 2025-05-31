@@ -2,12 +2,14 @@ import re
 import os
 from functools import lru_cache, wraps
 from inspect import Signature
+import traceback
 from sqlalchemy.orm import scoped_session
 from logging import getLogger
 import asyncio
 from collections import deque
-from typing import Coroutine
+from typing import Coroutine, Callable
 from discord import Interaction
+import pandas as pd
 CustomClient = None
 
 logger = getLogger(__name__)
@@ -149,6 +151,13 @@ class RollingCounter:
     
     def __repr__(self):
         return f"RollingCounter(duration={self.duration}, counter={self.counter})"
+    
+    def __iadd__(self, _):
+        """
+        Increment the counter by 1, regardless of the value of the argument, and return the counter
+        """
+        self.set()
+        return self
 
 class RollingCounterDict:
     def __init__(self, duration: int):
@@ -161,7 +170,7 @@ class RollingCounterDict:
         if duration <= 0:
             raise ValueError("Duration must be greater than 0.")
         self.duration = duration
-        self.counters = {}
+        self.counters: dict[str, RollingCounter] = {}
 
     def set(self, key: str):
         """
@@ -200,6 +209,18 @@ class RollingCounterDict:
         :return: The current value of the counter or 0.0.
         """
         return self.get(key)
+
+    def __str__(self):
+        """
+        Returns a newline-separated string of the keys and their counts
+        """
+        return "\n".join([f"{key}: {self.get(key)}" for key in self.counters])
+    
+    def values(self) -> list[int]:
+        """
+        Returns a list of the values of the counters
+        """
+        return [self.get(key) for key in self.counters]
     
 def chunk_list(lst: list, chunk_size: int) -> list[list]:
     """Splits a list into chunks of specified size."""
@@ -275,26 +296,112 @@ async def callback_listener(callback: Coroutine, bind:str):
         server = await asyncio.start_server(listener, address, port)
         await server.serve_forever()
     except Exception as e:
-        logger.error(f"Error in callback_listener: {e}") # we don't want to crash the bot if the callback happens twice, whcih would OSE 98
+        logger.error(f"Error in callback_listener: {e}") # we don't want to crash the bot if the callback happens twice, whichh would OSE 98
         return
 
+def check_notify(message: str = "You are not allowed to run this command"):
+    message = message.strip() 
+    def decorator(func: Callable[[Interaction], bool]):
+        @wraps(func)
+        async def wrapper(interaction: Interaction, *args, **kwargs):
+            result = await func(interaction, *args, **kwargs)
+            if not result:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(message, ephemeral=True)
+            return result
+        return wrapper
+    return decorator
 
-async def is_management(interaction: Interaction) -> bool:
+
+@check_notify(message="You don't have permission to run this command")
+async def is_management(interaction: Interaction, silent: bool = False) -> bool:
     """Check if a user has management permissions"""
     global CustomClient
     if CustomClient is None:
         from customclient import CustomClient
     valid = any(role in interaction.user.roles for role in [interaction.guild.get_role(role_id) for role_id in CustomClient().mod_roles])
-    logger.info(f"{interaction.user.name} is management: {valid}")
+    if not silent:
+        logger.info(f"{interaction.user.name} is management: {valid}")
     return valid
 
-async def is_gm(interaction: Interaction) -> bool:
+async def is_management_no_notify(interaction: Interaction, silent: bool = False) -> bool:
+    """Check if a user has management permissions"""
+    global CustomClient
+    if CustomClient is None:
+        from customclient import CustomClient
+    valid = any(role in interaction.user.roles for role in [interaction.guild.get_role(role_id) for role_id in CustomClient().mod_roles])
+    if not silent:
+        logger.info(f"{interaction.user.name} is management: {valid}")
+    return valid
+
+async def is_gm(interaction: Interaction, silent: bool = False) -> bool:
     """Check if a user has GM permissions"""
-    is_management_result = await is_management(interaction)
+    is_management_result = await is_management(interaction, silent)
     is_gm_role = interaction.guild.get_role(CustomClient().gm_role) in interaction.user.roles
-    logger.info(f"{interaction.user.name} is management: {is_management_result}, is gm: {is_gm_role}")
+    if not silent:
+        logger.info(f"{interaction.user.name} is management: {is_management_result}, is gm: {is_gm_role}")
     valid = is_gm_role or is_management_result
     if not valid:
         await interaction.response.send_message("You don't have permission to run this command", ephemeral=True)
     return valid
+
+def filter_df(df: pd.DataFrame, col_name: str, filter: set[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    mask = df[col_name].astype(str).isin(filter)
+    logger.debug(mask.any())
+    return df[mask], df[~mask]
+
+async def toggle_command_ban(desired_state: bool, initiator: str):
+    global CustomClient
+    if CustomClient is None:
+        from customclient import CustomClient
+    current_state = CustomClient().tree.interaction_check == CustomClient().check_banned_interaction
+    if current_state == desired_state:
+        return current_state
+    CustomClient().tree.interaction_check = CustomClient().check_banned_interaction if desired_state else CustomClient().no_commands
+    if not desired_state:
+        comm_net = CustomClient().get_channel(1211454073383952395)
+        await comm_net.send(f"# Command ban has been enabled by {initiator}")
+        logger.info(f"Command ban enabled by {initiator}")
+    else:
+        comm_net = CustomClient().get_channel(1211454073383952395)
+        await comm_net.send(f"# Command ban has been disabled by {initiator}")
+        logger.info(f"Command ban disabled by {initiator}")
+    return desired_state
+
+async def is_server(interaction: Interaction) -> bool:
+    """Check if a command is being run in a server"""
+    return interaction.guild is not None
+
+async def is_dm(interaction: Interaction) -> bool:
+    """Check if a command is being run in a DM"""
+    return interaction.guild is None
+
+def error_reporting(verbose: None | bool = None):
+    
+    print(f"Applying @error_reporting with verbose={verbose}")
+
+    format_error = (
+        (lambda e: f"```\n{''.join(traceback.format_exception(e)).strip()[:1990]}\n```") if verbose is True
+        else (lambda e: f"Something went wrong: `{type(e).__name__}`") if verbose is False
+        else (lambda _: "Something went wrong.")
+    )
+
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(interaction: Interaction, *args, **kwargs):
+            try:
+                return await func(interaction, *args, **kwargs)
+            except Exception as e:
+                error_msg = format_error(e)
+
+                if interaction.response.is_done():
+                    await interaction.followup.send(error_msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(error_msg, ephemeral=True)
+
+                raise
+
+        return wrapper
+
+    return decorator
 

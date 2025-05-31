@@ -16,16 +16,22 @@ df_required_types = df["required types"].str.split(",", expand=True)
 
 # readd the name column
 df_required_types.insert(0, "name", df["name"])
-df_required_types.columns = ["name", "type", "extra_type"]
+df_required_types.columns = ["name", "type", "extra_type1", "extra_type2", "extra_type3"]
 new_df = df_required_types.copy()
 for index, row in df_required_types.iterrows():
     if row.values[2] is not None:
-        new_row = pd.DataFrame({"name": [row.values[0]], "type": [row.values[2]], "extra_type": [None]})
+        new_row = pd.DataFrame({"name": [row.values[0]], "type": [row.values[2]], "extra_type1": [None], "extra_type2": [None], "extra_type3": [None]})
+        new_df = pd.concat([new_df, new_row], ignore_index=True)
+    if row.values[3] is not None:
+        new_row = pd.DataFrame({"name": [row.values[0]], "type": [row.values[3]], "extra_type1": [None], "extra_type2": [None], "extra_type3": [None]})
+        new_df = pd.concat([new_df, new_row], ignore_index=True)
+    if row.values[4] is not None:
+        new_row = pd.DataFrame({"name": [row.values[0]], "type": [row.values[4]], "extra_type1": [None], "extra_type2": [None], "extra_type3": [None]})
         new_df = pd.concat([new_df, new_row], ignore_index=True)
 
 
 # now we remove the extra_type column
-new_df = new_df.drop(columns=["extra_type"])
+new_df = new_df.drop(columns=["extra_type1", "extra_type2", "extra_type3"])
 
 df_required_types = new_df
 
@@ -57,7 +63,7 @@ for index, row in df_without_required_types.iterrows():
     else:
         for key, value in row.items():
             if key != "required_upgrade":
-                setattr(existing_upgrade, key, value if type(value) != float else None)
+                setattr(existing_upgrade, key, value if type(value) != float and key != "cost" else None)
     session.commit()
 for _, row in df_required_types.iterrows():
     # we need to create the shop_upgrade_unit_types, it should just be query the upgrade.id and write (id, [1]) to the database

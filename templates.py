@@ -1,12 +1,12 @@
-Dossier = """{mention}
+Dossier = """{mention} V1.0
 # {player.name}
 
 {player.lore}
 
 {medals}
-``````"""
+"""
 
-Statistics_Player = """{mention}
+Statistics_Player = """{mention} V1.0
 ## {player.name}
 
 Requisition Points: {player.rec_points}
@@ -14,9 +14,9 @@ Bonus Pay: {player.bonus_pay}
 
 Units:
 {units}
-``````"""
+"""
 
-Statistics_Unit = """### {unit.name} {callsign} ({unit.unit_type}) {unit.status.name}
+Statistics_Unit = """### {unit.name} {callsign} ({unit.unit_type}) {unit.status.name} {campaign_name}
 {upgrades}"""
 
 Statistics_Unit_Active = """### {unit.name} ({unit.unit_type}) {unit.status.name}
@@ -42,3 +42,8 @@ Warning logs: today: {today_WARNING} total: {total_WARNING}
 Error logs: today: {today_ERROR} total: {total_ERROR}
 Critical logs: today: {today_CRITICAL} total: {total_CRITICAL}
 Total logs: today: {today_total} total: {total_total}"""
+
+general_stats = """Players: {players} Rec Points: {rec_points} Bonus Pay: {bonus_pay}
+Units: Total: {units} Purchased: {purchased} Active: {active} KIA/MIA: {dead}
+Upgrades: {upgrades}
+"""

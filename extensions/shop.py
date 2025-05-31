@@ -14,6 +14,7 @@ async def is_mod(interaction: Interaction):
     """
     valid = any(interaction.user.get_role(role) for role in CustomClient().mod_roles)
     if not valid:
+        await interaction.response.send_message("You don't have the necessary role to use this command", ephemeral=True)
         logger.warning(f"{interaction.user.name} tried to use shop admin commands")
     return valid
 
@@ -69,6 +70,8 @@ class Shop(GroupCog):
             _player.bonus_pay -= 10
             _player.rec_points += 1
             bonus_button.disabled = _player.bonus_pay < 10
+            session.commit()
+            self.bot.queue.put_nowait((1, _player, 0))
             await message_manager.update_message()  # Update the message manager with the new state
             await interaction.response.defer(thinking=False, ephemeral=True)
             
@@ -87,15 +90,17 @@ class Shop(GroupCog):
                 return view, embed
 
             # Generate the unit view based on its status
+            await interaction.response.defer(thinking=False, ephemeral=True)
             unit_view, unit_embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
             
             await message_manager.update_message(embed=unit_embed, view=unit_view)  # Update the embed in the MessageManager
-            await interaction.response.defer(thinking=False, ephemeral=True)
 
         select.callback = select_callback
 
         view.add_item(select)
         view.add_item(bonus_button)
+        embed.description = f"Please select a unit to buy upgrades for, you have {_player.rec_points} requisition points"
+        embed.set_footer(text=f"ALL SALES ARE FINAL AND NO REFUNDS WILL BE GIVEN")
         return view, embed
 
     @uses_db(CustomClient().sessionmaker)
@@ -137,9 +142,16 @@ class Shop(GroupCog):
                     await message_manager.update_message()
                     await interaction.response.defer(thinking=False, ephemeral=True)
                     return
+                if _unit.type_info.free_upgrade_1:
+                    free_upgrade_1 = PlayerUpgrade(unit_id=_unit.id, name=_unit.type_info.free_upgrade_1_info.name, type=_unit.type_info.free_upgrade_1_info.type, original_price=0, non_transferable=True, shop_upgrade_id=_unit.type_info.free_upgrade_1)
+                    session.add(free_upgrade_1)
+                if _unit.type_info.free_upgrade_2:
+                    free_upgrade_2 = PlayerUpgrade(unit_id=_unit.id, name=_unit.type_info.free_upgrade_2_info.name, type=_unit.type_info.free_upgrade_2_info.type, original_price=0, non_transferable=True, shop_upgrade_id=_unit.type_info.free_upgrade_2)
+                    session.add(free_upgrade_2)
                 _unit.status = UnitStatus.INACTIVE
                 _player.rec_points -= 1
                 session.commit()
+                self.bot.queue.put_nowait((1, _player, 0))
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager) # recurse
                 await message_manager.update_message(view=view, embed=embed)
                 await interaction.response.defer(thinking=False, ephemeral=True)
@@ -160,20 +172,22 @@ class Shop(GroupCog):
 
     @uses_db(CustomClient().sessionmaker)
     async def shop_inactive_view_factory(self, unit_id: int, player_id: int, message_manager: MessageManager, embed: Embed, view: ui.View, session: Session):
-        upgrades = session.query(ShopUpgrade).order_by(case((ShopUpgrade.type == "REFIT", 0), else_=1)).all()
+        upgrades = session.query(ShopUpgrade).filter(ShopUpgrade.disabled == False).order_by(case((ShopUpgrade.type == "REFIT", 0), else_=1)).all()
         _player = session.query(Player).filter(Player.id == player_id).first()
         _unit = session.query(Unit).filter(Unit.id == unit_id).first()
 
         # we need to filter the upgrades based on the unit types, but we cannot do it directly in the query
+        logger.debug("Generating compatible upgrades")
         compatible_upgrades = []
         for upgrade in upgrades:
             for unit_type in upgrade.unit_types:
-                if unit_type.unit_type in _unit.unit_type:
+                if unit_type.unit_type == _unit.unit_type:
                     compatible_upgrades.append(upgrade)
         if not compatible_upgrades:
             embed.description = "No upgrades are available for this unit"
             embed.color = 0xff0000
             return view, embed
+        logger.debug(f"Compatible upgrades generated")
         paginator = Paginator(compatible_upgrades, 25)
         page = paginator.current()
         select = ui.Select(placeholder="Select an upgrade to buy")
@@ -195,7 +209,8 @@ class Shop(GroupCog):
             view.add_item(next_button)
         embed.description = f"Please select an upgrade to buy, you have {_player.rec_points} requisition points"
 
-        async def select_callback(interaction: Interaction):
+        @uses_db(CustomClient().sessionmaker)
+        async def select_callback(interaction: Interaction, session: Session):
             nonlocal embed
             upgrade_id = int(select.values[0])
             logger.debug(f"Selected upgrade ID: {upgrade_id}")
@@ -231,8 +246,9 @@ class Shop(GroupCog):
                     await interaction.response.defer(thinking=False, ephemeral=True)
                     return
 
-            if upgrade.type == UpgradeType.UPGRADE:
+            if upgrade.type in [UpgradeType.UPGRADE, UpgradeType.MECH_CHASSIS]:
                 existing = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == _unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.id).first()
+                logger.debug(f"Repeatable: {upgrade.repeatable}")
                 if existing and not upgrade.repeatable:
                     logger.warning(f"Player {interaction.user.name} already has this upgrade: {upgrade.name}")
                     embed.description = "You already have this upgrade"
@@ -246,7 +262,9 @@ class Shop(GroupCog):
                 logger.info(f"Player {interaction.user.name} bought upgrade: {upgrade.name} for {upgrade.cost} Req")
                 upgrade_name = upgrade.name
                 upgrade_cost = upgrade.cost
+                _player.rec_points -= upgrade_cost
                 session.commit()
+                self.bot.queue.put_nowait((1, _player, 0))
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
                 embed.description = f"You have bought {upgrade_name} for {upgrade_cost} Req"
                 embed.color = 0x00ff00
@@ -256,33 +274,25 @@ class Shop(GroupCog):
             elif upgrade.type == UpgradeType.REFIT:
                 refit_target = upgrade.refit_target
                 refit_cost = upgrade.cost
-                current_upgrades = _unit.upgrades
-                shop_upgrades = [upgrade.shop_upgrade_id for upgrade in current_upgrades]
-                shop_upgrades = session.query(ShopUpgrade).filter(ShopUpgrade.id.in_(shop_upgrades)).all()
-                incompatible_upgrades = []
-                logger.debug(f"Current upgrades: {current_upgrades}, Shop upgrades: {shop_upgrades}")
+                current_upgrades: list[PlayerUpgrade] = _unit.upgrades
+                current_upgrade_set: set[ShopUpgrade] = {upgrade.shop_upgrade for upgrade in current_upgrades}
+                compatible_upgrades: set[ShopUpgrade] = set(upgrade.target_type_info.available_upgrades)
+                incompatible_upgrades = current_upgrade_set - compatible_upgrades
 
-                for upgrade in shop_upgrades:
-                    compatible = False
-                    for ut in upgrade.unit_types:
-                        if ut.unit_type == refit_target:
-                            compatible = True
-                            break
-                    if not compatible:
-                        incompatible_upgrades.append(upgrade.id)
-
-                stockpile = session.query(Unit).filter(Unit.player_id == _player.id, Unit.unit_type == "STOCKPILE").first()
+                stockpile = _player.stockpile
                 if not stockpile:
                     logger.warning(f"Player {interaction.user.name} does not have a stockpile unit.")
                     await interaction.response.send_message("You don't have a stockpile unit", ephemeral=True)
                     return
 
                 for upgrade in current_upgrades:
-                    if upgrade.shop_upgrade_id in incompatible_upgrades:
+                    if upgrade.shop_upgrade in incompatible_upgrades:
                         upgrade.unit_id = stockpile.id
 
                 _unit.unit_type = refit_target
+                _player.rec_points -= refit_cost
                 session.commit()
+                self.bot.queue.put_nowait((1, _player, 0))
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
                 embed.description = f"You have bought a refit to {refit_target} for {refit_cost} Req"
                 embed.color = 0x00ff00
@@ -291,7 +301,7 @@ class Shop(GroupCog):
         select.callback = select_callback
         return view, embed
     
-    @ac.command(name="replace_stockpile", description="Create a new stockpile unit if you don't have one")
+    #@ac.command(name="replace_stockpile", description="Create a new stockpile unit if you don't have one")
     @uses_db(CustomClient().sessionmaker)
     async def replace_stockpile(self, interaction: Interaction, session: Session):
         _player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
