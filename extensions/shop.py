@@ -172,9 +172,17 @@ class Shop(GroupCog):
 
     @uses_db(CustomClient().sessionmaker)
     async def shop_inactive_view_factory(self, unit_id: int, player_id: int, message_manager: MessageManager, embed: Embed, view: ui.View, session: Session):
-        upgrades = session.query(ShopUpgrade).filter(ShopUpgrade.disabled == False).order_by(case((ShopUpgrade.type == "REFIT", 0), else_=1)).all()
+        
         _player = session.query(Player).filter(Player.id == player_id).first()
         _unit = session.query(Unit).filter(Unit.id == unit_id).first()
+
+        # Start with base query and common filters
+        query = session.query(ShopUpgrade).filter(ShopUpgrade.disabled == False)
+        # Add type filter only if unit has unit_req
+        if _unit.unit_req > 0:
+            query = query.filter(ShopUpgrade.type == UpgradeType.UPGRADE)
+        # Add ordering
+        upgrades = query.order_by(case((ShopUpgrade.type == "REFIT", 0), else_=1)).all()
 
         # we need to filter the upgrades based on the unit types, but we cannot do it directly in the query
         logger.debug("Generating compatible upgrades")
@@ -195,7 +203,7 @@ class Shop(GroupCog):
         for upgrade in page:
             if upgrade.disabled:
                 continue
-            insufficient = "❌" if upgrade.cost > _player.rec_points else ""
+            insufficient = "❌" if upgrade.cost > (_unit.unit_req if _unit.unit_req > 0 else _player.rec_points) else ""
             utype = "🔧" if upgrade.type == UpgradeType.REFIT else "⚙️"
             select.add_option(label=button_template.format(type=utype, insufficient=insufficient, name=upgrade.name, cost=upgrade.cost), value=str(upgrade.id))
         if paginator.has_previous():
@@ -207,7 +215,7 @@ class Shop(GroupCog):
             next_button = ui.Button(label="Next", style=ButtonStyle.secondary)
             # TODO: actually implement the next button
             view.add_item(next_button)
-        embed.description = f"Please select an upgrade to buy, you have {_player.rec_points} requisition points"
+        embed.description = f"Please select an upgrade to buy, you have {_unit.unit_req if _unit.unit_req > 0 else _player.rec_points} requisition points"
 
         @uses_db(CustomClient().sessionmaker)
         async def select_callback(interaction: Interaction, session: Session):
@@ -228,8 +236,8 @@ class Shop(GroupCog):
             _unit = session.query(Unit).filter(Unit.id == unit_id).first()
             logger.debug(f"Player: {_player}, Unit: {_unit}")
 
-            if upgrade.cost > _player.rec_points:
-                logger.warning(f"Player {interaction.user.name} does not have enough requisition points. Required: {upgrade.cost}, Available: {_player.rec_points}")
+            if upgrade.cost > (_unit.unit_req if _unit.unit_req > 0 else _player.rec_points):
+                logger.warning(f"Player {interaction.user.name} does not have enough requisition points. Required: {upgrade.cost}, Available: {_unit.unit_req if _unit.unit_req > 0 else _player.rec_points}")
                 embed.description = "You don't have enough requisition points to buy this upgrade"
                 embed.color = 0xff0000
                 await message_manager.update_message()
@@ -262,7 +270,11 @@ class Shop(GroupCog):
                 logger.info(f"Player {interaction.user.name} bought upgrade: {upgrade.name} for {upgrade.cost} Req")
                 upgrade_name = upgrade.name
                 upgrade_cost = upgrade.cost
-                _player.rec_points -= upgrade_cost
+                if _unit.unit_req > 0:
+                    _unit.unit_req -= upgrade_cost
+                    new_upgrade.original_price = 0 # it's technically free, because unit_req is free req given to certain units
+                else:
+                    _player.rec_points -= upgrade_cost
                 session.commit()
                 self.bot.queue.put_nowait((1, _player, 0))
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
