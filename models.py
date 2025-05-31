@@ -68,6 +68,7 @@ class Unit(BaseModel):
     callsign: Mapped[str] = mapped_column(String(15), index=True, unique=True, nullable=True)
     area_operation: Mapped[str] = mapped_column(String(30), default="ARMCO")
     original_type: Mapped[Optional[str]] = mapped_column(ForeignKey("unit_types.unit_type"), nullable=True)
+    unit_req: Mapped[int] = mapped_column(Integer, default=0)
     
     # relationships
     player: Mapped[Player] = relationship("Player", back_populates="units")
@@ -238,6 +239,7 @@ class UnitType(BaseModel):
     is_base: Mapped[bool] = mapped_column(Boolean, default=False)
     free_upgrade_1: Mapped[Optional[int]] = mapped_column(ForeignKey("shop_upgrades.id"), nullable=True)
     free_upgrade_2: Mapped[Optional[int]] = mapped_column(ForeignKey("shop_upgrades.id"), nullable=True)
+    unit_req: Mapped[int] = mapped_column(Integer, default=0)
 
     # relationships
     units: Mapped[list[Unit]] = relationship("Unit", foreign_keys="Unit.unit_type", back_populates="type_info", lazy="subquery")

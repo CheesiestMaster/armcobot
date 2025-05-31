@@ -2,7 +2,7 @@ from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, Member, ui, ButtonStyle, SelectOption
 from discord.ui import View
-from models import Player, Unit as Unit_model, UnitStatus, Campaign, CampaignInvite
+from models import Player, Unit as Unit_model, UnitStatus, Campaign, CampaignInvite, UnitType
 from customclient import CustomClient
 from utils import uses_db, is_management
 from sqlalchemy.orm import Session
@@ -22,7 +22,8 @@ class Unit(GroupCog):
     async def createunit(self, interaction: Interaction, unit_name: str, session: Session):
         class UnitSelect(ui.Select):
             def __init__(self):
-                options = [SelectOption(label=unit_type, value=unit_type) for unit_type in bot.config["unit_types"]]
+                unit_types = session.query(UnitType).filter(UnitType.is_base == True).all()
+                options = [SelectOption(label=unit_type.unit_type, value=unit_type.unit_type) for unit_type in unit_types]
                 super().__init__(placeholder="Select the type of unit to create", options=options)
 
             async def callback(self, interaction: Interaction):
@@ -64,6 +65,12 @@ class Unit(GroupCog):
                     return
                 logger.info(f"Creating unit {unit_name} for player {player.name}")
                 unit = Unit_model(player_id=player.id, name=unit_name, unit_type=unit_type, active=False)
+                # Get the unit type info to copy unit_req
+                unit_type_info = session.query(UnitType).filter(UnitType.unit_type == unit_type).first()
+                if not unit_type_info:
+                    await interaction.response.send_message("Invalid unit type, something went wrong", ephemeral=CustomClient().use_ephemeral)
+                    return
+                unit.unit_req = unit_type_info.unit_req
                 session.add(unit)
                 session.commit()
                 CustomClient().queue.put_nowait((1, player, 0))
