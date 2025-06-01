@@ -62,10 +62,10 @@ class Debug(GroupCog):
             rp_modal.on_submit = on_submit
             await interaction.response.send_modal(rp_modal)
 
-    @ac.command(name="kill", description="Kill the bot")
-    async def kill(self, interaction: Interaction):
-        logger.info("Kill command invoked")
-        await interaction.response.send_message("Killing bot")
+    @ac.command(name="stop", description="Stop the bot")
+    async def stop(self, interaction: Interaction):
+        logger.info("Stop command invoked")
+        await interaction.response.send_message("Stopping bot")
         if os.getenv("LOOP_ACTIVE"):
             with open("terminate.flag", "w"):
                 pass # the file just needs to exist, doesn't need to be written to

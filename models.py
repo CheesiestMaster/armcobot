@@ -81,7 +81,6 @@ class Unit(BaseModel):
         secondary="shop_upgrade_unit_types",
         primaryjoin="Unit.unit_type==ShopUpgradeUnitTypes.unit_type",
         secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
-        back_populates="compatible_units",
         overlaps="unit_types,type_info",
         lazy="subquery")
 
@@ -204,10 +203,10 @@ class ShopUpgrade(BaseModel):
     # relationships
     player_upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", back_populates="shop_upgrade", cascade="all, delete-orphan", lazy="subquery")
     unit_types: Mapped[list[ShopUpgradeUnitTypes]] = relationship("ShopUpgradeUnitTypes", back_populates="shop_upgrade", cascade="all, delete-orphan", lazy="subquery")
-    required_upgrade: Mapped[Optional[ShopUpgrade]] = relationship("ShopUpgrade", back_populates="required_upgrade", remote_side=[id], lazy="joined")
+    required_upgrade: Mapped[Optional[ShopUpgrade]] = relationship("ShopUpgrade", remote_side=[id], lazy="joined")
     target_type_info: Mapped[UnitType] = relationship("UnitType", foreign_keys=[refit_target], lazy="joined", back_populates="refit_targets")
     compatible_units: Mapped[list[Unit]] = relationship(
-        "ShopUpgradeUnitTypes",
+        "Unit",
         secondary="shop_upgrade_unit_types",
         primaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
         secondaryjoin="Unit.unit_type==ShopUpgradeUnitTypes.unit_type",
@@ -215,11 +214,11 @@ class ShopUpgrade(BaseModel):
         overlaps="unit_types,type_info",
         lazy="subquery")
     compatible_unit_types: Mapped[list[UnitType]] = relationship(
-        "ShopUpgradeUnitTypes",
+        "UnitType",
         secondary="shop_upgrade_unit_types",
         primaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
         secondaryjoin="UnitType.unit_type==ShopUpgradeUnitTypes.unit_type",
-        back_populates="available_upgrades",
+        back_populates="compatible_upgrades",
         overlaps="unit_types,type_info",
         lazy="subquery")
 
@@ -246,10 +245,18 @@ class UnitType(BaseModel):
     original_units: Mapped[list[Unit]] = relationship("Unit", foreign_keys="Unit.original_type", back_populates="original_type_info", overlaps="original_type_info", lazy="subquery")
     refit_targets: Mapped[list[ShopUpgrade]] = relationship("ShopUpgrade", foreign_keys="ShopUpgrade.refit_target", back_populates="target_type_info", overlaps="target_type_info", lazy="subquery")
     upgrade_types: Mapped[list[ShopUpgradeUnitTypes]] = relationship("ShopUpgradeUnitTypes", back_populates="type_info", overlaps="available_upgrades,compatible_units,type_info")
-    free_upgrade_1_info: Mapped[Optional[ShopUpgrade]] = relationship("ShopUpgrade", foreign_keys="ShopUpgrade.free_upgrade_1", back_populates="target_type_info", overlaps="target_type_info", lazy="subquery")
-    free_upgrade_2_info: Mapped[Optional[ShopUpgrade]] = relationship("ShopUpgrade", foreign_keys="ShopUpgrade.free_upgrade_2", back_populates="target_type_info", overlaps="target_type_info", lazy="subquery")
-    available_upgrades: Mapped[list[ShopUpgrade]] = relationship(
-        "ShopUpgradeUnitTypes",
+    free_upgrade_1_info: Mapped[Optional[ShopUpgrade]] = relationship(
+        "ShopUpgrade",
+        foreign_keys=[free_upgrade_1],
+        overlaps="target_type_info",
+        lazy="subquery")
+    free_upgrade_2_info: Mapped[Optional[ShopUpgrade]] = relationship(
+        "ShopUpgrade",
+        foreign_keys=[free_upgrade_2],
+        overlaps="target_type_info",
+        lazy="subquery")
+    compatible_upgrades: Mapped[list[ShopUpgrade]] = relationship(
+        "ShopUpgrade",
         secondary="shop_upgrade_unit_types",
         primaryjoin="UnitType.unit_type==ShopUpgradeUnitTypes.unit_type",
         secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",

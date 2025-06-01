@@ -288,7 +288,7 @@ class Shop(GroupCog):
                 refit_cost = upgrade.cost
                 current_upgrades: list[PlayerUpgrade] = _unit.upgrades
                 current_upgrade_set: set[ShopUpgrade] = {upgrade.shop_upgrade for upgrade in current_upgrades}
-                compatible_upgrades: set[ShopUpgrade] = set(upgrade.target_type_info.available_upgrades)
+                compatible_upgrades: set[ShopUpgrade] = set(upgrade.target_type_info.compatible_upgrades)
                 incompatible_upgrades = current_upgrade_set - compatible_upgrades
 
                 stockpile = _player.stockpile

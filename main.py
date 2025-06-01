@@ -37,7 +37,7 @@ logging.basicConfig(level=logging.DEBUG,
 # rest of the imports   
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from models import Base
+from models import BaseModel
 from customclient import CustomClient
 import asyncio
 loop = asyncio.get_event_loop()
@@ -62,7 +62,7 @@ logger.debug("Database engine created with URL: %s", os.getenv("DATABASE_URL"))
 # logging.getLogger("sqlalchemy.dialects.mysql").setLevel(logging.DEBUG)
 
 # create the tables
-Base.metadata.create_all(bind=engine)
+BaseModel.metadata.create_all(bind=engine)
 logger.info("Database tables created successfully.")
 
 # create a session

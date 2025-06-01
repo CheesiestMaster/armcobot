@@ -669,11 +669,11 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             last_stats_message = stats
             await interaction.response.send_message(stats, ephemeral=True)
 
-        await self.load_extension("extensions.debug") # the debug extension is loaded first and is always loaded
         with self.sessionmaker() as session:
             if len(session.query(Extension.name).all()) > 0:
                 await self.load_extensions([ext[0] for ext in session.query(Extension.name).all()])
             else:
+                await self.load_extension("extensions.debug") # the debug extension is always loaded
                 await self.load_extensions(["extensions.configuration", "extensions.admin", "extensions.faq", "extensions.companies", "extensions.units", "extensions.shop", "extensions.campaigns", "extensions.stockpile"])
 
         logger.debug("Syncing slash commands")
