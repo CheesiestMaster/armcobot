@@ -16,6 +16,7 @@ class UpgradeType(PyEnum):
     REFIT = "1.0"
     SPECIAL = "2.0"
     MECH_CHASSIS = "3.0"
+    HULL = "4.0"
 
 class UnitStatus(PyEnum):
     ACTIVE = "1"

@@ -184,10 +184,11 @@ class Campaigns(GroupCog):
                 unit.player.rec_points += survivor_req
                 unit.player.bonus_pay += survivor_bp
         session.commit()
+        await interaction.response.defer(ephemeral=True)
         for unit in _campaign.units:
             logger.debug(f"Putting {unit.callsign} in update queue for {campaign}")
             self.bot.queue.put_nowait((1, unit.player, 0)) # we have to split the payout and reporting into two separate loops, because otherwise we get a deadlock
-        await interaction.response.send_message(f"Campaign {campaign} payout complete", ephemeral=True)
+        await interaction.followup.send(f"Campaign {campaign} payout complete", ephemeral=True)
 
     @ac.command(name="invite", description="Invite a player to a campaign")
     @ac.check(is_gm)

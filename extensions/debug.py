@@ -1,4 +1,5 @@
 from logging import getLogger
+import logging
 from pathlib import Path
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, TextStyle, Embed, SelectOption, Forbidden, HTTPException, Message, NotFound, TextChannel
@@ -84,7 +85,7 @@ class Debug(GroupCog):
     async def reload(self, interaction: Interaction, extension: str):
         extension = "extensions." + extension
         logger.info(f"Reload command invoked for {extension}")
-        await interaction.response.send_message(f"Reloading {extension}")
+        await interaction.response.send_message(f"Reloading {extension}", ephemeral=self.bot.use_ephemeral)
         await self.bot.reload_extension(extension)
         await self.bot.tree.sync()
 
@@ -394,6 +395,23 @@ class Debug(GroupCog):
             return
         select.callback = on_select
         await interaction.response.send_message("Select a campaign", view=view, ephemeral=True)
+
+    @ac.command(name="logmark", description="make a marker in the logs")
+    async def logmark(self, interaction: Interaction):
+        logger.info(f"[LOGMARK] {interaction.user.global_name} used logmark")
+        await interaction.response.send_message("Marker made", ephemeral=True)
+
+    @ac.command(name="set_level", description="Set the log level")
+    async def set_level(self, interaction: Interaction, _logger: str, level: int):
+        if _logger == "root":
+            # the logger in scope is not the root logger, so we need to get the root logger
+            logger = logging.getLogger()
+        else:
+            logger = logging.getLogger(_logger)
+        logger.setLevel(level)
+        logger.info(f"Log level set to {level}")
+        await interaction.response.send_message(f"Log level set to {level}", ephemeral=True)
+
 
 bot: Bot = None
 async def setup(_bot: CustomClient):

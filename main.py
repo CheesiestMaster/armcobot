@@ -43,6 +43,13 @@ import asyncio
 loop = asyncio.get_event_loop()
 asyncio.set_event_loop(loop)
 
+logging.addLevelName(9, "TRIAGE")
+
+def triage(self, message, *args, **kwargs):
+    if self.isEnabledFor(9):
+        self._log(9, message, args, **kwargs)
+logging.Logger.triage = triage
+
 logger = logging.getLogger(__name__)
 
 

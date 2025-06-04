@@ -20,65 +20,94 @@ class Unit(GroupCog):
     @ac.describe(unit_name="The name of the unit to create")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
     async def createunit(self, interaction: Interaction, unit_name: str, session: Session):
+        logger.triage(f"Unit creation initiated by {interaction.user.global_name} with name: {unit_name}")
         class UnitSelect(ui.Select):
             def __init__(self):
-                unit_types = session.query(UnitType).filter(UnitType.is_base == True).all()
-                options = [SelectOption(label=unit_type.unit_type, value=unit_type.unit_type) for unit_type in unit_types]
+                unit_types = session.query(UnitType.unit_type).filter(UnitType.is_base == True).all()
+                logger.triage(f"Found {len(unit_types)} base unit types: {[t[0] for t in unit_types]}")
+                options = [SelectOption(label=unit_type[0], value=unit_type[0]) for unit_type in unit_types]
                 super().__init__(placeholder="Select the type of unit to create", options=options)
 
             async def callback(self, interaction: Interaction):
+                logger.triage(f"Unit type selected: {self.values[0]}")
                 await interaction.response.defer(ephemeral=True)
 
         class CreateUnitView(ui.View):
             def __init__(self):
                 super().__init__()
                 self.add_item(UnitSelect())
+                logger.triage("Created unit creation view with type selector")
 
             @ui.button(label="Create Unit", style=ButtonStyle.primary)
             @uses_db(sessionmaker=CustomClient().sessionmaker)
             async def create_unit_callback(self, interaction: Interaction, button: ui.Button, session: Session):
+                logger.triage(f"Create unit button pressed by {interaction.user.global_name}")
                 player: Player|None = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
                 if not player:
+                    logger.triage(f"Player lookup failed for {interaction.user.global_name}")
                     await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
                     return
+                logger.triage(f"Found player: {player.name} (ID: {player.id})")
 
                 units = session.query(Unit_model).filter(Unit_model.player_id == player.id, Unit_model.status == "PROPOSED").all()
-                logger.debug(f"Number of proposed units: {len(units)}")
+                logger.triage(f"Found {len(units)} proposed units for player {player.name}: {[u.name for u in units]}")
                 if len(units) >= 3:
+                    logger.triage(f"Player {player.name} already has maximum proposed units")
                     await interaction.response.send_message("You already have 3 proposed Units, which is the maximum allowed", ephemeral=CustomClient().use_ephemeral)
                     return
 
                 unit_type = self.children[1].values[0]
-                logger.debug(f"Unit type selected: {unit_type}")
+                logger.triage(f"Selected unit type: {unit_type}")
 
-                if session.query(Unit_model).filter(Unit_model.name == unit_name, Unit_model.player_id == player.id).first():
+                existing_unit = session.query(Unit_model).filter(Unit_model.name == unit_name, Unit_model.player_id == player.id).first()
+                if existing_unit:
+                    logger.triage(f"Unit name {unit_name} already exists for player {player.name}")
                     await interaction.response.send_message("You already have a unit with that name", ephemeral=CustomClient().use_ephemeral)
                     return
+
+                logger.triage(f"Validating unit name: {unit_name}")
                 if len(unit_name) > 30:
+                    logger.triage(f"Unit name {unit_name} is too long ({len(unit_name)} chars)")
                     await interaction.response.send_message("Unit name is too long, please use a shorter name", ephemeral=CustomClient().use_ephemeral)
                     return
-                if any(char in unit_name for char in os.getenv("BANNED_CHARS", "")+":"): # : is banned to disable urls
+                if any(char in unit_name for char in os.getenv("BANNED_CHARS", "")+":"):
+                    logger.triage(f"Unit name {unit_name} contains banned characters")
                     await interaction.response.send_message("Unit names cannot contain discord tags", ephemeral=CustomClient().use_ephemeral)
                     return
                 if not unit_name.isascii():
+                    logger.triage(f"Unit name {unit_name} contains non-ASCII characters")
                     await interaction.response.send_message("Unit names must be ASCII", ephemeral=CustomClient().use_ephemeral)
                     return
-                logger.info(f"Creating unit {unit_name} for player {player.name}")
+
+                logger.triage(f"Creating unit {unit_name} of type {unit_type} for player {player.name}")
                 unit = Unit_model(player_id=player.id, name=unit_name, unit_type=unit_type, active=False)
-                # Get the unit type info to copy unit_req
+                
                 unit_type_info = session.query(UnitType).filter(UnitType.unit_type == unit_type).first()
                 if not unit_type_info:
+                    logger.triage(f"Unit type {unit_type} not found in database")
                     await interaction.response.send_message("Invalid unit type, something went wrong", ephemeral=CustomClient().use_ephemeral)
                     return
+                logger.triage(f"Found unit type info: {unit_type_info.unit_type} with {unit_type_info.unit_req} unit req")
+
                 unit.unit_req = unit_type_info.unit_req
                 session.add(unit)
+                logger.triage(f"Added unit to session: {unit.name} (ID: {unit.id})")
+                
                 session.commit()
-                CustomClient().queue.put_nowait((1, player, 0))
-                logger.debug(f"Unit {unit.name} created for player {player.name}")
-                button.disabled = True
+                logger.triage(f"Committed unit creation to database")
+                
                 await interaction.response.send_message(f"Unit {unit.name} created", ephemeral=CustomClient().use_ephemeral)
+                logger.triage(f"Sent success message to user")
+                
+                CustomClient().queue.put_nowait((1, player, 0))
+                logger.triage(f"Added player update to queue")
+                
+                button.disabled = True
+                logger.triage(f"Disabled create button")
+                
 
         view = CreateUnitView()
+        logger.triage(f"Sending unit creation view to {interaction.user.global_name}")
         await interaction.response.send_message("Please select the unit type and enter the unit name", view=view, ephemeral=CustomClient().use_ephemeral)
 
     @ac.command(name="activate", description="Activate a unit")

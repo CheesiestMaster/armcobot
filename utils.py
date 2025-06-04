@@ -7,7 +7,7 @@ from sqlalchemy.orm import scoped_session
 from logging import getLogger
 import asyncio
 from collections import deque
-from typing import Coroutine, Callable
+from typing import Coroutine, Callable, TypeVar, Iterator
 from discord import Interaction
 import pandas as pd
 CustomClient = None
@@ -236,44 +236,45 @@ def chunk_list(lst: list, chunk_size: int) -> list[list]:
     
     return chunks
 
+P = TypeVar("P")
+
 class Paginator:
     # a bidirectional iterator over a list of items, with a constrained view size
-    def __init__(self, items: list, view_size: int):
+    def __init__(self, items: list[P], view_size: int):
         self.items = chunk_list(items, view_size)
         self.index = 0
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[list[P]]:
         return self
     
-    def next(self, is_iter: bool = False):
+    def next(self, is_iter: bool = False) -> list[P]:
         if self.index >= len(self.items):
             if is_iter:
                 raise StopIteration
             else:
                 return self.items[self.index] # bump off the end and return the same item
-        result = self.items[self.index]
         self.index += 1
-        return result
+        return self.items[self.index]
     
-    def previous(self):
+    def previous(self) -> list[P]:
         if self.index == 0:
             return self.items[self.index]
         self.index -= 1
         return self.items[self.index]
     
-    def __next__(self):
+    def __next__(self) -> list[P]:
         return self.next(True)
     
-    def current(self):
+    def current(self) -> list[P]:
         return self.items[self.index]
     
-    def has_next(self):
-        return self.index < len(self.items) - 1 # don't show the next button if we're at the end
+    def has_next(self) -> bool:
+        return self.index < len(self.items) - 1 if len(self.items) > 1 else False
     
-    def has_previous(self):
-        return self.index > 0
+    def has_previous(self) -> bool:
+        return self.index > 0 if len(self.items) > 1 else False
     
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.items)
     
 async def callback_listener(callback: Coroutine, bind:str):

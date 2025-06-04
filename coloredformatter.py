@@ -11,12 +11,14 @@ COLORS = {
 }
 
 stats = {
+    "today_TRIAGE": RollingCounter(24*60*60),
     "today_DEBUG": RollingCounter(24*60*60),
     "today_INFO": RollingCounter(24*60*60),
     "today_WARNING": RollingCounter(24*60*60),
     "today_ERROR": RollingCounter(24*60*60),
     "today_CRITICAL": RollingCounter(24*60*60),
     "today_total": RollingCounter(24*60*60),
+    "total_TRIAGE": 0,
     "total_DEBUG": 0,
     "total_INFO": 0,
     "total_WARNING": 0,
