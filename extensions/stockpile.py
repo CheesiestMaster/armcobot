@@ -43,6 +43,10 @@ class Stockpile(GroupCog):
                 await message_manager.update_message(content="Something went wrong, please try again or contact Cheese")
                 await interaction.response.defer(thinking=False)
                 return
+            if unit.status.name != "INACTIVE":
+                await message_manager.update_message(content="You can only store upgrades in your stockpile when your unit is inactive")
+                await interaction.response.defer(thinking=False)
+                return
             if unit.unit_type == "STOCKPILE": 
                 await message_manager.update_message(content="To move upgrades from your stockpile, use the `/stockpile retrieve` command")
                 await interaction.response.defer(thinking=False)
@@ -74,6 +78,10 @@ class Stockpile(GroupCog):
                     await interaction.response.defer(thinking=False)
                     return
                 if upgrade.unit.player != _player:
+                    await interaction.response.defer(thinking=False)
+                    return
+                if upgrade.unit.status.name != "INACTIVE":
+                    await message_manager.update_message(content="You can only store upgrades in your stockpile when your unit is inactive")
                     await interaction.response.defer(thinking=False)
                     return
                 stockpile = _player.stockpile
@@ -123,6 +131,10 @@ class Stockpile(GroupCog):
             if _unit.player != _player:
                 await interaction.response.defer(thinking=False)
                 return
+            if _unit.status.name != "INACTIVE":
+                await message_manager.update_message(content="You can only retrieve upgrades from your stockpile when your unit is inactive")
+                await interaction.response.defer(thinking=False)
+                return
             if _unit.unit_type == "STOCKPILE":
                 await message_manager.update_message(content="To move upgrades into your stockpile, use the `/stockpile store` command")
                 await interaction.response.defer(thinking=False)
@@ -155,6 +167,10 @@ class Stockpile(GroupCog):
                 _unit = session.query(Unit).filter(Unit.id == unit_id).first() # refresh the unit, so it's on the correct session
                 if _unit is None:
                     await message_manager.update_message(content="Something went wrong, please try again or contact Cheese")
+                    await interaction.response.defer(thinking=False)
+                    return
+                if _unit.status.name != "INACTIVE":
+                    await message_manager.update_message(content="You can only retrieve upgrades from your stockpile when your unit is inactive")
                     await interaction.response.defer(thinking=False)
                     return
                 _upgrade: PlayerUpgrade = session.query(PlayerUpgrade).filter(PlayerUpgrade.id == upgrade_select.values[0]).first()

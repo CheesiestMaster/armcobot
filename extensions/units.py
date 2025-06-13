@@ -42,68 +42,72 @@ class Unit(GroupCog):
             @uses_db(sessionmaker=CustomClient().sessionmaker)
             async def create_unit_callback(self, interaction: Interaction, button: ui.Button, session: Session):
                 logger.triage(f"Create unit button pressed by {interaction.user.global_name}")
-                player: Player|None = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-                if not player:
+                player_id = session.query(Player.id).filter(Player.discord_id == interaction.user.id).scalar()
+                if not player_id:
                     logger.triage(f"Player lookup failed for {interaction.user.global_name}")
                     await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
                     return
-                logger.triage(f"Found player: {player.name} (ID: {player.id})")
+                logger.triage("Found player")
 
-                units = session.query(Unit_model).filter(Unit_model.player_id == player.id, Unit_model.status == "PROPOSED").all()
-                logger.triage(f"Found {len(units)} proposed units for player {player.name}: {[u.name for u in units]}")
-                if len(units) >= 3:
-                    logger.triage(f"Player {player.name} already has maximum proposed units")
+                proposed_count = session.query(Unit_model).filter(Unit_model.player_id == player_id, Unit_model.status == "PROPOSED").count()
+                logger.triage(f"Found {proposed_count} proposed units for player")
+                if proposed_count >= 3:
+                    logger.triage("Player already has maximum proposed units")
                     await interaction.response.send_message("You already have 3 proposed Units, which is the maximum allowed", ephemeral=CustomClient().use_ephemeral)
                     return
 
                 unit_type = self.children[1].values[0]
                 logger.triage(f"Selected unit type: {unit_type}")
 
-                existing_unit = session.query(Unit_model).filter(Unit_model.name == unit_name, Unit_model.player_id == player.id).first()
-                if existing_unit:
-                    logger.triage(f"Unit name {unit_name} already exists for player {player.name}")
+                unit_exists = session.query(exists().where(Unit_model.name == unit_name, Unit_model.player_id == player_id)).scalar()
+                if unit_exists:
+                    logger.triage("Unit name already exists for player")
                     await interaction.response.send_message("You already have a unit with that name", ephemeral=CustomClient().use_ephemeral)
                     return
 
-                logger.triage(f"Validating unit name: {unit_name}")
+                logger.triage("Validating unit name")
                 if len(unit_name) > 30:
-                    logger.triage(f"Unit name {unit_name} is too long ({len(unit_name)} chars)")
+                    logger.triage(f"Unit name is too long ({len(unit_name)} chars)")
                     await interaction.response.send_message("Unit name is too long, please use a shorter name", ephemeral=CustomClient().use_ephemeral)
                     return
                 if any(char in unit_name for char in os.getenv("BANNED_CHARS", "")+":"):
-                    logger.triage(f"Unit name {unit_name} contains banned characters")
+                    logger.triage("Unit name contains banned characters")
                     await interaction.response.send_message("Unit names cannot contain discord tags", ephemeral=CustomClient().use_ephemeral)
                     return
                 if not unit_name.isascii():
-                    logger.triage(f"Unit name {unit_name} contains non-ASCII characters")
+                    logger.triage("Unit name contains non-ASCII characters")
                     await interaction.response.send_message("Unit names must be ASCII", ephemeral=CustomClient().use_ephemeral)
                     return
 
-                logger.triage(f"Creating unit {unit_name} of type {unit_type} for player {player.name}")
-                unit = Unit_model(player_id=player.id, name=unit_name, unit_type=unit_type, active=False)
+                logger.triage("Creating unit")
+                unit = Unit_model(player_id=player_id, name=unit_name, unit_type=unit_type, active=False)
                 
-                unit_type_info = session.query(UnitType).filter(UnitType.unit_type == unit_type).first()
-                if not unit_type_info:
-                    logger.triage(f"Unit type {unit_type} not found in database")
+                unit_type_req:int|None = session.query(UnitType.unit_req).filter(UnitType.unit_type == unit_type).scalar()
+                if unit_type_req is None: # can't use not because 0 is falsy
+                    logger.triage("Unit type not found in database")
                     await interaction.response.send_message("Invalid unit type, something went wrong", ephemeral=CustomClient().use_ephemeral)
                     return
-                logger.triage(f"Found unit type info: {unit_type_info.unit_type} with {unit_type_info.unit_req} unit req")
+                logger.triage("Found unit type info")
 
-                unit.unit_req = unit_type_info.unit_req
+                unit.unit_req = unit_type_req
                 session.add(unit)
-                logger.triage(f"Added unit to session: {unit.name} (ID: {unit.id})")
+                logger.triage("Added unit to session")
+
+                await interaction.response.defer(thinking=True, ephemeral=True)
+                logger.triage("Deferred response")
                 
                 session.commit()
-                logger.triage(f"Committed unit creation to database")
+                logger.triage("Committed unit creation to database")
                 
-                await interaction.response.send_message(f"Unit {unit.name} created", ephemeral=CustomClient().use_ephemeral)
-                logger.triage(f"Sent success message to user")
+                await interaction.followup.send(f"Unit {unit.name} created", ephemeral=True)
+                logger.triage("Sent success message to user")
                 
+                player = session.query(Player).filter(Player.id == player_id).first()
                 CustomClient().queue.put_nowait((1, player, 0))
-                logger.triage(f"Added player update to queue")
+                logger.triage("Added player update to queue")
                 
                 button.disabled = True
-                logger.triage(f"Disabled create button")
+                logger.triage("Disabled create button")
                 
 
         view = CreateUnitView()
@@ -115,6 +119,7 @@ class Unit(GroupCog):
     @uses_db(sessionmaker=CustomClient().sessionmaker)
     async def activateunit(self, interaction: Interaction, callsign: str, session: Session):
         """Activate a unit with the given callsign in the specified campaign"""
+        logger.triage(f"Activate unit command initiated by {interaction.user.global_name} with callsign {callsign}")
         if len(callsign) > 7:
             logger.warning(f"Callsign {callsign} from {interaction.user.global_name} is too long")
             await interaction.response.send_message("Callsign is too long, please use a shorter callsign", ephemeral=CustomClient().use_ephemeral)
@@ -128,14 +133,25 @@ class Unit(GroupCog):
             await interaction.response.send_message("Callsigns must be ASCII", ephemeral=CustomClient().use_ephemeral)
             return
 
+        logger.triage(f"Checking if callsign {callsign} is already in use")
+        callsign_exists = session.query(exists().where(Unit_model.callsign == callsign)).scalar()
+        if callsign_exists:
+            logger.warning(f"Callsign {callsign} from {interaction.user.global_name} is already in use")
+            await interaction.response.send_message("That callsign is already in use", ephemeral=CustomClient().use_ephemeral)
+            return
+
+        logger.triage(f"Querying player for {interaction.user.global_name}")
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:
+            logger.triage(f"No player found for {interaction.user.global_name}")
             await interaction.response.send_message("You do not have a Company", ephemeral=True)
             return
 
         # get the list of campaigns from the database
+        logger.triage("Querying all campaigns")
         campaigns = session.query(Campaign).all()
         def is_valid(campaign: Campaign, player: Player) -> Tuple[bool, str]:
+            logger.triage(f"Checking validity of campaign {campaign.name} for player {player.name}")
             if campaign.gm == player.discord_id:
                 return False, "🧙"
             if campaign.player_limit and campaign.player_limit <= len(campaign.units):
@@ -150,18 +166,22 @@ class Unit(GroupCog):
 
         view = View(timeout=None)
         select = ui.Select(placeholder="Select a campaign")
+        logger.triage(f"Creating campaign select with {len(campaigns)} options")
         for campaign in campaigns:
             _, emojis = is_valid(campaign, player)
             select.add_option(label=campaign.name, value=str(campaign.id), emoji=emojis)
         view.add_item(select)
 
-        async def on_select(interaction: Interaction):
+        @uses_db(sessionmaker=CustomClient().sessionmaker)
+        async def on_select(interaction: Interaction, session: Session):
+            logger.triage(f"Campaign selection made by {interaction.user.global_name}: {select.values[0]}")
             campaign = session.query(Campaign).filter(Campaign.id == select.values[0]).first()
             if not campaign:
                 logger.warning(f"Invalid campaign {select.values[0]} from {interaction.user.global_name}")
                 await interaction.response.send_message("Invalid campaign", ephemeral=True)
                 return
 
+            logger.triage(f"Re-querying player for {interaction.user.global_name}")
             _player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
             if not _player:
                 logger.warning(f"Player {interaction.user.global_name} does not have a Company")
@@ -176,24 +196,37 @@ class Unit(GroupCog):
 
             unit_select = ui.Select(placeholder="Select a unit")
             unit_view = View(timeout=None)
+            logger.triage(f"Querying inactive units for player {_player.name}")
             units = session.query(Unit_model).filter(Unit_model.player_id == _player.id, Unit_model.status == "INACTIVE", Unit_model.unit_type != "STOCKPILE").all()
             
             if not units:
                 logger.warning(f"Player {interaction.user.global_name} has no units available")
                 unit_select.disabled = True
-                unit_select.add_option(label="No units available", value="no_units", emoji="��")
+                unit_select.add_option(label="No units available", value="no_units", emoji="🛑")
             else:
+                logger.triage(f"Found {len(units)} inactive units for player {_player.name}")
                 for unit in units:
                     unit_select.add_option(label=f"{unit.name} ({unit.unit_type})", value=str(unit.id))
             unit_view.add_item(unit_select)
 
-            async def on_unit_select(interaction: Interaction):
+            campaign_id = campaign.id
+            campaign_name = campaign.name
+
+            @uses_db(sessionmaker=CustomClient().sessionmaker)
+            async def on_unit_select(interaction: Interaction, session: Session):
+                logger.triage(f"Unit selection made by {interaction.user.global_name}: {unit_select.values[0]}")
                 unit = session.query(Unit_model).filter(Unit_model.id == unit_select.values[0]).first()
                 if not unit:
                     logger.warning(f"Invalid unit {unit_select.values[0]} from {interaction.user.global_name}")
                     await interaction.response.send_message("Invalid unit", ephemeral=True)
                     return
+                _player = session.query(Player).filter(Player.id == unit.player_id).first()
+                if not _player:
+                    logger.warning(f"Player {unit.player_id} not found for unit {unit.name}")
+                    await interaction.response.send_message("Player not found", ephemeral=True)
+                    return
 
+                logger.triage(f"Checking if player {_player.name} has any active units")
                 has_active_unit = session.query(exists().where(Unit_model.player_id == _player.id, Unit_model.active == True)).scalar()
                 if has_active_unit:
                     logger.warning(f"{interaction.user.global_name} already has an active unit")
@@ -204,15 +237,24 @@ class Unit(GroupCog):
                     logger.warning(f"{interaction.user.global_name} tried to select a unit with status {unit.status}")
                     await interaction.response.send_message("That unit is not inactive", ephemeral=True)
                     return
+                
+                existing_callsign = session.query(exists().where(Unit_model.callsign == callsign)).scalar()
+                if existing_callsign:
+                    logger.warning(f"Callsign {callsign} is already in use (Race condition second check)")
+                    await interaction.response.send_message("That callsign is already in use", ephemeral=True)
+                    return
 
+                logger.triage(f"Activating unit {unit.name} for player {_player.name} in campaign {campaign_name}")
                 unit.status = UnitStatus.ACTIVE
                 unit.active = True
-                unit.campaign_id = campaign.id
+                unit.campaign_id = campaign_id
                 unit.callsign = callsign
+                logger.triage("Committing unit activation changes")
                 session.commit()
-                logger.info(f"Unit {unit.name} selected for campaign {campaign.name} by {interaction.user.global_name}")
+                logger.info(f"Unit {unit.name} selected for campaign {campaign_name} by {interaction.user.global_name}")
+                await interaction.response.send_message(f"Unit {unit.name} selected for campaign {campaign_name}", ephemeral=True)
+                logger.triage("Adding player update to queue")
                 CustomClient().queue.put_nowait((1, player, 0))
-                await interaction.response.send_message(f"Unit {unit.name} selected for campaign {campaign.name}", ephemeral=True)
 
             unit_select.callback = on_unit_select
             await interaction.response.send_message("Select a unit", view=unit_view, ephemeral=True)
@@ -275,13 +317,15 @@ class Unit(GroupCog):
         if not active_unit:
             await interaction.response.send_message("You don't have any active units", ephemeral=CustomClient().use_ephemeral)
             return
-                
+        
+        original_callsign = active_unit.callsign
         logger.debug(f"Deactivating unit with callsign {active_unit.callsign}")
         active_unit.active = False
         active_unit.status = UnitStatus.INACTIVE if active_unit.status == UnitStatus.ACTIVE else active_unit.status
         active_unit.callsign = None
         active_unit.campaign_id = None
-        await interaction.response.send_message(f"Unit with callsign {active_unit.callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
+
+        await interaction.response.send_message(f"Unit with callsign {original_callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
         self.bot.queue.put_nowait((1, player, 0))
 
     @ac.command(name="units", description="Display a list of all Units for a Player")

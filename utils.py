@@ -379,7 +379,7 @@ async def is_dm(interaction: Interaction) -> bool:
 
 def error_reporting(verbose: None | bool = None):
     
-    print(f"Applying @error_reporting with verbose={verbose}")
+    logger.debug(f"Applying @error_reporting with verbose={verbose}")
 
     format_error = (
         (lambda e: f"```\n{''.join(traceback.format_exception(e)).strip()[:1990]}\n```") if verbose is True

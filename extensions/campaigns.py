@@ -406,7 +406,7 @@ class Campaigns(GroupCog):
         result = session.execute(query, {"campaign_name": campaign})
         columns = result.keys()
         rows = result.fetchall()
-        ouptput = "\n".join(['\t'.join(columns)] + ["\t".join(map(str, row)) for row in rows])
+        ouptput = "\n".join(['\t '.join(columns)] + ["\t ".join(map(str, row)) for row in rows])
         file = BytesIO(ouptput.encode())
         attachment = File(file, filename="counts_by_unit_type.txt")
         await interaction.response.send_message("Here are the counts by unit type", ephemeral=True, file=attachment)
