@@ -10,6 +10,8 @@ from collections import deque
 from typing import Coroutine, Callable, TypeVar, Iterator
 from discord import Interaction
 import pandas as pd
+from prometheus_client import Counter
+
 CustomClient = None
 
 logger = getLogger(__name__)
@@ -406,3 +408,12 @@ def error_reporting(verbose: None | bool = None):
 
     return decorator
 
+def on_error_decorator(counter: Counter):
+    def decorator(func: Callable[[Interaction, Exception], Coroutine]):
+        @wraps(func)
+        async def wrapper(interaction: Interaction, error: Exception):
+            counter.labels(guild_name="total", error=type(error).__name__).inc()
+            counter.labels(guild_name=interaction.guild.name if interaction.guild else "DMs", error=type(error).__name__).inc()
+            return await func(interaction, error)
+        return wrapper
+    return decorator

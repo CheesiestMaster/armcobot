@@ -8,6 +8,7 @@ from sqlalchemy import func
 from models import Player, Unit, PlayerUpgrade
 from threading import Thread
 from os import getenv
+import psutil  # Add this import
 
 uptime = Gauge("uptime", "The uptime of the bot")
 start_time = Gauge("start_time", "The start time of the bot")
@@ -28,6 +29,14 @@ units_by_type = Gauge("units_by_type", "The number of units by type", labelnames
 purchased_by_type = Gauge("purchased_by_type", "The number of units purchased by type", labelnames=['unit_type'])
 live_by_type = Gauge("live_by_type", "The number of units live by type", labelnames=['unit_type'])
 units_by_type_and_campaign = Gauge("units_by_type_and_campaign", "The number of units by type and campaign", labelnames=['unit_type', 'campaign_id'])
+
+# Add a Gauge for root disk usage
+root_disk_usage = Gauge("root_disk_usage_percent", "Percent of / disk used")
+
+# Disk alert variables
+DISK_ALERT_THRESHOLD = 90.0
+DISK_ALERT_USER_ID = 533009808501112881
+last_disk_alert_time = None
 
 @loop(seconds=15)
 async def poll_metrics_fast():
@@ -53,8 +62,29 @@ async def poll_metrics_fast():
 
 @loop(seconds=60)
 async def poll_metrics_slow():
+    global last_disk_alert_time
     bot: CustomClient = CustomClient()
     as_of.labels(loop="slow").set(int(datetime.now().timestamp()))
+    # Add disk usage metric for /
+    usage = psutil.disk_usage('/')
+    root_disk_usage.set(usage.percent)
+    
+    # Check disk usage alert
+    current_time = datetime.now()
+    if usage.percent > DISK_ALERT_THRESHOLD:
+        # Only send alert if we haven't sent one in the last hour
+        if last_disk_alert_time is None or (current_time - last_disk_alert_time).total_seconds() > 3600:
+            try:
+                user = await bot.fetch_user(DISK_ALERT_USER_ID)
+                await user.send(f"🚨 **Disk Usage Alert** 🚨\n\nRoot disk usage is at **{usage.percent:.1f}%**\n\n"
+                              f"Free space: {usage.free / (1024**3):.1f} GB\n"
+                              f"Total space: {usage.total / (1024**3):.1f} GB\n\n"
+                              f"Consider:\n• Log compression\n• Log rotation/discard\n• Adding more disk space")
+                last_disk_alert_time = current_time
+                print(f"Disk alert sent to user {DISK_ALERT_USER_ID} at {current_time}")
+            except Exception as e:
+                print(f"Failed to send disk alert: {e}")
+    
     with bot.sessionmaker() as session:
         db_stats_dict = {
                     "players": session.query(Player).count(),

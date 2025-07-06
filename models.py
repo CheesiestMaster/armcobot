@@ -126,15 +126,18 @@ class Player(BaseModel):
     medals: Mapped[list[Medals]] = relationship("Medals", back_populates="player", cascade="none", lazy="select")
     campaign_invites: Mapped[list[CampaignInvite]] = relationship("CampaignInvite", back_populates="player", cascade="none", lazy="select")
 
-    @hybrid_property
-    def stockpile(self) -> Unit | None:
-        """
-        Returns the player's stockpile unit, if it exists
-        """
-        for unit in self.units:
-            if unit.unit_type == "STOCKPILE":
-                return unit
-        return None
+    stockpile: Mapped[Optional[Unit]] = relationship(
+        "Unit",
+        primaryjoin="and_(Player.id == Unit.player_id, Unit.unit_type == 'STOCKPILE')",
+        uselist=False,
+        viewonly=True
+    )
+    active_unit: Mapped[Optional[Unit]] = relationship(
+        "Unit",
+        primaryjoin="and_(Player.id == Unit.player_id, Unit.active == True)",
+        uselist=False,
+        viewonly=True,
+    )
 
 class PlayerUpgrade(BaseModel):
     __tablename__ = "player_upgrades"

@@ -29,13 +29,18 @@ from singleton import Singleton
 import asyncio
 import templates
 import logging
-from utils import uses_db, RollingCounterDict, callback_listener, is_management, toggle_command_ban, is_management_no_notify
+from utils import uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator
+from prometheus_client import Counter
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
 
 logging.basicConfig(level=logging.getLevelName(getenv("LOG_LEVEL", "INFO")))
 logger = logging.getLogger(__name__)
 logging.getLogger("discord").setLevel(logging.WARNING)
+
+# Create interaction counter metric
+interaction_counter = Counter("interactions_total", "Total number of interactions", labelnames=["guild_name"])
+error_counter = Counter("errors_total", "Total number of errors", labelnames=["guild_name", "error"])
 
 @Singleton
 class CustomClient(Bot): # need to inherit from Bot to use Cogs
@@ -97,6 +102,11 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         return True
 
     async def check_banned_interaction(self, interaction: Interaction):
+        # Increment interaction counter
+        guild_name = interaction.guild.name if interaction.guild else "DMs"
+        interaction_counter.labels(guild_name=guild_name).inc()
+        interaction_counter.labels(guild_name="total").inc()
+        
         # check if the user.id is in the BANNED_USERS env variable, if so, reply with a message and return False, else return True
         logger.debug(f"Interaction check for user {interaction.user.global_name} in {interaction.guild.name if interaction.guild else 'DMs'}")
         banned_users = getenv("BANNED_USERS", "").split(",")
@@ -689,6 +699,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self._handle_delete_task = decorator(self._handle_delete_task)
         self.generate_unit_message = decorator(self.generate_unit_message)
         self.close = decorator(self.close)
+        self.tree.on_error = on_error_decorator(error_counter)(self.tree.on_error)
         
     async def start(self, *args, **kwargs):
         """

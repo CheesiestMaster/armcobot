@@ -26,7 +26,11 @@ class Stockpile(GroupCog):
             await message_manager.send_message(view=view, content="You don't have a company yet, please create one with `/company create`", ephemeral=self.bot.use_ephemeral)
             return
         for unit in _player.units:
-            unit_select.add_option(label=unit.name, value=unit.id)
+            if unit.status.name == "INACTIVE" and unit.unit_type != "STOCKPILE":
+                unit_select.add_option(label=unit.name, value=unit.id)
+        if len(unit_select.options) == 0:
+            await message_manager.send_message(view=view, content="You don't have any units to store upgrades in", ephemeral=self.bot.use_ephemeral)
+            return
         
         view.add_item(unit_select)
         await message_manager.send_message(view=view, ephemeral=self.bot.use_ephemeral)
@@ -82,6 +86,10 @@ class Stockpile(GroupCog):
                     return
                 if upgrade.unit.status.name != "INACTIVE":
                     await message_manager.update_message(content="You can only store upgrades in your stockpile when your unit is inactive")
+                    await interaction.response.defer(thinking=False)
+                    return
+                if upgrade.original_price == 0 or upgrade.non_transferable:
+                    await message_manager.update_message(content="You can't store this upgrade in your stockpile")
                     await interaction.response.defer(thinking=False)
                     return
                 stockpile = _player.stockpile

@@ -5,11 +5,13 @@ from discord.ui import Modal, TextInput
 from models import Campaign, UnitStatus, CampaignInvite, Player, Unit
 from utils import uses_db, is_dm, check_notify
 from sqlalchemy.orm import Session
-from sqlalchemy import text, not_
+from sqlalchemy import text, not_, func
 from customclient import CustomClient
 import random
 from io import BytesIO
 from asyncio import gather
+from templates import Statistics_Unit
+from typing import Optional, List
 logger = getLogger(__name__)
 class Campaigns(GroupCog):
     def __init__(self, bot: CustomClient):
@@ -261,10 +263,11 @@ class Campaigns(GroupCog):
                 required_role: Role|None = interaction.guild.get_role(campaign.required_role)
             else:
                 required_role = None
-            logger.debug(f"Campaign '{campaign.name}' has {len(campaign.units)} players")
+            player_count = session.query(func.count(Unit.id)).filter(Unit.campaign_id == campaign.id).scalar()
+            logger.debug(f"Campaign '{campaign.name}' has {player_count} players")
             embed.add_field(name=campaign.name, value=f"Status: {'Open' if campaign.open else 'Closed'}, "
                             f"GM: {gm.mention if gm else 'Unknown'}, "
-                            f"Players: {len(campaign.units)}, "
+                            f"Players: {player_count}, "
                             f"Required Role: {required_role.mention if required_role else 'None'}")
         if len(campaigns) == 0:
             embed.add_field(name="No campaigns", value="There are no campaigns")
@@ -499,6 +502,60 @@ class Campaigns(GroupCog):
         session.commit()
         logger.info(f"Merged campaigns {campaign} and {other_campaign}")
         await interaction.response.send_message(f"Merged campaigns {campaign} and {other_campaign}", ephemeral=True)
+
+    @ac.command(name="unit_lookup", description="Lookup a unit by callsign")
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def unit_lookup(self, interaction: Interaction, session: Session, callsign: Optional[str] = None):
+        # if the callsign is None, send a modal to take an NSV of callsigns
+        if callsign is None:
+            modal = Modal(title="Unit Lookup", custom_id="unit_lookup")
+            modal.add_item(TextInput(label="Callsigns", style=TextStyle.paragraph, custom_id="callsigns"))
+            async def on_submit(interaction: Interaction):
+                await interaction.response.defer(ephemeral=True)
+                callsigns = interaction.data["components"][0]["components"][0]["value"]
+                callsigns = callsigns.split("\n")
+                callsigns = [callsign.strip() for callsign in callsigns if callsign.strip()]
+                if len(callsigns) == 0:
+                    await interaction.followup.send("No callsigns provided", ephemeral=True)
+                    return
+                messages = await self._unit_lookup(session, callsigns)
+                if not messages:
+                    await interaction.followup.send("No units found", ephemeral=True)
+                    return
+                if not messages:
+                    await interaction.followup.send("No units found", ephemeral=True)
+                    return
+                if len(messages) > 2000:
+                    file = BytesIO(messages.encode())
+                    attachment = File(file, filename="units.txt")
+                    await interaction.followup.send("Here are the units", ephemeral=True, file=attachment)
+                else:
+                    await interaction.followup.send(messages, ephemeral=True)
+            modal.on_submit = on_submit
+            await interaction.response.send_modal(modal)
+        else:
+            callsigns = [callsign]
+            messages = await self._unit_lookup(session, callsigns)
+            if not messages:
+                await interaction.response.send_message("No units found", ephemeral=True)
+                return
+            if len(messages) > 2000:
+                file = BytesIO(messages.encode())
+                attachment = File(file, filename="units.txt")
+                await interaction.response.send_message("Here are the units", ephemeral=True, file=attachment)
+            else:
+                await interaction.response.send_message(messages, ephemeral=True)
+
+    async def _unit_lookup(self, session: Session, callsigns: List[str]) -> str:
+        # do checks, then lookup the units by callsign
+        units = session.query(Unit).filter(Unit.callsign.in_(callsigns)).all()
+        messages = []
+        for unit in units:
+            upgrade_list = ", ".join([upgrade.name for upgrade in unit.upgrades])
+            messages.append(Statistics_Unit.format(unit=unit, upgrades=upgrade_list, callsign=('\"' + unit.callsign + '\"') if unit.callsign else "", campaign_name=f"In {unit.campaign.name}" if unit.campaign else ""))
+        return "\n".join(messages)
+
+        
 
 async def setup(_bot: CustomClient):
     global bot

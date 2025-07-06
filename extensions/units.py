@@ -1,6 +1,8 @@
+import io
 from logging import getLogger
+import discord
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, Member, ui, ButtonStyle, SelectOption
+from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOption, User
 from discord.ui import View
 from models import Player, Unit as Unit_model, UnitStatus, Campaign, CampaignInvite, UnitType
 from customclient import CustomClient
@@ -8,6 +10,7 @@ from utils import uses_db, is_management
 from sqlalchemy.orm import Session
 from sqlalchemy import exists
 from typing import Tuple
+from sqlalchemy import func
 
 import os
 logger = getLogger(__name__)
@@ -331,7 +334,7 @@ class Unit(GroupCog):
     @ac.command(name="units", description="Display a list of all Units for a Player")
     @ac.describe(player="The player to deliver results for")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def units(self, interaction: Interaction, player: Member, session: Session):
+    async def units(self, interaction: Interaction, player: User, session: Session):
         player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not player:
             await interaction.response.send_message("User doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
@@ -483,6 +486,16 @@ class Unit(GroupCog):
             await interaction.response.send_message("Unexpected error, please tell Cheese", ephemeral=CustomClient().use_ephemeral)
             return
         await interaction.response.send_message("Please select the unit to transfer", view=view, ephemeral=CustomClient().use_ephemeral)
+
+    @ac.command(name="counts_by_unit_type", description="Display the number of units by unit type, made just for Frenchboi")
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def counts_by_unit_type(self, interaction: Interaction, session: Session):
+        counts = session.query(Unit_model.unit_type, func.count()).filter(Unit_model.unit_type != "STOCKPILE").group_by(Unit_model.unit_type).order_by(func.count().desc()).all()
+        counts_tsv = "unit_type\t count\n"
+        for count in counts:
+            counts_tsv += f"{count[0]}\t {count[1]}\n"
+        file = discord.File(io.BytesIO(counts_tsv.encode()), filename="counts_by_unit_type.tsv")
+        await interaction.response.send_message(file=file, ephemeral=True)
 
 bot: Bot = None
 async def setup(_bot: Bot):
