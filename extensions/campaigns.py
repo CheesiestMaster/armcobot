@@ -177,6 +177,7 @@ class Campaigns(GroupCog):
             logger.error(f"{interaction.user.name} does not have permission to payout campaign {campaign}")
             await interaction.response.send_message("You don't have permission to payout this campaign", ephemeral=True)
             return
+        logger.info(f"Paying out campaign {campaign} with base_req={base_req}, survivor_req={survivor_req}, base_bp={base_bp}, survivor_bp={survivor_bp}")
         # payout all players in the campaign
         for unit in _campaign.units:
             logger.debug(f"Paying out {unit.callsign} for {campaign}")

@@ -23,10 +23,10 @@ class Archival(GroupCog):
         asyncio.create_task(self.archive_worker(channel, interaction.user))
 
     async def archive_worker(self, channel: discord.TextChannel|discord.Thread, author: discord.Member):
-        with open(f"archives/{channel.id}.json", "w") as f:
+        with open(f"archives/{channel.name}:{channel.id}.json", "w") as f:
             f.write("[")
             async for message in channel.history(limit=None, oldest_first=True):
-                f.write(json.dumps(MessageSerializer.serialize_message(message)) + ",")
+                f.write(json.dumps(MessageSerializer.serialize_message(message), indent=4) + ",")
             # remove the last comma
             f.seek(f.tell() - 1)
             f.truncate()

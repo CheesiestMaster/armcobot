@@ -1,3 +1,5 @@
+import asyncio
+from discord.ext.tasks import Loop
 from logging import getLogger
 import logging
 from pathlib import Path
@@ -17,6 +19,7 @@ from templates import stats_template
 from datetime import datetime, timedelta
 from psutil import Process
 from MessageManager import MessageManager
+from discord.ext.tasks import loop
 logger = getLogger(__name__)
 
 process: Process = None
@@ -34,6 +37,7 @@ class Debug(GroupCog):
         with open("PID", "w") as f:
             f.write(str(process.pid))
         self._setup_context_menus() # context menus cannot be instance methods, so we need to nest them
+        #self._bump_briefing.start()
 
     async def _autocomplete_extensions(self, interaction: Interaction, current: str):
         return [ac.Choice(name=extension, value=extension) for extension in self.extensions if current.lower() in extension.lower() and not extension.startswith("template")]
@@ -293,108 +297,13 @@ class Debug(GroupCog):
 
     @ac.command(name="test", description="Does whatever Cheese made it do today")
     @uses_db(CustomClient().sessionmaker)
-    async def test(self, interaction: Interaction, session: Session, callsign: str):
-        if len(callsign) > 7:
-            logger.warning(f"Callsign {callsign} from {interaction.user.global_name} is too long, please use a shorter callsign")
-            await interaction.response.send_message("Callsign is too long, please use a shorter callsign", ephemeral=CustomClient().use_ephemeral)
-            return
-        if any(char in callsign for char in os.getenv("BANNED_CHARS", "")):
-            logger.warning(f"Callsign {callsign} from {interaction.user.global_name} contains banned characters")
-            await interaction.response.send_message("Callsigns cannot contain discord tags", ephemeral=CustomClient().use_ephemeral)
-            return
-        if not callsign.isascii():
-            logger.warning(f"Callsign {callsign} from {interaction.user.global_name} is not ASCII")
-            await interaction.response.send_message("Callsigns must be ASCII", ephemeral=CustomClient().use_ephemeral)
-            return
-        player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-        if not player:
-            await interaction.response.send_message("You do not have a Company", ephemeral=True)
-            return
-        # get the list of campaigns from the database
-        campaigns = session.query(Campaign).all()
-        def is_valid(campaign: Campaign, player: Player):
-            if campaign.gm == player.discord_id:
-                return False, "🧙"
-            if campaign.player_limit and campaign.player_limit <= len(campaign.units):
-                return False, "📦"
-            if campaign.required_role and not any(role.id == campaign.required_role for role in interaction.user.roles):
-                return False, "🛡️"
-            if session.query(CampaignInvite).filter(CampaignInvite.campaign_id == campaign.id, CampaignInvite.player_id == player.id).first():
-                return True, "✉"
-            if not campaign.open:
-                return False, "🔒"
-            return True, "✅"
-        view = ui.View(timeout=None)
-        select = ui.Select(placeholder="Select a campaign")
-        for campaign in campaigns:
-            _, emojis = is_valid(campaign, player)
-            select.add_option(label=campaign.name, value=campaign.id, emoji=emojis)
-        view.add_item(select)
-        async def on_select(interaction: Interaction):
-            campaign = session.query(Campaign).filter(Campaign.id == select.values[0]).first()
-            if not campaign:
-                logger.warning(f"Invalid campaign {select.values[0]} from {interaction.user.global_name}")
-                await interaction.response.send_message("Invalid campaign", ephemeral=True)
-                return
-            _player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-            if not _player:
-                logger.warning(f"Player {interaction.user.global_name} does not have a Company")
-                await interaction.response.send_message("You do not have a Company", ephemeral=True)
-                return
-            valid, _ = is_valid(campaign, _player)
-            if not valid:
-                logger.warning(f"Player {interaction.user.global_name} is not eligible to join campaign {campaign.name}")
-                await interaction.response.send_message("You are not eligible to join this campaign", ephemeral=True)
-                return
-            unit_select = ui.Select(placeholder="Select a unit")
-            unit_view = ui.View(timeout=None)
-            units = session.query(Unit).filter(Unit.player_id == _player.id, Unit.status == "INACTIVE", Unit.unit_type != "STOCKPILE").all()
-            if not units:
-                logger.warning(f"Player {interaction.user.global_name} has no units available")
-                unit_select.disabled = True
-                unit_select.add_option(label="No units available", value="no_units", emoji="🚫")
-            else:
-                for unit in units:
-                    unit_select.add_option(label=f"{unit.name} ({unit.unit_type})", value=unit.id)
-            unit_view.add_item(unit_select)
-            async def on_unit_select(interaction: Interaction):
-                unit = session.query(Unit).filter(Unit.id == unit_select.values[0]).first()
-                if not unit:
-                    logger.warning(f"Invalid unit {unit_select.values[0]} from {interaction.user.global_name}")
-                    await interaction.response.send_message("Invalid unit", ephemeral=True)
-                    return
-                _campaign = session.query(Campaign).filter(Campaign.id == campaign.id).first()
-                if not _campaign:
-                    logger.warning(f"Something went wrong, campaign {campaign.id} from {interaction.user.global_name} does not exist")
-                    await interaction.response.send_message("Something went wrong, please notify the developer")
-                    return
-                if unit.unit_type == "STOCKPILE":
-                    logger.warning(f"How did {interaction.user.global_name} get here? Stockpile units cannot be selected")
-                    await interaction.response.send_message("How did you get here?", ephemeral=True)
-                    return
-                has_active_unit = session.query(exists().where(Unit.player_id == _player.id, Unit.active == True)).scalar()
-                if has_active_unit:
-                    logger.warning(f"{interaction.user.global_name} already has an active unit")
-                    await interaction.response.send_message("You already have an active unit", ephemeral=True)
-                    return
-                if unit.status != UnitStatus.INACTIVE:
-                    logger.warning(f"{interaction.user.global_name} tried to select a unit with status {unit.status}")
-                    await interaction.response.send_message("How did you get here?", ephemeral=True)
-                    return
-                unit.status = "ACTIVE"
-                unit.active = True
-                unit.campaign_id = campaign.id
-                unit.callsign = callsign
-                session.commit()
-                logger.info(f"Unit {unit.name} selected for campaign {campaign.name} by {interaction.user.global_name}")
-                CustomClient().queue.put_nowait((1, player, 0))
-                await interaction.response.send_message(f"Unit {unit.name} selected for campaign {campaign.name}", ephemeral=True)
-            unit_select.callback = on_unit_select
-            await interaction.response.send_message("Select a unit", view=unit_view, ephemeral=True)
-
-            return
-        select.callback = on_select
-        await interaction.response.send_message("Select a campaign", view=view, ephemeral=True)
+    async def test(self, interaction: Interaction, session: Session):
+        await interaction.response.defer(ephemeral=True)
+        tasks = asyncio.all_tasks()
+        for task in tasks:
+            if "bump_briefing" in task.get_name():
+                logger.debug(task)
+        await interaction.followup.send("Test complete", ephemeral=True)
 
     @ac.command(name="logmark", description="make a marker in the logs")
     async def logmark(self, interaction: Interaction):
@@ -411,7 +320,24 @@ class Debug(GroupCog):
         logger.setLevel(level)
         logger.info(f"Log level set to {level}")
         await interaction.response.send_message(f"Log level set to {level}", ephemeral=True)
+        
+    has_run = True # False
+    @loop(hours=3)
+    async def _bump_briefing(self):
+        if not self.has_run:
+            self.has_run = True
+            return # skip the first run, so we don't send a message when the module is reloaded
+        channel = self.bot.get_channel(1382037040438181950)
+        if channel:
+            async for message in channel.history(limit=5):
+                if message.author == self.bot.user:
+                    return
+            target = "https://discord.com/channels/222052888531173386/1382037040438181950/1392894268263239730"
+            message = f"## Atlas Briefing T7 - {target}"
+            await channel.send(message)
 
+    async def cog_unload(self):
+        self._bump_briefing.cancel()
 
 bot: Bot = None
 async def setup(_bot: CustomClient):
@@ -423,5 +349,3 @@ async def setup(_bot: CustomClient):
 async def teardown():
     logger.debug("Tearing down Debug cog")
     bot.remove_cog(Debug.__name__) # remove_cog takes a string, not a class
-
-Debug.query
