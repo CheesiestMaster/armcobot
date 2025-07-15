@@ -35,7 +35,7 @@ root_disk_usage = Gauge("root_disk_usage_percent", "Percent of / disk used")
 
 # Disk alert variables
 DISK_ALERT_THRESHOLD = 90.0
-DISK_ALERT_USER_ID = 533009808501112881
+DISK_ALERT_USER_ID = int(getenv("BOT_OWNER_ID", "533009808501112881"))
 last_disk_alert_time = None
 
 @loop(seconds=15)

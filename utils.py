@@ -362,11 +362,11 @@ async def toggle_command_ban(desired_state: bool, initiator: str):
         return current_state
     CustomClient().tree.interaction_check = CustomClient().check_banned_interaction if desired_state else CustomClient().no_commands
     if not desired_state:
-        comm_net = CustomClient().get_channel(1211454073383952395)
+        comm_net = CustomClient().get_channel(int(getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
         await comm_net.send(f"# Command ban has been enabled by {initiator}")
         logger.info(f"Command ban enabled by {initiator}")
     else:
-        comm_net = CustomClient().get_channel(1211454073383952395)
+        comm_net = CustomClient().get_channel(int(getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
         await comm_net.send(f"# Command ban has been disabled by {initiator}")
         logger.info(f"Command ban disabled by {initiator}")
     return desired_state
