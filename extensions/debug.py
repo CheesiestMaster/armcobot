@@ -342,7 +342,7 @@ class Debug(GroupCog):
         if not self.has_run:
             self.has_run = True
             return # skip the first run, so we don't send a message when the module is reloaded
-        channel = self.bot.get_channel(int(getenv("BRIEFING_CHANNEL_ID", "1382037040438181950")))
+        channel = self.bot.get_channel(1382037040438181950)
         if channel:
             async for message in channel.history(limit=5):
                 if message.author == self.bot.user:
