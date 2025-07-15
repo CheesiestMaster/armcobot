@@ -450,22 +450,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         logger.debug("Queue consumer terminating")
         return True # this is the only function that returns a value, as that's how we'll know to terminate, is if a value or raise is returned
 
-    stats_map = {
-        "INFANTRY": tmpl.Infantry_Stats,
-        "MEDIC": tmpl.Non_Combat_Stats,
-        "ENGINEER": tmpl.Non_Combat_Stats,
-        "ARTILLERY": tmpl.Artillery_Stats,
-        "MAIN_TANK": tmpl.Armor_Stats,
-        "LIGHT_VEHICLE": tmpl.Armor_Stats,
-        "LOGISTIC": tmpl.Armor_Stats,
-        "BOMBER": tmpl.Air_Stats,
-        "FIGHTER": tmpl.Air_Stats,
-        "VTOL": tmpl.Air_Stats,
-        "HVTOL": tmpl.Air_Stats,
-        "HAT": tmpl.Air_Stats,
-        "LIGHT_MECH": tmpl.Armor_Stats
-    }
-
     async def generate_unit_message(self, player: Player, session: Session):
         """
         Creates a message detailing a player's units, both active and inactive.
