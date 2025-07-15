@@ -7,6 +7,7 @@ from utils import uses_db, string_to_list, Paginator, error_reporting
 from sqlalchemy.orm import Session, raiseload
 from sqlalchemy import case
 from MessageManager import MessageManager
+import templates as tmpl
 logger = getLogger(__name__)
 
 async def is_mod(interaction: Interaction):
@@ -15,7 +16,7 @@ async def is_mod(interaction: Interaction):
     """
     valid = any(interaction.user.get_role(role) for role in CustomClient().mod_roles)
     if not valid:
-        await interaction.response.send_message("You don't have the necessary role to use this command", ephemeral=True)
+        await interaction.response.send_message(tmpl.no_permission, ephemeral=True)
         logger.warning(f"{interaction.user.name} tried to use shop admin commands")
     return valid
 
@@ -30,7 +31,7 @@ class Shop(GroupCog):
         player_id = session.query(Player.id).filter(Player.discord_id == interaction.user.id).scalar()
         if not player_id:
             logger.triage(f"User {interaction.user.name} attempted to access shop without a Meta Campaign company")
-            await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=CustomClient().use_ephemeral)
             return
 
         logger.triage(f"Creating MessageManager for player {player_id}")

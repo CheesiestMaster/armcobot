@@ -4,7 +4,7 @@ from discord import Interaction, app_commands as ac, ui, SelectOption, TextStyle
 from io import BytesIO
 import discord
 from models import Faq as Faq_model
-from templates import faq_response
+import templates as tmpl
 from utils import uses_db, chunk_list, RollingCounterDict
 from customclient import CustomClient
 from sqlalchemy.orm import Session
@@ -31,7 +31,7 @@ class Faq(GroupCog):
         """
         Displays how to use the FAQ
         """
-        await interaction.response.send_message("Use the `/faq list` command to view all the FAQ questions. Use the `/faq view` command to view a specific question.", ephemeral=False) # ephemeral=False to allow other users to help new people find the FAQ
+        await interaction.response.send_message(tmpl.faq_how_to_use, ephemeral=False) # ephemeral=False to allow other users to help new people find the FAQ
 
     
     @ac.command(name="view", description="View the FAQ")
@@ -55,7 +55,7 @@ class Faq(GroupCog):
                 selected_question = session.query(Faq_model).filter(Faq_model.id == int(self.values[0])).first()
                 counters[selected_question.question] += 1
                 total_views += 1
-                await interaction.response.send_message(faq_response.format(selected=selected_question), ephemeral=True)
+                await interaction.response.send_message(tmpl.faq_response.format(selected=selected_question), ephemeral=True)
         faq_dropdowns = [FaqDropdown(placeholder="Select a question", options=chunk) for chunk in faq_chunks]
         view = ui.View()
         for dropdown in faq_dropdowns:
@@ -185,7 +185,7 @@ class Faq(GroupCog):
         Gets the question file
         """
         questions = session.query(Faq_model).all()
-        questions_text = [faq_response.format(selected=question) for question in questions]
+        questions_text = [tmpl.faq_response.format(selected=question) for question in questions]
         questions_text = "\n\n".join(questions_text)
         file = BytesIO(questions_text.encode())
         dfile = discord.File(file, filename="faq.md")

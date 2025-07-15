@@ -3,7 +3,7 @@ from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, TextStyle, Member, User
 from models import Player, Unit, UnitStatus
 from customclient import CustomClient
-import templates
+import templates as tmpl
 import os
 from utils import has_invalid_url, uses_db
 from sqlalchemy.orm import Session
@@ -21,7 +21,7 @@ class Company(GroupCog):
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if player:
             logger.debug(f"User {interaction.user.display_name} already has a Meta Campaign company")
-            await interaction.response.send_message("You already have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.already_have_company, ephemeral=self.bot.use_ephemeral)
             return
         
         # create a new Player in the database
@@ -32,7 +32,7 @@ class Company(GroupCog):
         stockpile = Unit(name="Stockpile", player_id=player.id, status=UnitStatus.INACTIVE, unit_type="STOCKPILE")
         session.add(stockpile)
         logger.debug(f"User {interaction.user.display_name} created a new Meta Campaign company")
-        await interaction.response.send_message("You have joined Meta Campaign", ephemeral=self.bot.use_ephemeral)
+        await interaction.response.send_message(tmpl.joined_meta_campaign, ephemeral=self.bot.use_ephemeral)
         self.bot.queue.put_nowait((0, player, 0)) # this is the only one that gets a 0, all others are 1
 
     @ac.command(name="edit", description="Edit your Meta Campaign company")
@@ -50,7 +50,7 @@ class Company(GroupCog):
             async def on_submit(self, interaction: Interaction, session: Session):
                 if any(char in child.value for child in self.children for char in os.getenv("BANNED_CHARS", "")):
                     # Handle the case where a value contains '<' or '>'
-                    await interaction.response.send_message("Invalid input: values cannot contain discord tags or headers", ephemeral=CustomClient().use_ephemeral)
+                    await interaction.response.send_message(tmpl.invalid_input, ephemeral=CustomClient().use_ephemeral)
                     return
                 if 0 < len(self.children[0].value) > 32:
                     await interaction.response.send_message("Name must be between 1 and 32 characters", ephemeral=CustomClient().use_ephemeral)
@@ -66,13 +66,13 @@ class Company(GroupCog):
                     Player.name: self.children[0].value,
                     Player.lore: self.children[1].value
                 })
-                await interaction.response.send_message("Company updated", ephemeral=CustomClient().use_ephemeral)
+                await interaction.response.send_message(tmpl.company_updated, ephemeral=CustomClient().use_ephemeral)
                 CustomClient().queue.put_nowait((1, _player, 0))
 
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:
             logger.debug(f"User {interaction.user.display_name} does not have a Meta Campaign company and is trying to edit it")
-            await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=CustomClient().use_ephemeral)
             return
 
         modal = EditCompanyModal(player)
@@ -84,13 +84,13 @@ class Company(GroupCog):
     async def show(self, interaction: Interaction, session: Session, member: Member|User):
         player = session.query(Player).filter(Player.discord_id == member.id).first()
         if not player:
-            await interaction.response.send_message(f"{member.display_name} doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message(tmpl.member_no_company.format(member=member), ephemeral=CustomClient().use_ephemeral)
             return
 
         # Generate the info message strings
-        dossier_message = templates.Dossier.format(mention="", player=player, medals="") # don't ping in company show
+        dossier_message = tmpl.Dossier.format(mention="", player=player, medals="") # don't ping in company show
         unit_message = await self.bot.generate_unit_message(player=player)
-        statistic_message = templates.Statistics_Player.format(mention="", player=player, units=unit_message)
+        statistic_message = tmpl.Statistics_Player.format(mention="", player=player, units=unit_message)
 
         await interaction.response.send_message(f"{dossier_message}\n{statistic_message}", ephemeral=self.bot.use_ephemeral)
 
@@ -99,10 +99,10 @@ class Company(GroupCog):
     async def refresh(self, interaction: Interaction, session: Session):
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:
-            await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=CustomClient().use_ephemeral)
             return
         self.bot.queue.put_nowait((1, player, 0))
-        await interaction.response.send_message("Your Meta Campaign company has been refreshed", ephemeral=CustomClient().use_ephemeral)
+        await interaction.response.send_message(tmpl.company_refreshed, ephemeral=CustomClient().use_ephemeral)
 
 bot: Bot = None
 async def setup(_bot: Bot):

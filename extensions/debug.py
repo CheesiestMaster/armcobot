@@ -15,7 +15,7 @@ from coloredformatter import stats
 from utils import uses_db, toggle_command_ban, is_server
 from sqlalchemy.orm import Session
 from sqlalchemy import exists
-from templates import stats_template
+import templates as tmpl
 from datetime import datetime, timedelta
 from psutil import Process
 from MessageManager import MessageManager
@@ -62,7 +62,7 @@ class Debug(GroupCog):
 [32m{message}
 ```"""
                 await message.reply(template.format(message=_interaction.data["components"][0]["components"][0]["value"]), mention_author=False)
-                await _interaction.response.send_message("Message sent", ephemeral=self.bot.use_ephemeral)
+                await _interaction.response.send_message(tmpl.message_sent, ephemeral=self.bot.use_ephemeral)
 
             rp_modal.on_submit = on_submit
             await interaction.response.send_modal(rp_modal)
@@ -70,7 +70,7 @@ class Debug(GroupCog):
     @ac.command(name="stop", description="Stop the bot")
     async def stop(self, interaction: Interaction):
         logger.info("Stop command invoked")
-        await interaction.response.send_message("Stopping bot")
+        await interaction.response.send_message(tmpl.stopping_bot)
         if os.getenv("LOOP_ACTIVE"):
             with open("terminate.flag", "w"):
                 pass # the file just needs to exist, doesn't need to be written to
@@ -81,9 +81,24 @@ class Debug(GroupCog):
         async def restart(self, interaction: Interaction):
             logger.info("Restart command invoked") 
             if interaction: # allow the command to be used internally as well as in discord, we can pass None to use it internally and it will not try to send a message
-                await interaction.response.send_message("Restarting bot")
+                await interaction.response.send_message(tmpl.restarting_bot)
             await self.bot.close() # this will trigger the start.sh script to restart, if we used kill it would completely stop the script
         
+    @ac.command(name="reload_strings", description="Reload the templates module")
+    async def reload_strings(self, interaction: Interaction):
+        """Reload the templates module to refresh string templates."""
+        global tmpl
+        logger.info("Reload strings command invoked")
+        try:
+            import importlib
+            import templates
+            importlib.reload(templates)
+            import templates as tmpl
+            await interaction.response.send_message("String templates reloaded successfully", ephemeral=self.bot.use_ephemeral)
+        except Exception as e:
+            logger.error(f"Error reloading templates: {e}")
+            await interaction.response.send_message(f"Error reloading templates: {e}", ephemeral=self.bot.use_ephemeral)
+
     @ac.command(name="reload", description="Reload an extension")
     @ac.autocomplete(extension=_autocomplete_extensions)
     async def reload(self, interaction: Interaction, extension: str):
@@ -111,7 +126,7 @@ class Debug(GroupCog):
         extension = "extensions." + extension
         if extension == "extensions.debug":
             logger.warning("Attempt to unload debug extension from in Discord")
-            await interaction.response.send_message("Cannot unload debug extension from in Discord")
+            await interaction.response.send_message(tmpl.cannot_unload_debug)
             return
         logger.info(f"Unload command invoked for {extension}")
         await interaction.response.send_message(f"Unloading {extension}")
@@ -140,12 +155,12 @@ class Debug(GroupCog):
     async def botcompany(self, interaction: Interaction, _: MessageManager, session: Session):
         existing = session.query(Player).filter(Player.discord_id == self.bot.user.id).first()
         if existing:
-            await interaction.response.send_message("Bot company already exists", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.bot_company_exists, ephemeral=self.bot.use_ephemeral)
             return
         player = Player(discord_id=self.bot.user.id, name="Supply Allocation and Management", rec_points=0)
         session.add(player)
         session.commit()
-        await interaction.response.send_message("Bot company created", ephemeral=self.bot.use_ephemeral)
+        await interaction.response.send_message(tmpl.bot_company_created, ephemeral=self.bot.use_ephemeral)
 
     async def rp(self, interaction: Interaction, _: MessageManager):
         # create a modal with a text input for the message, this can be a two-line code
@@ -172,7 +187,7 @@ class Debug(GroupCog):
                 self.bot.queue.get_nowait()
             except QueueEmpty:
                 break # handle race condition gracefully
-        await interaction.followup.send("Queue emptied", ephemeral=self.bot.use_ephemeral)
+        await interaction.followup.send(tmpl.queue_emptied, ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="clear_deletable", description="Deletes all deletable messages in the channel.")
     async def clear_deletable(self, interaction: Interaction, limit: int = 100):
@@ -195,7 +210,7 @@ class Debug(GroupCog):
                     # An HTTP error occurred (e.g., message too old)
                     logger.error(f"Failed to delete message: {message.content} (HTTP Exception)")
 
-        await interaction.response.send_message("All deletable messages have been cleared.", ephemeral=True)
+        await interaction.response.send_message(tmpl.all_deletable_cleared, ephemeral=True)
 
     
     async def stats(self, interaction: Interaction, _: MessageManager):
@@ -209,7 +224,7 @@ class Debug(GroupCog):
             resident = "N/A"
             cpu_time = "N/A"
             average_cpu = "N/A"
-        await interaction.response.send_message(stats_template.format(**stats, **locals()), ephemeral=self.bot.use_ephemeral)
+        await interaction.response.send_message(tmpl.stats_template.format(**stats, **locals()), ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="menu", description="Show the menu")
     async def menu(self, interaction: Interaction):
@@ -246,7 +261,7 @@ class Debug(GroupCog):
         if not await is_server(interaction):
             await interaction.response.send_message("This command cannot be run in a DM", ephemeral=True)
             return
-        await interaction.response.send_message("Checking External Foreign Keys")
+        await interaction.response.send_message(tmpl.checking_fk)
         # get the 3 tables that have external foreign keys (Player, Statistics, Dossiers)
         players = self.bot.sessionmaker.query(Player).all()
         invalid_players = {}
@@ -286,7 +301,7 @@ class Debug(GroupCog):
             await interaction.followup.send(f"Invalid dossiers: {invalid_dossiers}")
         else:
             await interaction.followup.send("No invalid dossiers found")
-        await interaction.followup.send("External Foreign Key check complete")
+        await interaction.followup.send(tmpl.fk_check_complete)
 
     @ac.command(name="guilds", description="Show all guilds the bot is in")
     async def guilds(self, interaction: Interaction):
@@ -303,12 +318,12 @@ class Debug(GroupCog):
         for task in tasks:
             if "bump_briefing" in task.get_name():
                 logger.debug(task)
-        await interaction.followup.send("Test complete", ephemeral=True)
+        await interaction.followup.send(tmpl.test_complete, ephemeral=True)
 
     @ac.command(name="logmark", description="make a marker in the logs")
     async def logmark(self, interaction: Interaction):
         logger.info(f"[LOGMARK] {interaction.user.global_name} used logmark")
-        await interaction.response.send_message("Marker made", ephemeral=True)
+        await interaction.response.send_message(tmpl.marker_made, ephemeral=True)
 
     @ac.command(name="set_level", description="Set the log level")
     async def set_level(self, interaction: Interaction, _logger: str, level: int):
