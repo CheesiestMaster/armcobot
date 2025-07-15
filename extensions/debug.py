@@ -43,7 +43,9 @@ class Debug(GroupCog):
         return [ac.Choice(name=extension, value=extension) for extension in self.extensions if current.lower() in extension.lower() and not extension.startswith("template")]
 
     async def _is_mod(self, interaction: Interaction):
-        valid = any(interaction.user.get_role(role_id) for role_id in self.bot.mod_roles)
+        casting_guild=self.bot.get_guild(int(os.getenv("MAIN_GUILD_ID", 222052888531173386)))
+        cast_user = casting_guild.get_member(interaction.user.id)
+        valid = any(cast_user.get_role(role_id) for role_id in self.bot.mod_roles)
         if not valid:
             logger.warning(f"{interaction.user.global_name} tried to use debug commands")
         return valid
