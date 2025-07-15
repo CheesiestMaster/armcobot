@@ -33,6 +33,16 @@ faq_response = """**Question:** {selected.question}
 
 **Answer:** {selected.answer}"""
 
+# FAQ related
+faq_how_to_use = "Use the `/faq list` command to view all the FAQ questions. Use the `/faq view` command to view a specific question."
+no_faq_questions = "No FAQ questions found"
+select_question = "Select a question"
+faq_max_questions = "You cannot add more than 125 questions to the FAQ"
+question_added = "Question added to the FAQ"
+question_removed = "Question removed from the FAQ"
+question_edited = "Question edited in the FAQ"
+here_is_question_file = "Here is the question file"
+
 stats_template = """Uptime: {uptime} Started at: {start_time}
 Memory: {resident:0.2f} MB
 CPU: {cpu_time:0.2f} seconds ({average_cpu:0.2f} average)
@@ -47,3 +57,36 @@ general_stats = """Players: {players} Rec Points: {rec_points} Bonus Pay: {bonus
 Units: Total: {units} Purchased: {purchased} Active: {active} KIA/MIA: {dead}
 Upgrades: {upgrades}
 """
+
+# Common error messages
+no_meta_campaign_company = "You don't have a Meta Campaign company"
+already_have_company = "You already have a Meta Campaign company"
+invalid_input = "Invalid input: values cannot contain discord tags or headers"
+no_permission = "You don't have permission to run this command"
+stopping_bot = "Stopping bot"
+restarting_bot = "Restarting bot"
+cannot_unload_debug = "Cannot unload debug extension from in Discord"
+checking_fk = "Checking External Foreign Keys"
+applying_updates = "Applying updates"
+
+# Bot responses
+marker_made = "Marker made"
+test_complete = "Test complete"
+company_updated = "Company updated"
+company_refreshed = "Your Meta Campaign company has been refreshed"
+joined_meta_campaign = "You have joined Meta Campaign"
+queue_emptied = "Queue emptied"
+all_deletable_cleared = "All deletable messages have been cleared."
+fk_check_complete = "External Foreign Key check complete"
+
+# RP/Roleplay related
+rp_template = """---- RP POST ----
+```ansi
+[32m{message}
+```"""
+message_sent = "Message sent"
+
+# Company related
+bot_company_exists = "Bot company already exists"
+bot_company_created = "Bot company created"
+member_no_company = "{member.display_name} doesn't have a Meta Campaign company"

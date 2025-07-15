@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable
 from singleton import Singleton
 import asyncio
-import templates
+import templates as tmpl
 import logging
 from utils import uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator
 from prometheus_client import Counter
@@ -295,7 +295,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             
             if create_dossier:
                 dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(
-                    templates.Dossier.format(mention=mention, player=player, medals=medal_block)
+                    tmpl.Dossier.format(mention=mention, player=player, medals=medal_block)
                 )
                 dossier = Dossier(player_id=player.id, message_id=dossier_message.id)
                 session.add(dossier)
@@ -327,7 +327,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 return
             
             statistics_message = await self.get_channel(self.config["statistics_channel_id"]).send(
-                templates.Statistics_Player.format(mention=mention, player=_player, units=unit_message)
+                tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message)
             )
             statistics = Statistic(player_id=_player.id, message_id=statistics_message.id)
             session.add(statistics)
@@ -364,7 +364,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     mention = await self.fetch_user(player.discord_id)
                     mention = mention.mention if mention else ""
                     logger.debug("user found, editing message")
-                    await message.edit(content=templates.Dossier.format(mention=mention, player=player, medals=""))
+                    await message.edit(content=tmpl.Dossier.format(mention=mention, player=player, medals=""))
                     logger.debug(f"Updated dossier for player {player.id} with message ID {dossier.message_id}")
             else:
                 logger.debug("no dossier found, pushing create task")
@@ -384,7 +384,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     _statistics = session.merge(statistics)
                     mention = await self.fetch_user(discord_id)
                     mention = mention.mention if mention else ""
-                    await message.edit(content=templates.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
+                    await message.edit(content=tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
                     logger.debug(f"Updated statistics for player {_player.id} with message ID {_statistics.message_id}")
                 else:
                     # there should be a message, but the discord side was probably deleted by a mod
@@ -451,19 +451,19 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         return True # this is the only function that returns a value, as that's how we'll know to terminate, is if a value or raise is returned
 
     stats_map = {
-        "INFANTRY": templates.Infantry_Stats,
-        "MEDIC": templates.Non_Combat_Stats,
-        "ENGINEER": templates.Non_Combat_Stats,
-        "ARTILLERY": templates.Artillery_Stats,
-        "MAIN_TANK": templates.Armor_Stats,
-        "LIGHT_VEHICLE": templates.Armor_Stats,
-        "LOGISTIC": templates.Armor_Stats,
-        "BOMBER": templates.Air_Stats,
-        "FIGHTER": templates.Air_Stats,
-        "VTOL": templates.Air_Stats,
-        "HVTOL": templates.Air_Stats,
-        "HAT": templates.Air_Stats,
-        "LIGHT_MECH": templates.Armor_Stats
+        "INFANTRY": tmpl.Infantry_Stats,
+        "MEDIC": tmpl.Non_Combat_Stats,
+        "ENGINEER": tmpl.Non_Combat_Stats,
+        "ARTILLERY": tmpl.Artillery_Stats,
+        "MAIN_TANK": tmpl.Armor_Stats,
+        "LIGHT_VEHICLE": tmpl.Armor_Stats,
+        "LOGISTIC": tmpl.Armor_Stats,
+        "BOMBER": tmpl.Air_Stats,
+        "FIGHTER": tmpl.Air_Stats,
+        "VTOL": tmpl.Air_Stats,
+        "HVTOL": tmpl.Air_Stats,
+        "HAT": tmpl.Air_Stats,
+        "LIGHT_MECH": tmpl.Armor_Stats
     }
 
     async def generate_unit_message(self, player: Player, session: Session):
@@ -486,7 +486,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             upgrade_list = ", ".join([upgrade.name for upgrade in upgrades])
             logger.debug(f"Unit {unit.name} of type {unit.unit_type} has status {unit.status.name}")
             logger.debug(f"Unit {unit.id} has upgrades: {upgrade_list}")
-            unit_messages.append(templates.Statistics_Unit.format(unit=unit, upgrades=upgrade_list, callsign=('\"' + unit.callsign + '\"') if unit.callsign else "", campaign_name=f"In {unit.campaign.name}" if unit.campaign else ""))
+            unit_messages.append(tmpl.Statistics_Unit.format(unit=unit, upgrades=upgrade_list, callsign=('\"' + unit.callsign + '\"') if unit.callsign else "", campaign_name=f"In {unit.campaign.name}" if unit.campaign else ""))
 
         # Combine all unit messages into a single string
         combined_message = "\n".join(unit_messages)
@@ -675,7 +675,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     "upgrades": session.query(PlayerUpgrade).filter(PlayerUpgrade.original_price > 0).count()
                 }
             logger.debug(f"Stats: {stats_dict}")
-            stats = templates.general_stats.format(**stats_dict)
+            stats = tmpl.general_stats.format(**stats_dict)
             last_stats_message = stats
             await interaction.response.send_message(stats, ephemeral=True)
 
