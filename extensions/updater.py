@@ -4,6 +4,7 @@ from discord import Interaction, app_commands as ac
 import asyncio
 import os
 from datetime import datetime, timedelta
+import templates as tmpl
 logger = getLogger(__name__)
 
 class Updater(GroupCog):
@@ -76,7 +77,7 @@ class Updater(GroupCog):
     @ac.check(lambda i: i.user.id in bot.owner_ids)
     async def apply_updates(self, interaction: Interaction):
         if interaction:
-            await interaction.response.send_message("Applying updates")
+            await interaction.response.send_message(tmpl.applying_updates)
         
         stdout, stderr = await self.run_command(["git", "pull", "origin", "main"])
         
