@@ -14,3 +14,4 @@ upgrades.tsv
 backpay.csv
 PID
 archives/
+user_templates.py

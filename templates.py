@@ -1,6 +1,14 @@
-# Currency names
+# Currency names (can be overridden by user_templates)
 MAIN_CURRENCY = "Requisition Points"
+MAIN_CURRENCY_SHORT = "Req"
 SECONDARY_CURRENCY = "Bonus Pay"
+SECONDARY_CURRENCY_SHORT = "BP"
+
+# Import user templates to override constants (this is an optional import because you don't have to override anything)
+try:
+    from user_templates import MAIN_CURRENCY, MAIN_CURRENCY_SHORT, SECONDARY_CURRENCY, SECONDARY_CURRENCY_SHORT
+except ImportError:
+    pass
 
 Dossier = """{mention} V1.0
 # {player.name}
@@ -91,22 +99,22 @@ member_no_company = "{member.display_name} doesn't have a Meta Campaign company"
 
 # Shop related
 unit_doesnt_exist = "That unit doesn't exist"
-select_unit_to_buy = "Please select a unit to buy upgrades for, you have {rec_points} requisition points"
+select_unit_to_buy = f"Please select a unit to buy upgrades for, you have {{rec_points}} {MAIN_CURRENCY}"
 cant_buy_upgrades_stockpile = "You can't buy upgrades for a stockpile"
-not_enough_req_points_unit = "You don't have enough requisition points to buy this unit"
+not_enough_req_points_unit = f"You don't have enough {MAIN_CURRENCY} to buy this unit"
 cant_buy_upgrades_active = "You can't buy upgrades for an Active or MIA/KIA unit"
 no_upgrades_available = "No upgrades are available for this unit"
-select_upgrade_to_buy = "Please select an upgrade to buy, you have {req_points} {req_type} points"
+select_upgrade_to_buy = f"Please select an upgrade to buy, you have {{req_points}} {{req_type}} points"
 upgrade_not_found = "Upgrade not found."
-not_enough_req_points_upgrade = "You don't have enough requisition points to buy this upgrade"
+not_enough_req_points_upgrade = f"You don't have enough {MAIN_CURRENCY} to buy this upgrade"
 dont_have_required_upgrade = "You don't have the required upgrade"
-you_have_bought_upgrade = "You have bought {upgrade_name} for {upgrade_cost} Req"
-you_have_bought_refit = "You have bought a refit to {refit_target} for {refit_cost} Req"
+you_have_bought_upgrade = f"You have bought {{upgrade_name}} for {{upgrade_cost}} {MAIN_CURRENCY_SHORT}"
+you_have_bought_refit = f"You have bought a refit to {{refit_target}} for {{refit_cost}} {MAIN_CURRENCY_SHORT}"
 created_stockpile_unit = "You have created a new stockpile unit"
 upgrade_created = "Upgrade created"
 already_have_upgrade = "You already have this upgrade"
 already_have_stockpile = "You already have a stockpile unit"
-not_enough_bonus_pay = "You don't have enough bonus pay to convert"
+not_enough_bonus_pay = f"You don't have enough {SECONDARY_CURRENCY} to convert"
 dont_have_stockpile = "You don't have a stockpile unit"
 
 # Shop UI elements
@@ -114,14 +122,14 @@ shop_title = "Shop"
 shop_unit_title = "Unit: {unit_name}"
 shop_select_unit_placeholder = "Select a unit to buy upgrades for"
 shop_no_units_option = "Please Create a Unit before using the Shop"
-shop_convert_bp_button = "Convert 10 BP to 1 RP"
+shop_convert_bp_button = f"Convert 10 {SECONDARY_CURRENCY_SHORT} to 1 {MAIN_CURRENCY_SHORT}"
 shop_back_to_home_button = "Back to Home"
-shop_buy_unit_button = "Buy Unit (-1 Req)"
+shop_buy_unit_button = f"Buy Unit (-1 {MAIN_CURRENCY_SHORT})"
 shop_select_upgrade_placeholder = "Select an upgrade to buy"
 shop_previous_button = "Previous"
 shop_next_button = "Next"
 shop_footer = "ALL SALES ARE FINAL AND NO REFUNDS WILL BE GIVEN"
-shop_upgrade_button_template = "{type} {insufficient} {name} - {cost} Req"
+shop_upgrade_button_template = f"{{type}} {{insufficient}} {{name}} - {{cost}} {MAIN_CURRENCY_SHORT}"
 
 # Shop admin UI
 shop_add_upgrade_modal_title = "Add Shop Upgrade"
@@ -136,3 +144,9 @@ shop_unit_types_placeholder = "Enter the unit types the upgrade is available for
 shop_select_upgrade_type_message = "Please select an upgrade type"
 shop_select_upgrade_type_placeholder = "Select an upgrade type"
 shop_create_upgrade_button = "Create Upgrade"
+
+# Import any other user template overrides
+try:
+    from user_templates import *
+except ImportError:
+    pass
