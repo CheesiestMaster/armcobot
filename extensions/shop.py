@@ -47,7 +47,7 @@ class Shop(GroupCog):
     async def shop_home_view_factory(self, player_id: int, message_manager: MessageManager, session: Session):
         logger.triage(f"Creating shop home view for player {player_id}")
         view = ui.View()
-        embed = Embed(title="Shop", color=0xc06335)
+        embed = Embed(title=tmpl.shop_title, color=0xc06335)
         rec_points, bonus_pay = session.query(Player.rec_points, Player.bonus_pay).filter(Player.id == player_id).first()
 
         units = session.query(Unit).filter(Unit.player_id == player_id).all()
@@ -55,15 +55,15 @@ class Shop(GroupCog):
         
         if not units:
             logger.triage(f"No units found for player {player_id}, creating disabled select")
-            select_options = [SelectOption(label="Please Create a Unit before using the Shop", value="no_units", default=True)]
+            select_options = [SelectOption(label=tmpl.shop_no_units_option, value="no_units", default=True)]
         else:
             logger.triage(f"Creating select options for {len(units)} units")
             select_options = [SelectOption(label=unit.name, value=str(unit.id)) for unit in units]
         
-        select = ui.Select(placeholder="Select a unit to buy upgrades for", options=select_options, disabled=not units)
+        select = ui.Select(placeholder=tmpl.shop_select_unit_placeholder, options=select_options, disabled=not units)
         logger.triage(f"Created unit select menu with {len(select_options)} options")
 
-        bonus_button = ui.Button(label="Convert 10 BP to 1 RP", style=ButtonStyle.success, disabled=bonus_pay < 10)
+        bonus_button = ui.Button(label=tmpl.shop_convert_bp_button, style=ButtonStyle.success, disabled=bonus_pay < 10)
         logger.triage(f"Created BP to RP conversion button. Player has {bonus_pay} BP")
 
         @uses_db(CustomClient().sessionmaker)
@@ -73,7 +73,7 @@ class Shop(GroupCog):
             if _player.bonus_pay < 10:
                 logger.triage(f"Invalid BP to RP conversion attempt - insufficient BP: {_player.bonus_pay}")
                 bonus_button.disabled = True
-                await message_manager.update_message(content="You don't have enough bonus pay to convert")
+                await message_manager.update_message(content=tmpl.not_enough_bonus_pay)
                 await interaction.response.defer(thinking=False, ephemeral=True)
                 logger.triage(f"Deferred response for BP to RP conversion for player {player_id}")
                 return
@@ -96,7 +96,7 @@ class Shop(GroupCog):
 
             if not unit_id:
                 logger.triage(f"Selected unit {selected_unit_id} not found")
-                embed.description = "That unit doesn't exist"
+                embed.description = tmpl.unit_doesnt_exist
                 return view, embed
 
             await interaction.response.defer(thinking=False, ephemeral=True)
@@ -111,8 +111,8 @@ class Shop(GroupCog):
 
         view.add_item(select)
         view.add_item(bonus_button)
-        embed.description = f"Please select a unit to buy upgrades for, you have {rec_points} requisition points"
-        embed.set_footer(text=f"ALL SALES ARE FINAL AND NO REFUNDS WILL BE GIVEN")
+        embed.description = tmpl.select_unit_to_buy.format(rec_points=rec_points)
+        embed.set_footer(text=tmpl.shop_footer)
         logger.triage(f"Completed shop home view creation for player {player_id}")
         return view, embed
 
@@ -123,9 +123,9 @@ class Shop(GroupCog):
         unit_name, unit_type, unit_status, active = session.query(Unit.name, Unit.unit_type, Unit.status, Unit.active).filter(Unit.id == unit_id).first()
         logger.triage(f"Creating shop view for unit: {unit_name} with status: {unit_status}")
         view = ui.View()
-        embed = Embed(title=f"Unit: {unit_name}", color=0xc06335)
+        embed = Embed(title=tmpl.shop_unit_title.format(unit_name=unit_name), color=0xc06335)
         
-        leave_button = ui.Button(label="Back to Home", style=ButtonStyle.danger)
+        leave_button = ui.Button(label=tmpl.shop_back_to_home_button, style=ButtonStyle.danger)
         @uses_db(CustomClient().sessionmaker)
         async def leave_button_callback(interaction: Interaction, session: Session):
             logger.triage(f"Returning to shop home view for player {player_id}")
@@ -139,12 +139,12 @@ class Shop(GroupCog):
 
         if unit_type == "STOCKPILE":
             logger.triage(f"Unit {unit_name} is stockpile, no upgrades available")
-            embed.description = "You can't buy upgrades for a stockpile"
+            embed.description = tmpl.cant_buy_upgrades_stockpile
             return view, embed
 
         if unit_status.name == "PROPOSED":
             logger.triage(f"Unit {unit_name} is proposed, checking requisition points")
-            buy_button = ui.Button(label="Buy Unit (-1 Req)", style=ButtonStyle.success, disabled=rec_points < 1)
+            buy_button = ui.Button(label=tmpl.shop_buy_unit_button, style=ButtonStyle.success, disabled=rec_points < 1)
             
             @uses_db(CustomClient().sessionmaker)
             async def buy_button_callback(interaction: Interaction, session: Session):
@@ -153,7 +153,7 @@ class Shop(GroupCog):
                 logger.triage(f"Buying unit {_unit.name}")
                 if _player.rec_points < 1:
                     logger.triage(f"Player {interaction.user.name} attempted to buy unit without sufficient RP")
-                    embed.description = "You don't have enough requisition points to buy this unit"
+                    embed.description = tmpl.not_enough_req_points_unit
                     await message_manager.update_message()
                     await interaction.response.defer(thinking=False, ephemeral=True)
                     return
@@ -180,7 +180,7 @@ class Shop(GroupCog):
 
         elif unit_status.name in {"MIA", "KIA"} or active:
             logger.triage(f"Unit {unit_name} is {unit_status.name} or in a campaign, no upgrades available")
-            embed.description = "You can't buy upgrades for an Active or MIA/KIA unit"
+            embed.description = tmpl.cant_buy_upgrades_active
             return view, embed
 
         elif unit_status.name == "INACTIVE":
@@ -201,19 +201,19 @@ class Shop(GroupCog):
         available_upgrades = _unit.available_upgrades
         if not available_upgrades:
             logger.triage(f"No compatible upgrades found for unit type {_unit.unit_type}")
-            embed.description = "No upgrades are available for this unit"
+            embed.description = tmpl.no_upgrades_available
             embed.color = 0xff0000
             return view, embed
         logger.triage(f"Found {len(available_upgrades)} compatible upgrades for unit type {_unit.unit_type}")
         paginator = Paginator([upgrade.id for upgrade in available_upgrades], 25)
         page = paginator.current()
-        select = ui.Select(placeholder="Select an upgrade to buy")
-        button_template = "{type} {insufficient} {name} - {cost} Req"
+        select = ui.Select(placeholder=tmpl.shop_select_upgrade_placeholder)
+        button_template = tmpl.shop_upgrade_button_template
         
         # Declare buttons before their callbacks
-        previous_button = ui.Button(label="Previous", style=ButtonStyle.secondary)
+        previous_button = ui.Button(label=tmpl.shop_previous_button, style=ButtonStyle.secondary)
         previous_button.disabled = True
-        next_button = ui.Button(label="Next", style=ButtonStyle.secondary)
+        next_button = ui.Button(label=tmpl.shop_next_button, style=ButtonStyle.secondary)
         next_button.disabled = True
         
         for upgrade in page:
@@ -302,7 +302,7 @@ class Shop(GroupCog):
                 await message_manager.update_message(view=view)
             next_button.callback = next_button_callback
         view.add_item(next_button)
-        embed.description = f"Please select an upgrade to buy, you have {_unit.unit_req if _unit.unit_req > 0 else rec_points} {'unit requisition' if _unit.unit_req > 0 else 'requisition'} points"
+        embed.description = tmpl.select_upgrade_to_buy.format(req_points=_unit.unit_req if _unit.unit_req > 0 else rec_points, req_type=f"unit {tmpl.MAIN_CURRENCY.lower()}" if _unit.unit_req > 0 else tmpl.MAIN_CURRENCY.lower())
 
         @error_reporting()
         @uses_db(CustomClient().sessionmaker)
@@ -314,7 +314,7 @@ class Shop(GroupCog):
             upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == upgrade_id).first()
             if not upgrade:
                 logger.triage(f"Upgrade with ID {upgrade_id} not found")
-                embed.description = "Upgrade not found."
+                embed.description = tmpl.upgrade_not_found
                 embed.color = 0xff0000
                 await message_manager.update_message()
                 await interaction.response.defer(thinking=False, ephemeral=True)
@@ -327,7 +327,7 @@ class Shop(GroupCog):
 
             if upgrade.cost > (_unit.unit_req if _unit.unit_req > 0 else _player.rec_points):
                 logger.triage(f"Player {interaction.user.name} does not have enough requisition points. Required: {upgrade.cost}, Available: {_unit.unit_req if _unit.unit_req > 0 else _player.rec_points}")
-                embed.description = "You don't have enough requisition points to buy this upgrade"
+                embed.description = tmpl.not_enough_req_points_upgrade
                 embed.color = 0xff0000
                 await message_manager.update_message()
                 await interaction.response.defer(thinking=False, ephemeral=True)
@@ -338,7 +338,7 @@ class Shop(GroupCog):
                 required_upgrade = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == _unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.required_upgrade_id).first()
                 if not required_upgrade:
                     logger.triage(f"Player {interaction.user.name} does not have the required upgrade: {upgrade.required_upgrade_id}")
-                    embed.description = "You don't have the required upgrade"
+                    embed.description = tmpl.dont_have_required_upgrade
                     embed.color = 0xff0000
                     await message_manager.update_message()
                     await interaction.response.defer(thinking=False, ephemeral=True)
@@ -350,7 +350,7 @@ class Shop(GroupCog):
                 logger.triage(f"Checking if upgrade is repeatable: {upgrade.repeatable}")
                 if existing and not upgrade.repeatable:
                     logger.triage(f"Player {interaction.user.name} already has this upgrade: {upgrade.name}")
-                    embed.description = "You already have this upgrade"
+                    embed.description = tmpl.already_have_upgrade
                     embed.color = 0xff0000
                     await message_manager.update_message()
                     await interaction.response.defer(thinking=False, ephemeral=True)
@@ -370,7 +370,7 @@ class Shop(GroupCog):
                 session.commit()
                 self.bot.queue.put_nowait((1, _player, 0))
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
-                embed.description = f"You have bought {upgrade_name} for {upgrade_cost} Req"
+                embed.description = tmpl.you_have_bought_upgrade.format(upgrade_name=upgrade_name, upgrade_cost=upgrade_cost)
                 embed.color = 0x00ff00
                 await message_manager.update_message(view=view, embed=embed)
                 await interaction.response.defer(thinking=False, ephemeral=True)
@@ -391,7 +391,7 @@ class Shop(GroupCog):
                 stockpile = _player.stockpile
                 if not stockpile:
                     logger.triage(f"Player {interaction.user.name} does not have a stockpile unit")
-                    await interaction.response.send_message("You don't have a stockpile unit", ephemeral=True)
+                    await interaction.response.send_message(tmpl.dont_have_stockpile, ephemeral=True)
                     return
                 logger.triage(f"Found stockpile unit: {stockpile.name}")
 
@@ -422,7 +422,7 @@ class Shop(GroupCog):
                 logger.triage(f"Deferred response for refit purchase workflow for unit {_unit.name}")
                 
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
-                embed.description = f"You have bought a refit to {refit_target} for {refit_cost} Req"
+                embed.description = tmpl.you_have_bought_refit.format(refit_target=refit_target, refit_cost=refit_cost)
                 embed.color = 0x00ff00
                 await message_manager.update_message(view=view, embed=embed)
                 await interaction.response.defer(thinking=False, ephemeral=True)
@@ -435,26 +435,26 @@ class Shop(GroupCog):
     async def replace_stockpile(self, interaction: Interaction, session: Session):
         _player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not _player:
-            await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=self.bot.use_ephemeral)
             return
         stockpile = session.query(Unit).filter(Unit.player_id == _player.id, Unit.unit_type == "STOCKPILE").first()
         if stockpile:
-            await interaction.response.send_message("You already have a stockpile unit", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.already_have_stockpile, ephemeral=self.bot.use_ephemeral)
             return
         new_stockpile = Unit(name="Stockpile", player_id=_player.id, status=UnitStatus.INACTIVE, unit_type="STOCKPILE")
         session.add(new_stockpile)
-        await interaction.response.send_message("You have created a new stockpile unit", ephemeral=self.bot.use_ephemeral)
+        await interaction.response.send_message(tmpl.created_stockpile_unit, ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="add_shop_upgrade", description="Add a shop upgrade")
     @ac.check(is_mod)
     async def add_shop_upgrade(self, interaction: Interaction):
         # we start with a modal for the name, description, cost, and unit types
         # then we do a view for the upgrade types, optional required upgrade
-        modal = ui.Modal(title="Add Shop Upgrade")
-        name = ui.TextInput(label="Name", placeholder="Enter the name of the upgrade")
-        refit_target = ui.TextInput(label="Refit Target", placeholder="Enter the refit target of the upgrade, or leave blank if it's not a refit", required=False)
-        cost = ui.TextInput(label="Cost", placeholder="Enter the cost of the upgrade")
-        unit_types = ui.TextInput(label="Unit Types", placeholder="Enter the unit types the upgrade is available for, comma separated")
+        modal = ui.Modal(title=tmpl.shop_add_upgrade_modal_title)
+        name = ui.TextInput(label=tmpl.shop_upgrade_name_label, placeholder=tmpl.shop_upgrade_name_placeholder)
+        refit_target = ui.TextInput(label=tmpl.shop_refit_target_label, placeholder=tmpl.shop_refit_target_placeholder, required=False)
+        cost = ui.TextInput(label=tmpl.shop_upgrade_cost_label, placeholder=tmpl.shop_upgrade_cost_placeholder)
+        unit_types = ui.TextInput(label=tmpl.shop_unit_types_label, placeholder=tmpl.shop_unit_types_placeholder)
         modal.add_item(name)
         modal.add_item(refit_target)
         modal.add_item(cost)
@@ -472,21 +472,21 @@ class Shop(GroupCog):
                 "unit_types": unit_types
             }
             view = await self.shop_upgrade_view_factory(upgrade_details)
-            await interaction.response.send_message("Please select an upgrade type", view=view, ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.shop_select_upgrade_type_message, view=view, ephemeral=self.bot.use_ephemeral)
         modal.on_submit = modal_callback
         await interaction.response.send_modal(modal)
 
     async def shop_upgrade_view_factory(self, upgrade_details: dict):
         view = ui.View()
         # we need a select for the upgrade types, and a select for the required upgrade
-        upgrade_types = ui.Select(placeholder="Select an upgrade type", options=[SelectOption(label=upgrade_type, value=upgrade_type) for upgrade_type in ["REFIT", "UPGRADE"]])
+        upgrade_types = ui.Select(placeholder=tmpl.shop_select_upgrade_type_placeholder, options=[SelectOption(label=upgrade_type, value=upgrade_type) for upgrade_type in ["REFIT", "UPGRADE"]])
         logger.triage("Created upgrade type select with options: REFIT, UPGRADE")
         async def upgrade_types_callback(interaction: Interaction):
             upgrade_details["type"] = interaction.data["values"][0]
             await interaction.response.defer()
         upgrade_types.callback = upgrade_types_callback
         view.add_item(upgrade_types)
-        create_button = ui.Button(label="Create Upgrade", style=ButtonStyle.success)
+        create_button = ui.Button(label=tmpl.shop_create_upgrade_button, style=ButtonStyle.success)
         @uses_db(CustomClient().sessionmaker)
         async def create_button_callback(interaction: Interaction, session: Session):
             # create the upgrade
@@ -504,7 +504,7 @@ class Shop(GroupCog):
                 session.add(unit_type)
             logger.triage(f"Committing final changes for upgrade {upgrade_details['name']}")
             session.commit()
-            await interaction.response.send_message("Upgrade created", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.upgrade_created, ephemeral=self.bot.use_ephemeral)
 
         create_button.callback = create_button_callback
         view.add_item(create_button)

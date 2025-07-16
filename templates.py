@@ -1,3 +1,7 @@
+# Currency names
+MAIN_CURRENCY = "Requisition Points"
+SECONDARY_CURRENCY = "Bonus Pay"
+
 Dossier = """{mention} V1.0
 # {player.name}
 
@@ -9,8 +13,8 @@ Dossier = """{mention} V1.0
 Statistics_Player = """{mention} V1.0
 ## {player.name}
 
-Requisition Points: {player.rec_points}
-Bonus Pay: {player.bonus_pay}
+{MAIN_CURRENCY}: {player.rec_points}
+{SECONDARY_CURRENCY}: {player.bonus_pay}
 
 Units:
 {units}
@@ -47,7 +51,7 @@ Error logs: today: {today_ERROR} total: {total_ERROR}
 Critical logs: today: {today_CRITICAL} total: {total_CRITICAL}
 Total logs: today: {today_total} total: {total_total}"""
 
-general_stats = """Players: {players} Rec Points: {rec_points} Bonus Pay: {bonus_pay}
+general_stats = """Players: {players} {MAIN_CURRENCY}: {rec_points} {SECONDARY_CURRENCY}: {bonus_pay}
 Units: Total: {units} Purchased: {purchased} Active: {active} KIA/MIA: {dead}
 Upgrades: {upgrades}
 """
@@ -104,3 +108,31 @@ already_have_upgrade = "You already have this upgrade"
 already_have_stockpile = "You already have a stockpile unit"
 not_enough_bonus_pay = "You don't have enough bonus pay to convert"
 dont_have_stockpile = "You don't have a stockpile unit"
+
+# Shop UI elements
+shop_title = "Shop"
+shop_unit_title = "Unit: {unit_name}"
+shop_select_unit_placeholder = "Select a unit to buy upgrades for"
+shop_no_units_option = "Please Create a Unit before using the Shop"
+shop_convert_bp_button = "Convert 10 BP to 1 RP"
+shop_back_to_home_button = "Back to Home"
+shop_buy_unit_button = "Buy Unit (-1 Req)"
+shop_select_upgrade_placeholder = "Select an upgrade to buy"
+shop_previous_button = "Previous"
+shop_next_button = "Next"
+shop_footer = "ALL SALES ARE FINAL AND NO REFUNDS WILL BE GIVEN"
+shop_upgrade_button_template = "{type} {insufficient} {name} - {cost} Req"
+
+# Shop admin UI
+shop_add_upgrade_modal_title = "Add Shop Upgrade"
+shop_upgrade_name_label = "Name"
+shop_upgrade_name_placeholder = "Enter the name of the upgrade"
+shop_refit_target_label = "Refit Target"
+shop_refit_target_placeholder = "Enter the refit target of the upgrade, or leave blank if it's not a refit"
+shop_upgrade_cost_label = "Cost"
+shop_upgrade_cost_placeholder = "Enter the cost of the upgrade"
+shop_unit_types_label = "Unit Types"
+shop_unit_types_placeholder = "Enter the unit types the upgrade is available for, comma separated"
+shop_select_upgrade_type_message = "Please select an upgrade type"
+shop_select_upgrade_type_placeholder = "Select an upgrade type"
+shop_create_upgrade_button = "Create Upgrade"
