@@ -1,3 +1,7 @@
+# Currency names
+MAIN_CURRENCY = "Requisition Points"
+SECONDARY_CURRENCY = "Bonus Pay"
+
 Dossier = """{mention} V1.0
 # {player.name}
 
@@ -9,8 +13,8 @@ Dossier = """{mention} V1.0
 Statistics_Player = """{mention} V1.0
 ## {player.name}
 
-Requisition Points: {player.rec_points}
-Bonus Pay: {player.bonus_pay}
+{MAIN_CURRENCY}: {player.rec_points}
+{SECONDARY_CURRENCY}: {player.bonus_pay}
 
 Units:
 {units}
@@ -47,7 +51,7 @@ Error logs: today: {today_ERROR} total: {total_ERROR}
 Critical logs: today: {today_CRITICAL} total: {total_CRITICAL}
 Total logs: today: {today_total} total: {total_total}"""
 
-general_stats = """Players: {players} Rec Points: {rec_points} Bonus Pay: {bonus_pay}
+general_stats = """Players: {players} {MAIN_CURRENCY}: {rec_points} {SECONDARY_CURRENCY}: {bonus_pay}
 Units: Total: {units} Purchased: {purchased} Active: {active} KIA/MIA: {dead}
 Upgrades: {upgrades}
 """

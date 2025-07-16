@@ -302,7 +302,7 @@ class Shop(GroupCog):
                 await message_manager.update_message(view=view)
             next_button.callback = next_button_callback
         view.add_item(next_button)
-        embed.description = tmpl.select_upgrade_to_buy.format(req_points=_unit.unit_req if _unit.unit_req > 0 else rec_points, req_type="unit requisition" if _unit.unit_req > 0 else "requisition")
+        embed.description = tmpl.select_upgrade_to_buy.format(req_points=_unit.unit_req if _unit.unit_req > 0 else rec_points, req_type=f"unit {tmpl.MAIN_CURRENCY.lower()}" if _unit.unit_req > 0 else tmpl.MAIN_CURRENCY.lower())
 
         @error_reporting()
         @uses_db(CustomClient().sessionmaker)
