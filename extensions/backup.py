@@ -38,7 +38,7 @@ class Backup(GroupCog):
         self.xls_roller.close()  # Close the handle, as pandas will be using it
 
         # Get table names
-        table_names = [table.name for table in Base.metadata.tables.values()]
+        table_names = [table.name for table in BaseModel.metadata.tables.values()]
 
         # Use ExcelWriter to write each table to a separate sheet
         with ExcelWriter(handle_path) as writer:
