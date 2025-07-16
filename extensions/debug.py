@@ -93,6 +93,17 @@ class Debug(GroupCog):
         logger.info("Reload strings command invoked")
         try:
             import importlib
+            import sys
+            
+            # Check if user_templates exists and is loaded
+            if 'user_templates' in sys.modules:
+                try:
+                    importlib.reload(sys.modules['user_templates'])
+                except (ImportError, ModuleNotFoundError):
+                    # Handle case where user_templates was deleted or can't be reloaded
+                    pass
+            
+            # Always reload templates.py
             import templates
             importlib.reload(templates)
             import templates as tmpl
