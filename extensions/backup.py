@@ -2,7 +2,7 @@ from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac
 from pandas import DataFrame, ExcelWriter
-from models import Base
+from models import BaseModel
 from sqlalchemy import select
 from FileRoller import FileRoller
 import asyncio
