@@ -18,14 +18,14 @@ Dossier = """{mention} V1.0
 {medals}
 """
 
-Statistics_Player = """{mention} V1.0
-## {player.name}
+Statistics_Player = f"""{{mention}} V1.0
+## {{player.name}}
 
-{MAIN_CURRENCY}: {player.rec_points}
-{SECONDARY_CURRENCY}: {player.bonus_pay}
+{MAIN_CURRENCY}: {{player.rec_points}}
+{SECONDARY_CURRENCY}: {{player.bonus_pay}}
 
 Units:
-{units}
+{{units}}
 """
 
 Statistics_Unit = """### {unit.name} {callsign} ({unit.unit_type}) {unit.status.name} {campaign_name}
@@ -59,9 +59,9 @@ Error logs: today: {today_ERROR} total: {total_ERROR}
 Critical logs: today: {today_CRITICAL} total: {total_CRITICAL}
 Total logs: today: {today_total} total: {total_total}"""
 
-general_stats = """Players: {players} {MAIN_CURRENCY}: {rec_points} {SECONDARY_CURRENCY}: {bonus_pay}
-Units: Total: {units} Purchased: {purchased} Active: {active} KIA/MIA: {dead}
-Upgrades: {upgrades}
+general_stats = f"""Players: {{players}} {MAIN_CURRENCY}: {{rec_points}} {SECONDARY_CURRENCY}: {{bonus_pay}}
+Units: Total: {{units}} Purchased: {{purchased}} Active: {{active}} KIA/MIA: {{dead}}
+Upgrades: {{upgrades}}
 """
 
 # Common error messages
@@ -104,7 +104,7 @@ cant_buy_upgrades_stockpile = "You can't buy upgrades for a stockpile"
 not_enough_req_points_unit = f"You don't have enough {MAIN_CURRENCY} to buy this unit"
 cant_buy_upgrades_active = "You can't buy upgrades for an Active or MIA/KIA unit"
 no_upgrades_available = "No upgrades are available for this unit"
-select_upgrade_to_buy = f"Please select an upgrade to buy, you have {{req_points}} {{req_type}} points"
+select_upgrade_to_buy = "Please select an upgrade to buy, you have {req_points} {req_type} points"
 upgrade_not_found = "Upgrade not found."
 not_enough_req_points_upgrade = f"You don't have enough {MAIN_CURRENCY} to buy this upgrade"
 dont_have_required_upgrade = "You don't have the required upgrade"
