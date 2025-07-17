@@ -75,12 +75,13 @@ logger.info("Database tables created successfully.")
 # create a session
 Session = sessionmaker(bind=engine)
 session = Session()
-session.execute(text("SET SESSION innodb_lock_wait_timeout = 10")) # set the lock timeout to 10 seconds only for the global session
+if engine.dialect.name == "mysql":
+    session.execute(text("SET SESSION innodb_lock_wait_timeout = 10")) # set the lock timeout to 10 seconds only for the global session
 
 logger.debug("Session created successfully.")
 
 # create the bot
-bot = CustomClient(session, sessionmaker=Session)
+bot = CustomClient(session, sessionmaker=Session, dialect=engine.dialect.name)
 logger.info("Bot created successfully.")
 
 # start the bot

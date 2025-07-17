@@ -44,7 +44,7 @@ class Backup(GroupCog):
         with ExcelWriter(handle_path) as writer:
             for table_name in table_names:
                 # Execute the query and fetch all rows
-                query = select(Base.metadata.tables[table_name])
+                query = select(BaseModel.metadata.tables[table_name])
                 result = session.execute(query)
                 rows = result.fetchall()
 

@@ -61,7 +61,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     config: dict
     sessionmaker: Callable
     start_time: datetime
-    def __init__(self, session: Session,/, sessionmaker: Callable, **kwargs):
+    def __init__(self, session: Session,/, sessionmaker: Callable, dialect: str, **kwargs):
         """
         Initializes the CustomClient instance.
 
@@ -80,6 +80,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self.owner_ids = {int(getenv("BOT_OWNER_ID", "533009808501112881")), int(getenv("BOT_OWNER_ID_2", "126747253342863360"))}
         self.sessionmaker = sessionmaker
         self.queue = asyncio.Queue()
+        self.dialect = dialect
         _Config = session.query(Config).filter(Config.key == "BOT_CONFIG").first()
         if not _Config:
             _Config = Config(key="BOT_CONFIG", value={"EXTENSIONS":[]})
@@ -248,7 +249,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
     async def _handle_create_task(self, task: tuple[int, Player, int], session: Session):
         """Handle creation tasks for players only"""
-        session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
+        if self.dialect == "mysql":
+            session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
         
         if not isinstance(task[1], Player):
             logger.error(f"Task type 0 (create) received non-Player instance: {type(task[1])}")
@@ -336,7 +338,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     async def _handle_update_task(self, task: tuple[int, Player, int], session: Session):
         """Handle update tasks for players only"""
         with session.no_autoflush:
-            session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
+            if self.dialect == "mysql":
+                session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
             requeued = False
             logger.debug(f"handling update task")
         
@@ -399,7 +402,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     logger.debug(f"Already queued create task for player {player.id} due to missing dossier message, but the statistics message is also missing Location 5")
 
     async def _handle_delete_task(self, task: tuple[int, Any], session: Session):
-        session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
+        if self.dialect == "mysql":
+            session.execute(text("SET SESSION innodb_lock_wait_timeout = 10"))
         logger.debug(f"requerying instance for delete task")
         with session.no_autoflush: # disable flush on delete, to avoid a reinsert
             instance = session.query(task[1].__class__).filter(task[1].__class__.id == task[1].id).first()

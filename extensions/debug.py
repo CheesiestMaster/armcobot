@@ -106,8 +106,28 @@ class Debug(GroupCog):
             # Always reload templates.py
             import templates
             importlib.reload(templates)
+            
+            # Reload all modules that import templates
+            modules_to_reload = [
+                'customclient',
+                'extensions.shop',
+                'extensions.faq', 
+                'extensions.companies',
+                'extensions.updater',
+                'extensions.campaigns'
+            ]
+            
+            for module_name in modules_to_reload:
+                if module_name in sys.modules:
+                    try:
+                        importlib.reload(sys.modules[module_name])
+                        logger.info(f"Reloaded {module_name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to reload {module_name}: {e}")
+            
+            # Update the global tmpl reference
             import templates as tmpl
-            await interaction.response.send_message("String templates reloaded successfully", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message("String templates and dependent modules reloaded successfully", ephemeral=self.bot.use_ephemeral)
         except Exception as e:
             logger.error(f"Error reloading templates: {e}")
             await interaction.response.send_message(f"Error reloading templates: {e}", ephemeral=self.bot.use_ephemeral)
