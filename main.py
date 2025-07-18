@@ -75,6 +75,14 @@ logger.info("Database tables created successfully.")
 # create a session
 Session = sessionmaker(bind=engine)
 session = Session()
+
+# Populate upgrade_types table with enum members
+from models import UpgradeType, UpgradeTypeEnum
+for key in UpgradeTypeEnum.__members__:
+    upgrade_type = UpgradeType(name=key)
+    session.merge(upgrade_type)
+session.commit()
+logger.info("Upgrade types populated successfully.")
 if engine.dialect.name == "mysql":
     session.execute(text("SET SESSION innodb_lock_wait_timeout = 10")) # set the lock timeout to 10 seconds only for the global session
 
