@@ -6,7 +6,7 @@ SECONDARY_CURRENCY_SHORT = "BP"
 
 # Import user templates to override constants (this is an optional import because you don't have to override anything)
 try:
-    from user_templates import MAIN_CURRENCY, MAIN_CURRENCY_SHORT, SECONDARY_CURRENCY, SECONDARY_CURRENCY_SHORT
+    from user_templates import MAIN_CURRENCY, MAIN_CURRENCY_SHORT, SECONDARY_CURRENCY, SECONDARY_CURRENCY_SHORT #type: ignore
 except ImportError:
     pass
 
@@ -147,6 +147,6 @@ shop_create_upgrade_button = "Create Upgrade"
 
 # Import any other user template overrides
 try:
-    from user_templates import *
+    from user_templates import * #type: ignore
 except ImportError:
     pass

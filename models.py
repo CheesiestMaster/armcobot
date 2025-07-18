@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 engine_logger = logging.getLogger("sqlalchemy.engine")
 #engine_logger.setLevel(logging.DEBUG)
 
-class UpgradeType(PyEnum):
+class UpgradeTypeEnum(PyEnum):
     UPGRADE = "0.0"
     REFIT = "1.0"
     SPECIAL = "2.0"
@@ -49,6 +49,11 @@ class BaseModel(DeclarativeBase):
 
 
 # Models
+
+class UpgradeType(BaseModel):
+    __tablename__ = "upgrade_types"
+    # columns
+    name: Mapped[str] = mapped_column(String(30), primary_key=True)
 
 class Extension(BaseModel):
     __tablename__ = "extensions"
@@ -143,7 +148,7 @@ class PlayerUpgrade(BaseModel):
     __tablename__ = "player_upgrades"
     # columns
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
-    type: Mapped[UpgradeType] = mapped_column(Enum(UpgradeType))
+    type: Mapped[UpgradeTypeEnum] = mapped_column(Enum(UpgradeTypeEnum))
     name: Mapped[str] = mapped_column(String(30), index=True)
     original_price: Mapped[int] = mapped_column(Integer, default=0)
     unit_id: Mapped[int] = mapped_column(ForeignKey("units.id"))
@@ -198,7 +203,7 @@ class ShopUpgrade(BaseModel):
     # columns
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(30), index=True)
-    type: Mapped[UpgradeType] = mapped_column(Enum(UpgradeType))
+    type: Mapped[UpgradeTypeEnum] = mapped_column(Enum(UpgradeTypeEnum))
     cost: Mapped[int] = mapped_column(Integer, default=0)
     refit_target: Mapped[str | None] = mapped_column(ForeignKey("unit_types.unit_type"), nullable=True)
     required_upgrade_id: Mapped[int | None] = mapped_column(ForeignKey("shop_upgrades.id"), nullable=True)

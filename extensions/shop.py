@@ -1,7 +1,7 @@
 from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, SelectOption, ButtonStyle, Embed
-from models import Player, Unit, UnitStatus, UpgradeType, ShopUpgrade, ShopUpgradeUnitTypes, PlayerUpgrade
+from models import Player, Unit, UnitStatus, UpgradeTypeEnum, ShopUpgrade, ShopUpgradeUnitTypes, PlayerUpgrade
 from customclient import CustomClient
 from utils import uses_db, string_to_list, Paginator, error_reporting
 from sqlalchemy.orm import Session, raiseload
@@ -223,13 +223,13 @@ class Shop(GroupCog):
             if _upgrade.disabled:
                 logger.triage(f"Skipping disabled upgrade {_upgrade.name}")
                 continue
-            if _upgrade.type == UpgradeType.REFIT:
+            if _upgrade.type == UpgradeTypeEnum.REFIT:
                 logger.triage(f"Upgrade is a Refit, checking if unit has unit requisition")
                 if unit_req > 0:
                     logger.triage(f"Skipping refit upgrade {_upgrade.name} for unit {_unit.name} because it has unit requisition")
                     continue # we don't want to show refit upgrades if the unit has unit requisition
             insufficient = "❌" if _upgrade.cost > (unit_req if unit_req > 0 else rec_points) else ""
-            utype = "🔧" if _upgrade.type == UpgradeType.REFIT else "🚀" if _upgrade.type == UpgradeType.HULL else "⚙️"
+            utype = "🔧" if _upgrade.type == UpgradeTypeEnum.REFIT else "🚀" if _upgrade.type == UpgradeTypeEnum.HULL else "⚙️"
             select.add_option(label=button_template.format(type=utype, insufficient=insufficient, name=_upgrade.name, cost=_upgrade.cost), value=str(_upgrade.id))
         
         if paginator.has_previous():
@@ -250,13 +250,13 @@ class Shop(GroupCog):
                     if _upgrade.disabled:
                         logger.triage(f"Skipping disabled upgrade {_upgrade.name}")
                         continue
-                    if _upgrade.type == UpgradeType.REFIT:
+                    if _upgrade.type == UpgradeTypeEnum.REFIT:
                         logger.triage(f"Upgrade is a Refit, checking if unit has unit requisition")
                         if unit_req > 0:
                             logger.triage(f"Skipping refit upgrade {_upgrade.name} for unit {unit_name} because it has unit requisition")
                             continue
                     insufficient = "❌" if _upgrade.cost > (unit_req if unit_req > 0 else rec_points) else ""
-                    utype = "🔧" if _upgrade.type == UpgradeType.REFIT else "🚀" if _upgrade.type == UpgradeType.HULL else "⚙️"
+                    utype = "🔧" if _upgrade.type == UpgradeTypeEnum.REFIT else "🚀" if _upgrade.type == UpgradeTypeEnum.HULL else "⚙️"
                     select.add_option(label=button_template.format(type=utype, insufficient=insufficient, name=_upgrade.name, cost=_upgrade.cost), value=str(_upgrade.id))
                 previous_button.disabled = not paginator.has_previous() # we don't need to check if previous_button is None, because we are in it's callback
                 if next_button:
@@ -288,13 +288,13 @@ class Shop(GroupCog):
                     if _upgrade.disabled:
                         logger.triage(f"Skipping disabled upgrade {_upgrade.name}")
                         continue
-                    if _upgrade.type == UpgradeType.REFIT:
+                    if _upgrade.type == UpgradeTypeEnum.REFIT:
                         logger.triage(f"Upgrade is a Refit, checking if unit has unit requisition")
                         if unit_req > 0:
                             logger.triage(f"Skipping refit upgrade {_upgrade.name} for unit {unit_name} because it has unit requisition")
                             continue
                     insufficient = "❌" if _upgrade.cost > (unit_req if unit_req > 0 else rec_points) else ""
-                    utype = "🔧" if _upgrade.type == UpgradeType.REFIT else "🚀" if _upgrade.type == UpgradeType.HULL else "⚙️"
+                    utype = "🔧" if _upgrade.type == UpgradeTypeEnum.REFIT else "🚀" if _upgrade.type == UpgradeTypeEnum.HULL else "⚙️"
                     select.add_option(label=button_template.format(type=utype, insufficient=insufficient, name=_upgrade.name, cost=_upgrade.cost), value=str(_upgrade.id))
                 if previous_button:
                     previous_button.disabled = not paginator.has_previous()
@@ -345,7 +345,7 @@ class Shop(GroupCog):
                     logger.triage(f"Deferred response for missing required upgrade error for upgrade {upgrade.name}")
                     return
 
-            if upgrade.type in [UpgradeType.UPGRADE, UpgradeType.MECH_CHASSIS, UpgradeType.HULL]:
+            if upgrade.type in [UpgradeTypeEnum.UPGRADE, UpgradeTypeEnum.MECH_CHASSIS, UpgradeTypeEnum.HULL]:
                 existing = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == _unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.id).first()
                 logger.triage(f"Checking if upgrade is repeatable: {upgrade.repeatable}")
                 if existing and not upgrade.repeatable:
@@ -376,7 +376,7 @@ class Shop(GroupCog):
                 await interaction.response.defer(thinking=False, ephemeral=True)
                 logger.triage(f"Deferred response for successful upgrade purchase {upgrade_name}")
 
-            elif upgrade.type == UpgradeType.REFIT:
+            elif upgrade.type == UpgradeTypeEnum.REFIT:
                 logger.triage(f"Starting refit purchase workflow for unit {_unit.name} to {upgrade.refit_target}")
                 refit_target = upgrade.refit_target
                 refit_cost = upgrade.cost
