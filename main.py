@@ -76,11 +76,6 @@ logger.info("Database tables created successfully.")
 Session = sessionmaker(bind=engine)
 session = Session()
 
-# Populate upgrade_types table with enum members
-from models import UpgradeType, UpgradeTypeEnum
-for key in UpgradeTypeEnum.__members__:
-    upgrade_type = UpgradeType(name=key)
-    session.merge(upgrade_type)
 session.commit()
 logger.info("Upgrade types populated successfully.")
 if engine.dialect.name == "mysql":
