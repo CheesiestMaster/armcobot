@@ -247,13 +247,8 @@ class Backup(GroupCog):
     async def _validate_foreign_keys(self, session: Session):
         """Validate all foreign key constraints after restore"""
         # This will fail if there are any foreign key constraint violations
-        try:
-            # Run a query that would trigger foreign key validation
-            session.execute(text("SELECT 1"))
-            session.flush()
-        except Exception as e:
-            logger.error(f"Foreign key validation failed: {str(e)}")
-            raise Exception(f"Foreign key constraint validation failed: {str(e)}")
+        session.execute(text("SELECT 1"))
+        session.flush()
 
 bot: Bot = None
 async def setup(_bot: Bot):
