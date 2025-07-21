@@ -21,7 +21,10 @@ class Backup(GroupCog):
  
         self.use_ephemeral = bot.use_ephemeral
         self.xls_roller = FileRoller("backup.xlsx", 6)
-        self.sql_roller = FileRoller("backup.sql", 2)
+        if CustomClient().dialect == "sqlite":
+            self.sqlite_roller = FileRoller("backup.db", 2)
+        elif CustomClient().dialect == "mysql":
+            self.sql_roller = FileRoller("backup.sql", 2)
         self.interaction_check = self.is_mod
 
     async def is_mod(self, interaction: Interaction):
@@ -58,25 +61,37 @@ class Backup(GroupCog):
 
         await interaction.followup.send(f"Excel file created: {handle_path}", ephemeral=self.use_ephemeral)
 
-    @ac.command(name="create-sql", description="Create a mysqldump file with the current state of the database")
-    async def create_sql(self, interaction: Interaction):
-        await interaction.response.defer(ephemeral=self.use_ephemeral)
-        # we need to use subprocess to call mysqldump
-        # for all other parameters, we assume localhost and armco as the user and schema
-        
-        # Roll the file and prepare for writing
-        self.sql_roller.roll() 
-        # we will use the async subprocess to redirect the output to the handle, so we need to leave it open
-        command = ["mysqldump", "-h", "localhost", "-u", "armco", "armco"]
-        process = await asyncio.create_subprocess_exec(*command, stdout=self.sql_roller.current_handle, stderr=asyncio.subprocess.PIPE, env={"MYSQL_PWD": os.getenv("MYSQL_PASSWORD")})
+    if CustomClient().dialect == "mysql":
+        @ac.command(name="create-sql", description="Create a mysqldump file with the current state of the database")
+        async def create_sql(self, interaction: Interaction):
+            await interaction.response.defer(ephemeral=self.use_ephemeral)
+            # we need to use subprocess to call mysqldump
+            # for all other parameters, we assume localhost and armco as the user and schema
+            
+            # Roll the file and prepare for writing
+            self.sql_roller.roll() 
+            # we will use the async subprocess to redirect the output to the handle, so we need to leave it open
+            command = ["mysqldump", "-h", "localhost", "-u", "armco", "armco"]
+            process = await asyncio.create_subprocess_exec(*command, stdout=self.sql_roller.current_handle, stderr=asyncio.subprocess.PIPE, env={"MYSQL_PWD": os.getenv("MYSQL_PASSWORD")})
 
-        _, stderr = await process.communicate()
-        if stderr or process.returncode != 0:
-            logger.error(f"Error creating SQL dump: {stderr.decode() if stderr else 'Unknown error'}")
-            await interaction.followup.send(f"Error creating SQL dump: {stderr.decode() if stderr else 'Unknown error'}", ephemeral=True)
-        else:
-            await interaction.followup.send(f"SQL dump created: {self.sql_roller.current_handle.name}", ephemeral=self.use_ephemeral)
-        self.sql_roller.close()
+            _, stderr = await process.communicate()
+            if stderr or process.returncode != 0:
+                logger.error(f"Error creating SQL dump: {stderr.decode() if stderr else 'Unknown error'}")
+                await interaction.followup.send(f"Error creating SQL dump: {stderr.decode() if stderr else 'Unknown error'}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"SQL dump created: {self.sql_roller.current_handle.name}", ephemeral=self.use_ephemeral)
+            self.sql_roller.close()
+
+    elif CustomClient().dialect == "sqlite":
+        @ac.command(name="create-sql", description="Create a sqlite3 dump file with the current state of the database")
+        async def create_sql(self, interaction: Interaction):
+            await interaction.response.defer(ephemeral=self.use_ephemeral)
+            self.sqlite_roller.roll()
+            with open(os.getenv("DB_URL").replace("sqlite:///", ""), "rb") as f:
+                with open(self.sqlite_roller.current_handle.name, "wb") as f2:
+                    f2.write(f.read())
+            self.sqlite_roller.close()
+            await interaction.followup.send(f"SQL dump created: backup.db", ephemeral=self.use_ephemeral)
 
     @ac.command(name="restore", description="Restore database from Excel or CSV file")
     @error_reporting(verbose=True)
