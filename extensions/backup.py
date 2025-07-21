@@ -84,27 +84,21 @@ class Backup(GroupCog):
     async def restore_db(self, interaction: Interaction, session: Session, file: Attachment, table_name: str = None, separator: str = ","):
         await interaction.response.defer(ephemeral=self.use_ephemeral)
         
-        try:
-            # Download the file
-            file_data = await file.read()
-            file_extension = os.path.splitext(file.filename)[1].lower()
-            
-            # Determine file type and process accordingly
-            if file_extension == '.xlsx':
-                await self._restore_from_xlsx(session, file_data, interaction)
-            elif file_extension == '.csv':
-                if not table_name:
-                    await interaction.followup.send("Table name is required for CSV files", ephemeral=True)
-                    return
-                await self._restore_from_csv(session, file_data, table_name, separator, interaction)
-            else:
-                await interaction.followup.send("Unsupported file type. Please use .xlsx or .csv files", ephemeral=True)
+        # Download the file
+        file_data = await file.read()
+        file_extension = os.path.splitext(file.filename)[1].lower()
+        
+        # Determine file type and process accordingly
+        if file_extension == '.xlsx':
+            await self._restore_from_xlsx(session, file_data, interaction)
+        elif file_extension == '.csv':
+            if not table_name:
+                await interaction.followup.send("Table name is required for CSV files", ephemeral=True)
                 return
-                
-        except Exception as e:
-            logger.error(f"Error during restore: {str(e)}")
-            await interaction.followup.send(f"Error during restore: {str(e)}", ephemeral=True)
-            raise
+            await self._restore_from_csv(session, file_data, table_name, separator, interaction)
+        else:
+            await interaction.followup.send("Unsupported file type. Please use .xlsx or .csv files", ephemeral=True)
+            return
     
     async def _restore_from_xlsx(self, session: Session, file_data: bytes, interaction: Interaction):
         """Restore database from Excel file using sheet names as table names"""
