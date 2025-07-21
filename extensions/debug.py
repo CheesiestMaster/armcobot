@@ -347,11 +347,29 @@ class Debug(GroupCog):
     @uses_db(CustomClient().sessionmaker)
     async def test(self, interaction: Interaction, session: Session):
         await interaction.response.defer(ephemeral=True)
-        tasks = asyncio.all_tasks()
-        for task in tasks:
-            if "bump_briefing" in task.get_name():
-                logger.debug(task)
-        await interaction.followup.send(tmpl.test_complete, ephemeral=True)
+        main_guild = self.bot.get_guild(int(os.getenv("MAIN_GUILD_ID", "222052888531173386")))
+        if main_guild:
+            # get all the users and roles in the environment, and send f"{key}: {value.mention}" for each
+            message = "Users:\n"
+            owner1 = main_guild.get_role(int(os.getenv("BOT_OWNER_ID")))
+            owner2 = main_guild.get_role(int(os.getenv("BOT_OWNER_ID_2")))
+            answerer1 = main_guild.get_role(int(os.getenv("FAQ_ANSWERER_1")))
+            answerer2 = main_guild.get_role(int(os.getenv("FAQ_ANSWERER_2")))
+            mod1 = main_guild.get_role(int(os.getenv("MOD_ROLE_1")))
+            mod2 = main_guild.get_role(int(os.getenv("MOD_ROLE_2")))
+            gm = main_guild.get_role(int(os.getenv("GM_ROLE")))
+            commnet = main_guild.get_channel(int(os.getenv("COMM_NET_CHANNEL_ID")))
+            message += f"Owner 1: {owner1.mention if owner1 else 'Unknown'}\n"
+            message += f"Owner 2: {owner2.mention if owner2 else 'Unknown'}\n"
+            message += f"Answerer 1: {answerer1.mention if answerer1 else 'Unknown'}\n"
+            message += f"Answerer 2: {answerer2.mention if answerer2 else 'Unknown'}\n"
+            message += f"Mod 1: {mod1.mention if mod1 else 'Unknown'}\n"
+            message += f"Mod 2: {mod2.mention if mod2 else 'Unknown'}\n"
+            message += f"GM: {gm.mention if gm else 'Unknown'}\n"
+            message += f"CommNet: {commnet.mention if commnet else 'Unknown'}\n"
+            await interaction.followup.send(message)
+        else:
+            await interaction.followup.send("Main guild not found")
 
     @ac.command(name="logmark", description="make a marker in the logs")
     async def logmark(self, interaction: Interaction):

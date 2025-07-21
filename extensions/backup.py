@@ -87,7 +87,7 @@ class Backup(GroupCog):
         async def create_sql(self, interaction: Interaction):
             await interaction.response.defer(ephemeral=self.use_ephemeral)
             self.sqlite_roller.roll()
-            with open(os.getenv("DB_URL").replace("sqlite:///", ""), "rb") as f:
+            with open(os.getenv("DATABASE_URL").replace("sqlite:///", ""), "rb") as f:
                 with open(self.sqlite_roller.current_handle.name, "wb") as f2:
                     f2.write(f.read())
             self.sqlite_roller.close()
