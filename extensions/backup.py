@@ -9,7 +9,7 @@ from FileRoller import FileRoller
 import asyncio
 import os
 from customclient import CustomClient
-from utils import uses_db
+from utils import uses_db, error_reporting
 from sqlalchemy.orm import Session
 import io
 import tempfile
@@ -79,6 +79,7 @@ class Backup(GroupCog):
         self.sql_roller.close()
 
     @ac.command(name="restore", description="Restore database from Excel or CSV file")
+    @error_reporting(verbose=True)
     @uses_db(CustomClient().sessionmaker)
     async def restore_db(self, interaction: Interaction, session: Session, file: Attachment, table_name: str = None, separator: str = ","):
         await interaction.response.defer(ephemeral=self.use_ephemeral)
