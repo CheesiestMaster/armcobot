@@ -115,7 +115,7 @@ class Backup(GroupCog):
             excel_data = read_excel(temp_file.name, sheet_name=None)
             
             # Disable foreign key checks
-            session.execute(text("SET foreign_key_checks = 0"))
+            self._disable_foreign_keys(session)
             
             try:
                 total_records = 0
@@ -131,7 +131,7 @@ class Backup(GroupCog):
                         logger.warning(f"Table {sheet_name} not found in database schema, skipping")
                 
                 # Re-enable foreign key checks
-                session.execute(text("SET foreign_key_checks = 1"))
+                self._enable_foreign_keys(session)
                 
                 # Validate foreign key constraints
                 await self._validate_foreign_keys(session)
@@ -145,7 +145,7 @@ class Backup(GroupCog):
                 
             except Exception as e:
                 # Re-enable foreign key checks even if there was an error
-                session.execute(text("SET foreign_key_checks = 1"))
+                self._enable_foreign_keys(session)
                 raise e
     
     async def _restore_from_csv(self, session: Session, file_data: bytes, table_name: str, separator: str, interaction: Interaction):
@@ -158,13 +158,13 @@ class Backup(GroupCog):
         df = read_csv(io.BytesIO(file_data), sep=separator)
         
         # Disable foreign key checks
-        session.execute(text("SET foreign_key_checks = 0"))
+        self._disable_foreign_keys(session)
         
         try:
             records_processed = await self._upsert_dataframe(session, df, table_name)
             
             # Re-enable foreign key checks
-            session.execute(text("SET foreign_key_checks = 1"))
+            self._enable_foreign_keys(session)
             
             # Validate foreign key constraints
             await self._validate_foreign_keys(session)
@@ -178,7 +178,7 @@ class Backup(GroupCog):
             
         except Exception as e:
             # Re-enable foreign key checks even if there was an error
-            session.execute(text("SET foreign_key_checks = 1"))
+            self._enable_foreign_keys(session)
             raise e
     
     async def _upsert_dataframe(self, session: Session, df: DataFrame, table_name: str) -> int:
@@ -232,6 +232,22 @@ class Backup(GroupCog):
                 records_processed += 1
         
         return records_processed
+    
+    def _disable_foreign_keys(self, session: Session):
+        """Disable foreign key checks in a dialect-aware manner"""
+        client = CustomClient()
+        if client.dialect == "mysql":
+            session.execute(text("SET foreign_key_checks = 0"))
+        else:  # SQLite
+            session.execute(text("PRAGMA foreign_keys = OFF"))
+    
+    def _enable_foreign_keys(self, session: Session):
+        """Enable foreign key checks in a dialect-aware manner"""
+        client = CustomClient()
+        if client.dialect == "mysql":
+            session.execute(text("SET foreign_key_checks = 1"))
+        else:  # SQLite
+            session.execute(text("PRAGMA foreign_keys = ON"))
     
     async def _validate_foreign_keys(self, session: Session):
         """Validate all foreign key constraints after restore"""
