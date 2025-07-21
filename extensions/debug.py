@@ -351,10 +351,10 @@ class Debug(GroupCog):
         if main_guild:
             # get all the users and roles in the environment, and send f"{key}: {value.mention}" for each
             message = "Users:\n"
-            owner1 = main_guild.get_role(int(os.getenv("BOT_OWNER_ID")))
-            owner2 = main_guild.get_role(int(os.getenv("BOT_OWNER_ID_2")))
-            answerer1 = main_guild.get_role(int(os.getenv("FAQ_ANSWERER_1")))
-            answerer2 = main_guild.get_role(int(os.getenv("FAQ_ANSWERER_2")))
+            owner1 = main_guild.get_member(int(os.getenv("BOT_OWNER_ID")))
+            owner2 = main_guild.get_member(int(os.getenv("BOT_OWNER_ID_2")))
+            answerer1 = main_guild.get_member(int(os.getenv("FAQ_ANSWERER_1")))
+            answerer2 = main_guild.get_member(int(os.getenv("FAQ_ANSWERER_2")))
             mod1 = main_guild.get_role(int(os.getenv("MOD_ROLE_1")))
             mod2 = main_guild.get_role(int(os.getenv("MOD_ROLE_2")))
             gm = main_guild.get_role(int(os.getenv("GM_ROLE")))
