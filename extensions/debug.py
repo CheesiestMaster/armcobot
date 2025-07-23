@@ -74,8 +74,7 @@ class Debug(GroupCog):
         logger.info("Stop command invoked")
         await interaction.response.send_message(tmpl.stopping_bot)
         if os.getenv("LOOP_ACTIVE"):
-            with open("terminate.flag", "w"):
-                pass # the file just needs to exist, doesn't need to be written to
+            open("terminate.flag", "w").close()
         await self.bot.close()
 
     if os.getenv("LOOP_ACTIVE"):
@@ -85,6 +84,16 @@ class Debug(GroupCog):
             if interaction: # allow the command to be used internally as well as in discord, we can pass None to use it internally and it will not try to send a message
                 await interaction.response.send_message(tmpl.restarting_bot)
             await self.bot.close() # this will trigger the start.sh script to restart, if we used kill it would completely stop the script
+
+        @ac.command(name="update_and_restart", description="Update the bot and restart it")
+        async def update_and_restart(self, interaction: Interaction):
+            # just like restart, except we touch the update.flag file
+            logger.info("Update and restart command invoked")
+            if interaction:
+                await interaction.response.send_message(tmpl.updating_bot)
+            open("update.flag", "w").close()
+            await self.bot.close()
+
         
     @ac.command(name="reload_strings", description="Reload the templates module")
     async def reload_strings(self, interaction: Interaction):
@@ -168,9 +177,34 @@ class Debug(GroupCog):
         await self.bot.tree.sync()
 
     @ac.command(name="query", description="Run a SQL query")
-    @ac.describe(query="SQL query to run")
+    @ac.describe(query="SQL query to run (leave empty for modal)")
     @uses_db(CustomClient().sessionmaker)
-    async def query(self, interaction: Interaction, query: str, session: Session) -> None:
+    async def query(self, interaction: Interaction, query: str = "", session: Session = None) -> None:
+        if not query:
+            # Send modal for multi-line SQL input
+            query_modal = ui.Modal(title="SQL Query")
+            query_modal.add_item(ui.TextInput(label="SQL Query", style=TextStyle.paragraph, placeholder="Enter your SQL query here..."))
+
+            async def on_submit(_interaction: Interaction):
+                sql_query = _interaction.data["components"][0]["components"][0]["value"]
+                try:
+                    logger.info(f"Running query: {sql_query}")
+                    result = session.execute(text(sql_query))
+                    session.commit()
+                    try:
+                        rows = result.fetchall()
+                    except Exception:
+                        rows = None
+                    await _interaction.response.send_message(f"Query result: {rows}" if rows else "No rows returned", ephemeral=self.bot.use_ephemeral)
+                except Exception as e:
+                    logger.error(f"Error running query: {e}")
+                    await _interaction.response.send_message(f"Error: {e}", ephemeral=self.bot.use_ephemeral)
+
+            query_modal.on_submit = on_submit
+            await interaction.response.send_modal(query_modal)
+            return
+
+        # Handle direct query input
         try:
             logger.info(f"Running query: {query}")
             result = session.execute(text(query))
