@@ -25,6 +25,7 @@ while true; do
         fi
         git pull
         echo "Updated"
+    fi
     echo "Restarting..."
     sleep 1
 done
