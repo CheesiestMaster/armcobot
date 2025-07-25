@@ -47,6 +47,10 @@ class UpgradeType(BaseModel):
     __tablename__ = "upgrade_types"
     # columns
     name: Mapped[str] = mapped_column(String(30), primary_key=True)
+    emoji: Mapped[str] = mapped_column(String(4), default="")
+    is_refit: Mapped[bool] = mapped_column(Boolean, default=False)
+    non_purchaseable: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_use_unit_req: Mapped[bool] = mapped_column(Boolean, default=False)
 
 class Extension(BaseModel):
     __tablename__ = "extensions"
@@ -224,6 +228,7 @@ class ShopUpgrade(BaseModel):
         back_populates="compatible_upgrades",
         overlaps="unit_types,type_info",
         lazy="select")
+    upgrade_type: Mapped[UpgradeType] = relationship("UpgradeType", foreign_keys=[type], lazy="joined")
 
 class ShopUpgradeUnitTypes(BaseModel):
     __tablename__ = "shop_upgrade_unit_types"

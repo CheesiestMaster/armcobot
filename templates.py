@@ -117,6 +117,7 @@ already_have_upgrade = "You already have this upgrade"
 already_have_stockpile = "You already have a stockpile unit"
 not_enough_bonus_pay = f"You don't have enough {SECONDARY_CURRENCY} to convert"
 dont_have_stockpile = "You don't have a stockpile unit"
+upgrade_non_purchaseable = "This upgrade is not purchaseable"
 
 # Shop UI elements
 shop_title = "Shop"
