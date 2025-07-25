@@ -4,7 +4,7 @@ from discord.ext import tasks
 from discord import Interaction, app_commands as ac
 import asyncio
 import os
-from datetime import datetime, timedelta
+import datetime
 import templates as tmpl
 logger = getLogger(__name__)
 
