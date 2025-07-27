@@ -76,6 +76,112 @@ cannot_unload_debug = "Cannot unload debug extension from in Discord"
 checking_fk = "Checking External Foreign Keys"
 applying_updates = "Applying updates"
 
+# Permission and validation messages
+not_authorized = "You are not authorized to use this command"
+no_permission_set_nickname = "You don't have permission to set the bot's nickname"
+text_channel_only = "This command can only be used in a text channel"
+dm_not_allowed = "This command cannot be run in a DM"
+server_only = "This command can only be run in a server"
+
+# Campaign related messages
+campaign_not_found = "Campaign not found"
+campaign_name_too_long = "Campaign name must be less than 30 characters"
+campaign_name_invalid_char = "Campaign name cannot contain a '#' due to discord autocompletion"
+campaign_name_taken = "Campaign name already taken"
+campaign_created = "Campaign {name} created"
+campaign_opened = "Campaign {campaign} opened"
+campaign_closed = "Campaign {campaign} closed"
+gm_cannot_create_for_others = "GMs cannot create campaigns for other GMs, ask a bot Manager to do this"
+gm_no_permission = "{gm.mention} doesn't have permission to be a GM"
+no_permission_open_campaign = "You don't have permission to open this campaign"
+no_permission_close_campaign = "You don't have permission to close this campaign"
+no_permission_remove_campaign = "You don't have permission to remove this campaign"
+no_permission_payout_campaign = "You don't have permission to payout this campaign"
+no_permission_invite_campaign = "You don't have permission to invite to this campaign"
+no_permission_deactivate_player = "You don't have permission to deactivate this player"
+no_permission_kill_unit = "You don't have permission to kill this unit"
+no_permission_raffle_units = "You don't have permission to raffle units"
+no_permission_limit_types = "You don't have permission to limit types for this campaign"
+no_permission_merge_campaigns = "You don't have permission to merge these campaigns"
+
+# Unit related messages
+unit_not_found = "Unit not found"
+unit_not_active = "Unit is not active"
+unit_already_active = "You already have an active unit"
+unit_not_inactive = "That unit is not inactive"
+unit_name_too_long = "Unit name is too long, please use a shorter name"
+unit_name_invalid = "Unit names cannot contain discord tags"
+unit_name_ascii = "Unit names must be ASCII"
+unit_name_exists = "You already have a unit with that name"
+unit_invalid_type = "Invalid unit type, something went wrong"
+callsign_too_long = "Callsign is too long, please use a shorter callsign"
+callsign_invalid = "Callsigns cannot contain discord tags"
+callsign_ascii = "Callsigns must be ASCII"
+callsign_taken = "That callsign is already in use"
+stockpile_cannot_remove = "Stockpile units cannot be removed"
+stockpile_cannot_rename = "Stockpile units cannot be renamed"
+unit_removed = "Unit {unit.name} removed"
+unit_deactivated = "Unit with callsign {original_callsign} deactivated"
+unit_renamed = "Unit renamed to {new_name}"
+unit_killed = "Unit {callsign} killed{mia_text}"
+
+# Player related messages
+player_not_found = "Player not found"
+player_no_company = "Player doesn't have a Meta Campaign company"
+player_no_units = "User doesn't have any Units"
+player_max_units = "You already have 3 proposed Units, which is the maximum allowed"
+player_not_eligible = "You are not eligible to join this campaign"
+player_invited = "Player {player.mention} invited to {campaign}"
+player_deactivated = "Player {player.mention} deactivated from {campaign}"
+
+# FAQ related messages
+faq_no_questions = "No FAQ questions found"
+faq_select_question = "Select a question"
+faq_max_questions = "You cannot add more than 125 questions to the FAQ"
+faq_question_added = "Question added to the FAQ"
+faq_question_removed = "Question removed from the FAQ"
+faq_question_edited = "Question edited in the FAQ"
+faq_file_here = "Here is the question file"
+
+# Company related messages
+company_name_length = "Name must be between 1 and 32 characters"
+company_lore_length = "Lore must be less than 1000 characters"
+company_lore_urls = "Lore cannot contain invalid URLs"
+
+# Search related messages
+search_no_company = "You don't have a Meta Campaign company so you can't search"
+search_select_params = "Please select the unit type and the ao"
+
+# Configuration related messages
+config_nickname_global = "Bot nickname globally set to {nick}"
+config_nickname_guild = "Bot nickname in {interaction.guild.name} set to {nick}"
+config_dossier_channel = "Dossier channel set to {interaction.channel.mention}"
+config_stats_channel = "Statistics channel set to {interaction.channel.mention}"
+config_list = "Configurations:\n{config_str}"
+
+# Debug related messages
+debug_no_commands = "No commands found"
+debug_reload_success = "String templates and dependent modules reloaded successfully"
+debug_reload_error = "Error reloading templates: {e}"
+debug_reloading = "Reloading {extension}"
+debug_loading = "Loading {extension}"
+debug_unloading = "Unloading {extension}"
+debug_query_result = "Query result: {rows}"
+debug_query_no_rows = "No rows returned"
+debug_query_error = "Error: {e}"
+debug_command_ban_status = "Command ban is {status}"
+debug_command_ban_toggle = "Command ban {action}"
+debug_log_level = "Log level set to {level}"
+
+# Ping related messages
+ping_recent_user = "You've already pinged me recently, wait a bit before pinging again"
+ping_recent_bot = "I've been pinged recently, wait a bit before pinging again"
+ping_response = "Pong! I was last restarted at <t:{timestamp}:F>, <t:{timestamp}:R>"
+
+# Command ban messages
+command_ban_effect = "# A COMMAND BAN IS IN EFFECT {user.mention}, WHY ARE YOU TRYING TO RUN A COMMAND?"
+user_banned = "You are banned from using this bot"
+
 # Bot responses
 marker_made = "Marker made"
 test_complete = "Test complete"

@@ -59,11 +59,7 @@ class Debug(GroupCog):
             rp_modal.add_item(ui.TextInput(label="Message", style=TextStyle.paragraph))
 
             async def on_submit(_interaction: Interaction):
-                template = """---- RP POST ----
-```ansi
-[32m{message}
-```"""
-                await message.reply(template.format(message=_interaction.data["components"][0]["components"][0]["value"]), mention_author=False)
+                await message.reply(tmpl.rp_template.format(message=_interaction.data["components"][0]["components"][0]["value"]), mention_author=False)
                 await _interaction.response.send_message(tmpl.message_sent, ephemeral=self.bot.use_ephemeral)
 
             rp_modal.on_submit = on_submit
@@ -136,17 +132,17 @@ class Debug(GroupCog):
             
             # Update the global tmpl reference
             import templates as tmpl
-            await interaction.response.send_message("String templates and dependent modules reloaded successfully", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.debug_reload_success, ephemeral=self.bot.use_ephemeral)
         except Exception as e:
             logger.error(f"Error reloading templates: {e}")
-            await interaction.response.send_message(f"Error reloading templates: {e}", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.debug_reload_error.format(e=e), ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="reload", description="Reload an extension")
     @ac.autocomplete(extension=_autocomplete_extensions)
     async def reload(self, interaction: Interaction, extension: str):
         extension = "extensions." + extension
         logger.info(f"Reload command invoked for {extension}")
-        await interaction.response.send_message(f"Reloading {extension}", ephemeral=self.bot.use_ephemeral)
+        await interaction.response.send_message(tmpl.debug_reloading.format(extension=extension), ephemeral=self.bot.use_ephemeral)
         await self.bot.reload_extension(extension)
         await self.bot.tree.sync()
 
@@ -155,7 +151,7 @@ class Debug(GroupCog):
     async def load(self, interaction: Interaction, extension: str):
         extension = "extensions." + extension
         logger.info(f"Load command invoked for {extension}")
-        await interaction.response.send_message(f"Loading {extension} ")
+        await interaction.response.send_message(tmpl.debug_loading.format(extension=extension))
         await self.bot.load_extension(extension)
         if not self.bot.config.get("EXTENSIONS"):
             self.bot.config["EXTENSIONS"] = []
@@ -171,7 +167,7 @@ class Debug(GroupCog):
             await interaction.response.send_message(tmpl.cannot_unload_debug)
             return
         logger.info(f"Unload command invoked for {extension}")
-        await interaction.response.send_message(f"Unloading {extension}")
+        await interaction.response.send_message(tmpl.debug_unloading.format(extension=extension))
         await self.bot.unload_extension(extension)
         self.bot.config["EXTENSIONS"].remove(extension)
         await self.bot.tree.sync()
@@ -195,10 +191,10 @@ class Debug(GroupCog):
                         rows = result.fetchall()
                     except Exception:
                         rows = None
-                    await _interaction.response.send_message(f"Query result: {rows}" if rows else "No rows returned", ephemeral=self.bot.use_ephemeral)
+                    await _interaction.response.send_message(tmpl.debug_query_result.format(rows=rows) if rows else tmpl.debug_query_no_rows, ephemeral=self.bot.use_ephemeral)
                 except Exception as e:
                     logger.error(f"Error running query: {e}")
-                    await _interaction.response.send_message(f"Error: {e}", ephemeral=self.bot.use_ephemeral)
+                    await _interaction.response.send_message(tmpl.debug_query_error.format(e=e), ephemeral=self.bot.use_ephemeral)
 
             query_modal.on_submit = on_submit
             await interaction.response.send_modal(query_modal)
@@ -213,10 +209,10 @@ class Debug(GroupCog):
                 rows = result.fetchall()
             except Exception:
                 rows = None
-            await interaction.response.send_message(f"Query result: {rows}" if rows else "No rows returned", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.debug_query_result.format(rows=rows) if rows else tmpl.debug_query_no_rows, ephemeral=self.bot.use_ephemeral)
         except Exception as e:
             logger.error(f"Error running query: {e}")
-            await interaction.response.send_message(f"Error: {e}", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.debug_query_error.format(e=e), ephemeral=self.bot.use_ephemeral)
 
     @uses_db(CustomClient().sessionmaker)
     async def botcompany(self, interaction: Interaction, _: MessageManager, session: Session):
@@ -236,12 +232,8 @@ class Debug(GroupCog):
 
         async def on_submit(_interaction: Interaction):
             channel = interaction.channel # we are specifically looking at the original command's interaction, not the modal response _interaction
-            template = """---- RP POST ----
-```ansi
-[32m{message}
-```"""
-            await channel.send(template.format(message=_interaction.data["components"][0]["components"][0]["value"]))
-            await _interaction.response.send_message("Message sent", ephemeral=self.bot.use_ephemeral)
+            await channel.send(tmpl.rp_template.format(message=_interaction.data["components"][0]["components"][0]["value"]))
+            await _interaction.response.send_message(tmpl.message_sent, ephemeral=self.bot.use_ephemeral)
 
         rp_modal.on_submit = on_submit
         await interaction.response.send_modal(rp_modal)
@@ -301,7 +293,7 @@ class Debug(GroupCog):
 
         options = [v for k, v in self.__class__.__dict__.items() if not k.startswith("_") and callable(v)]
         if not options:
-            await interaction.response.send_message("No commands found", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.debug_no_commands, ephemeral=self.bot.use_ephemeral)
             return
 
         select = ui.Select(placeholder="Select a command", options=[SelectOption(label=option.__name__, value=option.__name__) for option in options])
@@ -318,15 +310,15 @@ class Debug(GroupCog):
         # if check is true, compare CustomClient().tree.interaction_check with CustomClient().no_commands
         is_banned = self.bot.tree.interaction_check == self.bot.no_commands
         if check:
-            await interaction.response.send_message(f"Command ban is {'enabled' if is_banned else 'disabled'}", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.debug_command_ban_status.format(status='enabled' if is_banned else 'disabled'), ephemeral=self.bot.use_ephemeral)
             return
         await toggle_command_ban(is_banned, interaction.user.mention)
-        await interaction.response.send_message(f"Command ban {'disabled' if is_banned else 'enabled'}", ephemeral=self.bot.use_ephemeral)
+        await interaction.response.send_message(tmpl.debug_command_ban_toggle.format(action='disabled' if is_banned else 'enabled'), ephemeral=self.bot.use_ephemeral)
         
     @ac.command(name="fkcheck", description="Validate External Foreign Keys")
     async def fkcheck(self, interaction: Interaction):
         if not await is_server(interaction):
-            await interaction.response.send_message("This command cannot be run in a DM", ephemeral=True)
+            await interaction.response.send_message(tmpl.dm_not_allowed, ephemeral=True)
             return
         await interaction.response.send_message(tmpl.checking_fk)
         # get the 3 tables that have external foreign keys (Player, Statistics, Dossiers)
@@ -419,7 +411,7 @@ class Debug(GroupCog):
             logger = logging.getLogger(_logger)
         logger.setLevel(level)
         logger.info(f"Log level set to {level}")
-        await interaction.response.send_message(f"Log level set to {level}", ephemeral=True)
+        await interaction.response.send_message(tmpl.debug_log_level.format(level=level), ephemeral=True)
         
     has_run = True # False
     @loop(hours=3)

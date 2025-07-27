@@ -5,6 +5,7 @@ from models import Config as Config_model, Dossier, Player, Statistic
 from customclient import CustomClient
 from utils import uses_db
 from sqlalchemy.orm import Session
+import templates as tmpl
 logger = getLogger(__name__)
 
 class Config(GroupCog):
@@ -39,13 +40,13 @@ class Config(GroupCog):
             await interaction.response.send_message(f"Bot nickname in {interaction.guild.name} set to {nick}", ephemeral=self.bot.use_ephemeral)
         else:
             logger.info(f"User {interaction.user.display_name} does not have permission to set the bot's nickname in {interaction.guild.name}")
-            await interaction.response.send_message("You don't have permission to set the bot's nickname", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.no_permission_set_nickname, ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="setdossier", description="Set the dossier channel to the current channel")
     @uses_db(CustomClient().sessionmaker)
     async def setdossier(self,interaction: Interaction, session: Session):
         if interaction.channel.type != ChannelType.text:
-            await interaction.response.send_message("This command can only be used in a text channel", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.text_channel_only, ephemeral=self.bot.use_ephemeral)
             return
         self.bot.config["dossier_channel_id"] = interaction.channel.id
         await self.bot.resync_config(session=session)
@@ -62,7 +63,7 @@ class Config(GroupCog):
     @uses_db(CustomClient().sessionmaker)
     async def setstatistics(self,interaction: Interaction, session: Session):
         if interaction.channel.type != ChannelType.text:
-            await interaction.response.send_message("This command can only be used in a text channel", ephemeral=self.bot.use_ephemeral)
+            await interaction.response.send_message(tmpl.text_channel_only, ephemeral=self.bot.use_ephemeral)
             return
         self.bot.config["statistics_channel_id"] = interaction.channel.id
         await self.bot.resync_config(session=session)

@@ -53,13 +53,13 @@ class Company(GroupCog):
                     await interaction.response.send_message(tmpl.invalid_input, ephemeral=CustomClient().use_ephemeral)
                     return
                 if 0 < len(self.children[0].value) > 32:
-                    await interaction.response.send_message("Name must be between 1 and 32 characters", ephemeral=CustomClient().use_ephemeral)
+                    await interaction.response.send_message(tmpl.company_name_length, ephemeral=CustomClient().use_ephemeral)
                     return
                 if len(self.children[1].value) > 1000:
-                    await interaction.response.send_message("Lore must be less than 1000 characters", ephemeral=CustomClient().use_ephemeral)
+                    await interaction.response.send_message(tmpl.company_lore_length, ephemeral=CustomClient().use_ephemeral)
                     return
                 if has_invalid_url(self.children[1].value):
-                    await interaction.response.send_message("Lore cannot contain invalid URLs", ephemeral=CustomClient().use_ephemeral)
+                    await interaction.response.send_message(tmpl.company_lore_urls, ephemeral=CustomClient().use_ephemeral)
                     return
                 _player = session.merge(self.player)
                 session.query(Player).filter(Player.id == _player.id).update({

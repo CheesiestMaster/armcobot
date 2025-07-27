@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from models import Player, Unit
 from customclient import CustomClient
 from utils import uses_db
+import templates as tmpl
 
 logger = getLogger(__name__)
 
@@ -42,7 +43,7 @@ class Search(GroupCog):
                """
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:
-            await interaction.response.send_message("You don't have a Meta Campaign company so you can't search", ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message(tmpl.search_no_company, ephemeral=CustomClient().use_ephemeral)
             return
         unit = session.query(Unit).filter(Unit.player_id == player.id, Unit.active == True).first()
         aos = session.query(Unit.area_operation).distinct().all()
@@ -127,7 +128,7 @@ class Search(GroupCog):
                                                         ephemeral=CustomClient().use_ephemeral)
 
         view = SearchView()
-        await interaction.response.send_message("Please select the unit type and the ao", view=view, ephemeral=CustomClient().use_ephemeral)
+        await interaction.response.send_message(tmpl.search_select_params, view=view, ephemeral=CustomClient().use_ephemeral)
 
 bot: Bot = None
 async def setup(_bot: Bot):
