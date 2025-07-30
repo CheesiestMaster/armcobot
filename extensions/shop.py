@@ -447,7 +447,7 @@ class Shop(GroupCog):
                 next_button.disabled = not paginator.has_next()
                 
             await message_manager.update_message(embed=embed)
-            await interaction.response.defer(thinking=False, ephemeral=True)
+            #await interaction.response.defer(thinking=False, ephemeral=True)
             logger.triage(f"Deferred response for previous page navigation for unit {unit_name}")
             
         previous_button.callback = previous_button_callback
