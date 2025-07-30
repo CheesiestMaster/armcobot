@@ -378,6 +378,11 @@ class Shop(GroupCog):
                     logger.triage(f"Skipping disabled upgrade {_upgrade.name}")
                     continue
                     
+                # Skip upgrades without valid upgrade type
+                if not _upgrade.upgrade_type:
+                    logger.error(f"Skipping upgrade ID:{_upgrade.id} Name:{_upgrade.name} Type:{_upgrade.type} - no valid upgrade type")
+                    continue
+                    
                 # Skip upgrades that can't use unit requisition when unit has unit_req
                 if not _upgrade.upgrade_type.can_use_unit_req and current_unit_req > 0:
                     logger.triage(f"Skipping upgrade {_upgrade.name} for unit {unit_name} because it has unit requisition")
