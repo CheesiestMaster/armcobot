@@ -416,7 +416,8 @@ class Debug(GroupCog):
     @ac.command(name="tail", description="Get the last ~2000 characters of the log file")
     async def tail(self, interaction: Interaction):
         with open(os.getenv("LOG_FILE"), "r") as f:
-            f.seek(-2500, os.SEEK_END)
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 2500))
             lines = f.readlines()
         good_lines = []
         if lines[0].startswith("20") and lines[0][2:4].isdigit():
