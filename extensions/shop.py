@@ -426,31 +426,31 @@ class Shop(GroupCog):
         if paginator.has_previous():
             previous_button.disabled = False
             
-            @uses_db(CustomClient().sessionmaker)
-            async def previous_button_callback(interaction: Interaction, session: Session):
-                """Callback for navigating to the previous page of upgrades"""
-                # Get fresh data from database
-                unit_name, unit_req = session.query(Unit.name, Unit.unit_req).filter(Unit.id == unit_id).first()
-                rec_points = session.query(Player.rec_points).filter(Player.id == player_id).scalar()
+        @uses_db(CustomClient().sessionmaker)
+        async def previous_button_callback(interaction: Interaction, session: Session):
+            """Callback for navigating to the previous page of upgrades"""
+            # Get fresh data from database
+            unit_name, unit_req = session.query(Unit.name, Unit.unit_req).filter(Unit.id == unit_id).first()
+            rec_points = session.query(Player.rec_points).filter(Player.id == player_id).scalar()
+            
+            logger.triage(f"Navigating to previous page of upgrades for unit {unit_name}")
+            await interaction.response.defer(thinking=False, ephemeral=True)
+            
+            # Update page and repopulate options
+            nonlocal page, select, previous_button, next_button
+            page = paginator.previous()
+            currency = populate_select_options(page, unit_req, rec_points)
+            
+            # Update button states based on pagination
+            previous_button.disabled = not paginator.has_previous()
+            if next_button:
+                next_button.disabled = not paginator.has_next()
                 
-                logger.triage(f"Navigating to previous page of upgrades for unit {unit_name}")
-                await interaction.response.defer(thinking=False, ephemeral=True)
-                
-                # Update page and repopulate options
-                nonlocal page, select, previous_button, next_button
-                page = paginator.previous()
-                currency = populate_select_options(page, unit_req, rec_points)
-                
-                # Update button states based on pagination
-                previous_button.disabled = not paginator.has_previous()
-                if next_button:
-                    next_button.disabled = not paginator.has_next()
-                    
-                await message_manager.update_message(embed=embed)
-                await interaction.response.defer(thinking=False, ephemeral=True)
-                logger.triage(f"Deferred response for previous page navigation for unit {unit_name}")
-                
-            previous_button.callback = previous_button_callback
+            await message_manager.update_message(embed=embed)
+            await interaction.response.defer(thinking=False, ephemeral=True)
+            logger.triage(f"Deferred response for previous page navigation for unit {unit_name}")
+            
+        previous_button.callback = previous_button_callback
         view.add_item(previous_button)
         
         # Add the main upgrade selection dropdown
