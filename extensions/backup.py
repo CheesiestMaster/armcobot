@@ -200,6 +200,10 @@ class Backup(GroupCog):
         primary_keys = [col.name for col in table.primary_key.columns]
         
         for _, row in df.iterrows():
+            # Skip completely empty rows
+            if row.isna().all():
+                continue
+                
             # Convert row to dictionary, handling NaN values
             row_dict = {}
             for col_name, value in row.items():

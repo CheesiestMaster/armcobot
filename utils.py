@@ -3,6 +3,7 @@ import os
 from functools import lru_cache, wraps
 from inspect import Signature
 import traceback
+import discord
 from sqlalchemy.orm import scoped_session
 from logging import getLogger
 import asyncio
@@ -362,11 +363,11 @@ async def toggle_command_ban(desired_state: bool, initiator: str):
         return current_state
     CustomClient().tree.interaction_check = CustomClient().check_banned_interaction if desired_state else CustomClient().no_commands
     if not desired_state:
-        comm_net = CustomClient().get_channel(int(getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
+        comm_net = CustomClient().get_channel(int(os.getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
         await comm_net.send(f"# Command ban has been enabled by {initiator}")
         logger.info(f"Command ban enabled by {initiator}")
     else:
-        comm_net = CustomClient().get_channel(int(getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
+        comm_net = CustomClient().get_channel(int(os.getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
         await comm_net.send(f"# Command ban has been disabled by {initiator}")
         logger.info(f"Command ban disabled by {initiator}")
     return desired_state
@@ -391,16 +392,24 @@ def error_reporting(verbose: None | bool = None):
 
     def decorator(func):
         @wraps(func)
-        async def wrapper(interaction: Interaction, *args, **kwargs):
+        async def wrapper(*args, **kwargs):
             try:
-                return await func(interaction, *args, **kwargs)
+                return await func(*args, **kwargs)
             except Exception as e:
                 error_msg = format_error(e)
-
-                if interaction.response.is_done():
-                    await interaction.followup.send(error_msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message(error_msg, ephemeral=True)
+                
+                # Find the Interaction object in the arguments
+                interaction = None
+                for arg in args:
+                    if isinstance(arg, discord.Interaction):
+                        interaction = arg
+                        break
+                
+                if interaction:
+                    if interaction.response.is_done():
+                        await interaction.followup.send(error_msg, ephemeral=True)
+                    else:
+                        await interaction.response.send_message(error_msg, ephemeral=True)
 
                 raise
 

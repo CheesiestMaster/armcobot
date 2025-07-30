@@ -412,7 +412,30 @@ class Debug(GroupCog):
         logger.setLevel(level)
         logger.info(f"Log level set to {level}")
         await interaction.response.send_message(tmpl.debug_log_level.format(level=level), ephemeral=True)
-        
+
+    @ac.command(name="tail", description="Get the last ~2000 characters of the log file")
+    async def tail(self, interaction: Interaction):
+        with open(os.getenv("LOG_FILE"), "r") as f:
+            f.seek(-2500, os.SEEK_END)
+            lines = f.readlines()
+        good_lines = []
+        if lines[0].startswith("20") and lines[0][2:4].isdigit():
+            good_lines = lines
+        elif "Error" in lines[0] or "Exception" in lines[0]:
+            good_lines = lines
+        else:
+            good_lines = lines[1:]
+        output_lines = []
+        current_length = 0
+        for line in reversed(good_lines):
+            new_length = current_length + len(line)
+            if new_length > 2000:
+                break
+            output_lines.append(line)
+            current_length = new_length
+        output_lines.reverse()
+        await interaction.response.send_message("\n".join(output_lines), ephemeral=True)
+
     has_run = True # False
     @loop(hours=3)
     async def _bump_briefing(self):
