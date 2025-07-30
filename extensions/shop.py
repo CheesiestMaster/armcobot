@@ -387,7 +387,8 @@ class Shop(GroupCog):
                 if not _upgrade.upgrade_type.can_use_unit_req and current_unit_req > 0:
                     logger.triage(f"Skipping upgrade {_upgrade.name} for unit {unit_name} because it has unit requisition")
                     continue
-                    
+                # we need to reacquire the _unit object in this scope, from the unit_id argument of the parent function
+                _unit = session.query(Unit).filter(Unit.id == unit_id).first()
                 # Check if upgrade is already owned and not repeatable
                 owned_upgrade = session.query(PlayerUpgrade).filter(
                     PlayerUpgrade.unit_id == _unit.id,
