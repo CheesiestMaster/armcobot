@@ -341,7 +341,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         view = RemoveUnitView(player_units)
         await interaction.response.send_message("Please select the unit you want to remove", view=view, ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="remove_unittype", description="Remove a unit type from the game")
+    #@ac.command(name="remove_unittype", description="Remove a unit type from the game")
     @ac.describe(name="The name of the unit type to remove")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
     async def remove_unittype(self, interaction: Interaction, name: str, session: Session):

@@ -426,3 +426,12 @@ def on_error_decorator(counter: Counter):
             return await func(interaction, error)
         return wrapper
     return decorator
+
+def inject(**_kwargs):
+    def decorator(func: Callable):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            kwargs_ = {**_kwargs, **kwargs}
+            return func(*args, **kwargs_)
+        return wrapper
+    return decorator

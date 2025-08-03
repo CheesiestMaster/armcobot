@@ -1,3 +1,4 @@
+**V1.0.10**: Added shop management command, 
 **V1.0.9**: Major shop rework, moved some state to the database instead of hardcoded, added better commenting to the shop
 **V1.0.8**: Added automatic update checker, improved debugging tools, enhanced backup functionality
 **V1.0.7**: Database restore functionality with Excel/CSV support, foreign key management improvements  

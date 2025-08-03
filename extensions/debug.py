@@ -3,7 +3,7 @@ from discord.ext.tasks import Loop
 from logging import getLogger
 import logging
 from pathlib import Path
-from discord.ext.commands import GroupCog, Bot
+from discord.ext.commands import GroupCog, Bot, Cog
 from discord import Interaction, app_commands as ac, ui, TextStyle, Embed, SelectOption, Forbidden, HTTPException, Message, NotFound, TextChannel
 from sqlalchemy import text, func
 import os
@@ -39,16 +39,35 @@ class Debug(GroupCog):
         self._setup_context_menus() # context menus cannot be instance methods, so we need to nest them
         #self._bump_briefing.start()
 
+    @Cog.listener()
+    async def on_interaction(self, interaction: Interaction):
+        logger.debug(f"Interaction received: {interaction.data}")
+
     async def _autocomplete_extensions(self, interaction: Interaction, current: str):
         return [ac.Choice(name=extension, value=extension) for extension in self.extensions if current.lower() in extension.lower() and not extension.startswith("template")]
 
     async def _is_mod(self, interaction: Interaction):
-        casting_guild=self.bot.get_guild(int(os.getenv("MAIN_GUILD_ID", 222052888531173386)))
-        cast_user = casting_guild.get_member(interaction.user.id)
-        valid = any(cast_user.get_role(role_id) for role_id in self.bot.mod_roles)
-        if not valid:
-            logger.warning(f"{interaction.user.global_name} tried to use debug commands")
-        return valid
+        try:
+            logger.debug(f"Checking if {interaction.user.global_name} is a mod")
+            casting_guild=self.bot.get_guild(int(os.getenv("MAIN_GUILD_ID", 222052888531173386)))
+            logger.debug(f"Casting guild: {casting_guild} from environ {os.getenv('MAIN_GUILD_ID')}")
+            
+            if casting_guild is None:
+                logger.error(f"Failed to get guild for mod check - guild cache may be unavailable")
+                return False
+                
+            cast_user = casting_guild.get_member(interaction.user.id)
+            logger.debug(f"Casting user: {cast_user}")
+            valid = any(cast_user.get_role(role_id) for role_id in self.bot.mod_roles)
+            logger.debug(f"Valid: {valid}")
+            if not valid:
+                logger.warning(f"{interaction.user.global_name} tried to use debug commands")
+            return valid
+        except AttributeError as e:
+            if "'NoneType' object has no attribute 'get_member'" in str(e):
+                logger.debug(f"Suppressing race condition error during reload: {e}")
+                return False
+            raise
 
     def _setup_context_menus(self):
         logger.debug("Setting up context menus for debug commands")

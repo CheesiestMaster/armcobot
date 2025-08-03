@@ -56,3 +56,13 @@ class MessageManager:
             await self.message.edit(embed=self.embed, view=self.view, **kwargs)
         else:
             raise ValueError("No message to update. Call `send_message` first.")
+        
+    async def delete_message(self):
+        if not self.message:
+            raise ValueError("No message to delete. Call `send_message` first.")
+        if isinstance(self.destination, discord.Interaction):
+            await self.destination.delete_original_response()
+        else:
+            await self.message.delete()
+        self.message = None
+        self.destination = None

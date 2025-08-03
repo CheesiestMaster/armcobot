@@ -51,6 +51,10 @@ class UpgradeType(BaseModel):
     is_refit: Mapped[bool] = mapped_column(Boolean, default=False)
     non_purchaseable: Mapped[bool] = mapped_column(Boolean, default=False)
     can_use_unit_req: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    # relationships
+    shop_upgrades: Mapped[list[ShopUpgrade]] = relationship("ShopUpgrade", foreign_keys="ShopUpgrade.type", back_populates="upgrade_type", lazy="select")
+    player_upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", foreign_keys="PlayerUpgrade.type", back_populates="upgrade_type", lazy="select")
 
 class Extension(BaseModel):
     __tablename__ = "extensions"
@@ -77,7 +81,7 @@ class Unit(BaseModel):
     player: Mapped[Player] = relationship("Player", back_populates="units")
     upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", back_populates="unit", cascade="all, delete-orphan", lazy="select")
     campaign: Mapped[Optional[Campaign]] = relationship("Campaign", back_populates="units")
-    type_info: Mapped[UnitType] = relationship("UnitType", foreign_keys=[unit_type], lazy="joined", back_populates="units")
+    type_info: Mapped[UnitType] = relationship("UnitType", foreign_keys=[unit_type], lazy="joined", back_populates="units", cascade="save-update")
     original_type_info: Mapped[Optional[UnitType]] = relationship("UnitType", foreign_keys=[original_type], lazy="joined", back_populates="original_units")
     available_upgrades: Mapped[list[ShopUpgrade]] = relationship(
         "ShopUpgrade",
@@ -154,6 +158,7 @@ class PlayerUpgrade(BaseModel):
     # relationships
     unit: Mapped[Unit] = relationship("Unit", back_populates="upgrades", lazy="joined")
     shop_upgrade: Mapped[Optional[ShopUpgrade]] = relationship("ShopUpgrade", back_populates="player_upgrades", lazy="joined")
+    upgrade_type: Mapped[UpgradeType] = relationship("UpgradeType", foreign_keys=[type], back_populates="player_upgrades", lazy="joined")
 
 class Dossier(BaseModel):
     __tablename__ = "dossiers"
@@ -228,7 +233,7 @@ class ShopUpgrade(BaseModel):
         back_populates="compatible_upgrades",
         overlaps="unit_types,type_info",
         lazy="select")
-    upgrade_type: Mapped[UpgradeType] = relationship("UpgradeType", foreign_keys=[type], lazy="joined")
+    upgrade_type: Mapped[UpgradeType] = relationship("UpgradeType", foreign_keys=[type], back_populates="shop_upgrades", lazy="joined")
 
 class ShopUpgradeUnitTypes(BaseModel):
     __tablename__ = "shop_upgrade_unit_types"
