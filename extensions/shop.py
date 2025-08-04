@@ -636,7 +636,8 @@ class Shop(GroupCog):
                 embed.description = tmpl.you_have_bought_refit.format(refit_target=refit_target, refit_cost=refit_cost)
                 embed.color = 0x00ff00  # Green for success
                 await message_manager.update_message(view=view, embed=embed)
-                await interaction.response.defer(thinking=False, ephemeral=True)
+                if not interaction.response.is_done():
+                    await interaction.response.defer(thinking=False, ephemeral=True)
                 logger.triage(f"Deferred response for successful refit purchase for unit {_unit.name}")
                 return
 
@@ -750,21 +751,22 @@ class Shop(GroupCog):
         predicate = self.original_author(interaction)
         injector = inject(message_manager=message_manager)
 
-        unittype_button = ui.Button(label="Unit Type", style=ButtonStyle.primary)
+        unittype_button = ui.Button(label=tmpl.shop_unit_type_button, style=ButtonStyle.primary)
         view.add_item(unittype_button)
         unittype_button.callback = ac.check(predicate)(injector(self.unittype_button_callback))
 
-        upgradetype_button = ui.Button(label="Upgrade Type", style=ButtonStyle.primary)
+        upgradetype_button = ui.Button(label=tmpl.shop_upgrade_type_button, style=ButtonStyle.primary)
         view.add_item(upgradetype_button)
         upgradetype_button.callback = ac.check(predicate)(injector(self.upgradetype_button_callback))
 
-        upgrade_button = ui.Button(label="Upgrade", style=ButtonStyle.primary)
+        upgrade_button = ui.Button(label=tmpl.shop_upgrade_button, style=ButtonStyle.primary)
         view.add_item(upgrade_button)
         upgrade_button.callback = ac.check(predicate)(injector(self.upgrade_button_callback))
 
         logger.debug("Sending manage interface")
-        await message_manager.send_message(content="Select what you want to manage", view=view, ephemeral=False)
+        await message_manager.send_message(content=tmpl.shop_manage_select_content, view=view, ephemeral=True)
 
+    @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
     async def unittype_button_callback(self, interaction: Interaction, message_manager: MessageManager, session: Session):
         logger.info(f"Unit type management accessed by {interaction.user.id} ({interaction.user.name})")
@@ -775,11 +777,11 @@ class Shop(GroupCog):
         # Add the "Add New" option to the list so pagination handles it naturally
         unit_types.append(("\0Add New Unit Type",))
         paginator: Paginator[tuple] = Paginator(unit_types, 25)
-        logger.debug(f"Found {len(unit_types)-1} unit types + add option, {paginator.pages} pages")
+        logger.debug(f"Found {len(unit_types)-1} unit types + add option, {len(paginator)} pages")
         view = ui.View()
-        select = ui.Select(placeholder="Select a unit type")
-        previous_button = ui.Button(label="Previous", style=ButtonStyle.secondary, disabled=True)
-        next_button = ui.Button(label="Next", style=ButtonStyle.secondary, disabled=not paginator.has_next())
+        select = ui.Select(placeholder=tmpl.shop_unit_type_select_placeholder)
+        previous_button = ui.Button(label=tmpl.shop_previous_button, style=ButtonStyle.secondary, disabled=True)
+        next_button = ui.Button(label=tmpl.shop_next_button, style=ButtonStyle.secondary, disabled=not paginator.has_next())
         predicate = self.original_author(interaction)
         check = ac.check(predicate)
         view.add_item(previous_button)
@@ -790,6 +792,7 @@ class Shop(GroupCog):
             select.add_option(label=unit_type[0], value=unit_type[0])
         
         @check
+        @error_reporting(True)
         async def previous_button_callback(interaction: Interaction):
             nonlocal paginator
             logger.debug("Previous button clicked")
@@ -815,6 +818,7 @@ class Shop(GroupCog):
         previous_button.callback = previous_button_callback
 
         @check
+        @error_reporting(True)
         async def next_button_callback(interaction: Interaction):
             nonlocal paginator
             logger.debug("Next button clicked")
@@ -840,6 +844,7 @@ class Shop(GroupCog):
         next_button.callback = next_button_callback
         
         @check
+        @error_reporting(True)
         @uses_db(CustomClient().sessionmaker)
         async def select_callback(interaction: Interaction, session: Session):
             # here is the complicated part, we have two cases, either the data is "\0add_new_unit_type" or it's a valid unit type id
@@ -849,8 +854,8 @@ class Shop(GroupCog):
             if target == "\0Add New Unit Type":
                 logger.info(f"Adding new unit type by {interaction.user.id}")
                 # send a modal to add a new unit type, we just need to get the name, we can get the rest of the data using subsequent dropdowns (because dropdowns are not allowed in modals)
-                modal = ui.Modal(title="Add New Unit Type")
-                modal.add_item(ui.TextInput(label="Unit Type Name", placeholder="Enter the name of the new unit type", style=TextStyle.short, required=True, max_length=15))
+                modal = ui.Modal(title=tmpl.shop_add_new_unit_type_modal_title)
+                modal.add_item(ui.TextInput(label=tmpl.shop_unit_type_name_label, placeholder=tmpl.shop_unit_type_name_placeholder, style=TextStyle.short, required=True, max_length=15))
                 await interaction.response.send_modal(modal)
 
                 @check
@@ -859,20 +864,21 @@ class Shop(GroupCog):
                     logger.debug(f"Modal submitted: {interaction.data}")
                     new_unit_type = UnitType(unit_type=interaction.data["components"][0]["components"][0]["value"])
                     view = ui.View()
-                    is_base_unit = ui.Select(placeholder="Is this a base unit?", options=[SelectOption(label="Yes", value="y"), SelectOption(label="No", value="n")])
+                    is_base_unit = ui.Select(placeholder=tmpl.shop_is_base_placeholder, options=[SelectOption(label="Yes", value="y"), SelectOption(label="No", value="n")])
                     # we are skipping the free upgrades for now, we can deal with that later
-                    unit_req_amount = ui.Select(placeholder="Unit Req Amount", options=[
+                    unit_req_amount = ui.Select(placeholder=tmpl.shop_unit_req_amount_placeholder, options=[
                         SelectOption(label=str(i), value=str(i)) for i in range(0, 4)
                     ])
-                    done_button = ui.Button(label="Done", style=ButtonStyle.primary)
+                    done_button = ui.Button(label=tmpl.shop_done_button, style=ButtonStyle.primary)
                     view.add_item(is_base_unit)
                     view.add_item(unit_req_amount)
                     view.add_item(done_button)
                     # we are not yet using the template system for this, so we are just sending a hardcoded message
-                    await message_manager.update_message(content="Please set up the unit type", view=view)
+                    await message_manager.update_message(content=tmpl.shop_please_setup_unit_type, view=view)
                     await interaction.response.defer(thinking=False, ephemeral=True)
 
                     @check
+                    @error_reporting(True)
                     async def base_unit_callback(interaction: Interaction):
                         nonlocal new_unit_type
                         logger.debug(f"Base unit callback: {interaction.data}")
@@ -881,6 +887,7 @@ class Shop(GroupCog):
                     is_base_unit.callback = base_unit_callback
 
                     @check
+                    @error_reporting(True)
                     async def unit_req_amount_callback(interaction: Interaction):
                         nonlocal new_unit_type
                         logger.debug(f"Unit req amount callback: {interaction.data}")
@@ -889,13 +896,14 @@ class Shop(GroupCog):
                     unit_req_amount.callback = unit_req_amount_callback
 
                     @check
+                    @error_reporting(True)
                     async def done_button_callback(interaction: Interaction):
                         nonlocal new_unit_type
                         logger.debug(f"Done button callback: {interaction.data}")
                         session.add(new_unit_type)
                         session.commit()
                         await interaction.response.defer(thinking=False, ephemeral=True)
-                        await message_manager.update_message(content="Unit type added", view=ui.View())
+                        await message_manager.update_message(content=tmpl.shop_unit_type_added, view=ui.View())
                     done_button.callback = done_button_callback
                 modal.on_submit = modal_submit
 
@@ -905,17 +913,17 @@ class Shop(GroupCog):
                 def ui_factory(unit_type: UnitType) -> tuple[ui.View, Embed]:
                     nonlocal target
                     view = ui.View()
-                    embed = Embed(title=f"Unit Type: {unit_type.unit_type}")
+                    embed = Embed(title=tmpl.shop_unit_type_title.format(unit_type=unit_type.unit_type))
                     embed.add_field(name="Is Base", value="Yes" if unit_type.is_base else "No")
                     embed.add_field(name="Unit Req", value=str(unit_type.unit_req))
                     
-                    rename_button = ui.Button(label="Rename", style=ButtonStyle.primary)
-                    delete_button = ui.Button(label="Delete", style=ButtonStyle.danger)
+                    rename_button = ui.Button(label=tmpl.shop_rename_button, style=ButtonStyle.primary)
+                    delete_button = ui.Button(label=tmpl.shop_delete_button, style=ButtonStyle.danger)
                     view.add_item(rename_button)
                     view.add_item(delete_button)
 
-                    is_base_unit = ui.Select(placeholder="Is this a base unit?", options=[SelectOption(label="Yes", value="y", default=unit_type.is_base), SelectOption(label="No", value="n", default=not unit_type.is_base)])
-                    unit_req_amount = ui.Select(placeholder="Unit Req Amount", options=[
+                    is_base_unit = ui.Select(placeholder=tmpl.shop_is_base_placeholder, options=[SelectOption(label="Yes", value="y", default=unit_type.is_base), SelectOption(label="No", value="n", default=not unit_type.is_base)])
+                    unit_req_amount = ui.Select(placeholder=tmpl.shop_unit_req_amount_placeholder, options=[
                         SelectOption(label=str(i), value=str(i), default=(i == unit_type.unit_req)) for i in range(0, 4)
                     ])
                     view.add_item(is_base_unit)
@@ -924,12 +932,13 @@ class Shop(GroupCog):
                     unit_type_ = unit_type.unit_type # we can't use closure scoped instances, so we need to make a closure scoped PK of the instance instead
 
                     @check
+                    @error_reporting(True)
                     async def rename_button_callback(interaction: Interaction):
                         # Create modal for new name
-                        modal = ui.Modal(title="Rename Unit Type")
+                        modal = ui.Modal(title=tmpl.shop_rename_unit_type_modal_title)
                         new_name_input = ui.TextInput(
-                            label="New Name",
-                            placeholder="Enter new unit type name",
+                            label=tmpl.shop_new_name_label,
+                            placeholder=tmpl.shop_new_name_placeholder,
                             default=unit_type_,
                             min_length=1,
                             max_length=15
@@ -948,13 +957,13 @@ class Shop(GroupCog):
                             
                             # Validate new name
                             if not new_name:
-                                await interaction.response.send_message("Name cannot be empty", ephemeral=True)
+                                await interaction.response.send_message(tmpl.shop_name_cannot_be_empty, ephemeral=True)
                                 return
                             
                             # Check if new name already exists
                             existing = session.query(UnitType).filter(UnitType.unit_type == new_name).first()
                             if existing:
-                                await interaction.response.send_message(f"Unit type '{new_name}' already exists", ephemeral=True)
+                                await interaction.response.send_message(tmpl.shop_unit_type_already_exists.format(name=new_name), ephemeral=True)
                                 return
                             
                             logger.info(f"Starting rename operation: '{unit_type.unit_type}' -> '{new_name}'")
@@ -1009,7 +1018,7 @@ class Shop(GroupCog):
                             # Update the target variable for subsequent operations
                             target = new_name
                             
-                            await interaction.response.send_message(f"Unit type '{unit_type.unit_type}' renamed to '{new_name}'", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_unit_type_renamed.format(old=unit_type.unit_type, new=new_name), ephemeral=True)
                             
                             # Refresh the UI with the new name
                             updated_unit_type = session.query(UnitType).filter(UnitType.unit_type == new_name).first()
@@ -1027,20 +1036,20 @@ class Shop(GroupCog):
                     async def delete_button_callback(interaction: Interaction, session: Session):
                         unit_type = session.query(UnitType).filter(UnitType.unit_type == unit_type_).first()
                         if unit_type.units:
-                            await interaction.response.send_message("You cannot delete a unit type that has units assigned to it", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_cannot_delete_has_units, ephemeral=True)
                             return
                         if unit_type.original_units:
-                            await interaction.response.send_message("You cannot delete a unit type that has original units assigned to it", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_cannot_delete_has_original_units, ephemeral=True)
                             return
                         if unit_type.refit_targets:
-                            await interaction.response.send_message("You cannot delete a unit type that has refit targets assigned to it", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_cannot_delete_has_refit_targets, ephemeral=True)
                             return
                         if unit_type.compatible_upgrades:
-                            await interaction.response.send_message("You cannot delete a unit type that has compatible upgrades assigned to it", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_cannot_delete_has_compatible_upgrades, ephemeral=True)
                             return
                         session.delete(unit_type)
                         session.commit()
-                        await interaction.response.send_message("Unit type deleted", ephemeral=True)
+                        await interaction.response.send_message(tmpl.shop_unit_type_deleted, ephemeral=True)
                         await message_manager.delete_message()
                     delete_button.callback = delete_button_callback
                     
@@ -1052,7 +1061,7 @@ class Shop(GroupCog):
                         unit_type.is_base = interaction.data["values"][0] == "y"
                         session.commit()
                         await interaction.response.defer(thinking=False, ephemeral=True)
-                        await message_manager.update_message(content="Unit type updated")
+                        await message_manager.update_message(content=tmpl.shop_unit_type_updated)
 
                     is_base_unit.callback = base_unit_callback
 
@@ -1064,7 +1073,7 @@ class Shop(GroupCog):
                         unit_type.unit_req = int(interaction.data["values"][0])
                         session.commit()
                         await interaction.response.defer(thinking=False, ephemeral=True)
-                        await message_manager.update_message(content="Unit type updated")
+                        await message_manager.update_message(content=tmpl.shop_unit_type_updated)
                     unit_req_amount.callback = unit_req_callback
 
                     # we need to check if the unit type is currently a Parent, and if so, we disable the delete button and add a warning to the embed
@@ -1084,82 +1093,88 @@ class Shop(GroupCog):
                     return view, embed
 
                 view, embed = ui_factory(unit_type_)
-                await message_manager.update_message(content="Please set up the unit type", view=view, embed=embed)
+                await message_manager.update_message(content=tmpl.shop_please_setup_unit_type, view=view, embed=embed)
                 await interaction.response.defer(thinking=False, ephemeral=True)
 
 
         select.callback = select_callback
         await interaction.response.defer(thinking=False, ephemeral=True)
-        await message_manager.update_message(content=f"Please select a unit type", view=view)
+        await message_manager.update_message(content=tmpl.shop_please_select_unit_type, view=view)
 
+    @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
     async def upgradetype_button_callback(self, interaction: Interaction, message_manager: MessageManager, session: Session):
         logger.info(f"Upgrade type management accessed by {interaction.user.id} ({interaction.user.name})")
         
         # send a dropdown with all the upgrade types and an option for adding a new upgrade type, we may need to handle the existence of more than 25 upgrade types which means we need to paginate
-        logger.debug("Querying upgrade types")
-        upgrade_types = session.query(UpgradeType).all()
-        logger.debug(f"Found {len(upgrade_types)} upgrade types")
-        check = ac.check(self.original_author(interaction))
-        
+        logger.debug("Querying upgrade types for pagination")
+        upgrade_types = session.query(UpgradeType.name).all()
         # Add the "Add New" option to the list so pagination handles it naturally
-        upgrade_types.append(type('MockUpgradeType', (), {'name': '\0Add New Upgrade Type'})())
+        upgrade_types.append(("\0Add New Upgrade Type",))
+        paginator: Paginator[tuple] = Paginator(upgrade_types, 25)
+        logger.debug(f"Found {len(upgrade_types)-1} upgrade types + add option, {len(paginator)} pages")
+        view = ui.View()
+        select = ui.Select(placeholder=tmpl.shop_upgrade_type_select_placeholder)
+        previous_button = ui.Button(label=tmpl.shop_previous_button, style=ButtonStyle.secondary, disabled=True)
+        next_button = ui.Button(label=tmpl.shop_next_button, style=ButtonStyle.secondary, disabled=not paginator.has_next())
+        predicate = self.original_author(interaction)
+        check = ac.check(predicate)
+        view.add_item(previous_button)
+        view.add_item(select)
+        view.add_item(next_button)
+
+        for upgrade_type in paginator.current():
+            select.add_option(label=upgrade_type[0], value=upgrade_type[0])
         
-        if len(upgrade_types) > 25:
-            # we need to paginate
-            page = 0
-            items_per_page = 25
-            total_pages = (len(upgrade_types) + items_per_page - 1) // items_per_page
-            
-            def create_view(page: int) -> ui.View:
-                view = ui.View()
-                start_idx = page * items_per_page
-                end_idx = min(start_idx + items_per_page, len(upgrade_types))
-                current_upgrade_types = upgrade_types[start_idx:end_idx]
-                
-                select = ui.Select(placeholder="Select an upgrade type")
-                
-                for upgrade_type in current_upgrade_types:
-                    select.add_option(label=upgrade_type.name, value=upgrade_type.name)
-                
-                view.add_item(select)
-                
-                if total_pages > 1:
-                    previous_button = ui.Button(label="Previous", style=ButtonStyle.secondary, disabled=(page == 0))
-                    next_button = ui.Button(label="Next", style=ButtonStyle.secondary, disabled=(page == total_pages - 1))
-                    view.add_item(previous_button)
-                    view.add_item(next_button)
-                
-                return view
-            
-            view = create_view(page)
-            
-            @check
-            async def previous_button_callback(interaction: Interaction):
-                nonlocal page
-                page = max(0, page - 1)
-                new_view = create_view(page)
-                await interaction.response.edit_message(view=new_view)
-            
-            @check
-            async def next_button_callback(interaction: Interaction):
-                nonlocal page
-                page = min(total_pages - 1, page + 1)
-                new_view = create_view(page)
-                await interaction.response.edit_message(view=new_view)
-            
-            if total_pages > 1:
-                view.children[1].callback = previous_button_callback
-                view.children[2].callback = next_button_callback
-        else:
-            # no pagination needed
-            view = ui.View()
-            select = ui.Select(placeholder="Select an upgrade type")
-            
-            for upgrade_type in upgrade_types:
-                select.add_option(label=upgrade_type.name, value=upgrade_type.name)
-            
-            view.add_item(select)
+        @check
+        async def previous_button_callback(interaction: Interaction):
+            nonlocal paginator
+            logger.debug("Previous button clicked")
+            paginator.previous()
+            logger.debug(f"Paginator moved to previous page: {paginator.index}")
+            select.options.clear()
+            for upgrade_type in paginator.current():
+                select.add_option(label=upgrade_type[0], value=upgrade_type[0])
+            if not paginator.has_next():
+                next_button.disabled = True
+                logger.debug("Next button disabled")
+            else:
+                next_button.disabled = False
+                logger.debug("Next button enabled")
+            if not paginator.has_previous():
+                previous_button.disabled = True
+                logger.debug("Previous button disabled")
+            else:
+                previous_button.disabled = False
+                logger.debug("Previous button enabled")
+            await interaction.response.defer(thinking=False, ephemeral=True)
+            await message_manager.update_message(view=view)
+        previous_button.callback = previous_button_callback
+
+        @check
+        async def next_button_callback(interaction: Interaction):
+            nonlocal paginator
+            logger.debug("Next button clicked")
+            paginator.next()
+            logger.debug(f"Paginator moved to next page: {paginator.index}")
+            select.options.clear()
+            for upgrade_type in paginator.current():
+                select.add_option(label=upgrade_type[0], value=upgrade_type[0])
+            if not paginator.has_next():
+                next_button.disabled = True
+                logger.debug("Next button disabled")
+            else:
+                next_button.disabled = False
+                logger.debug("Next button enabled")
+            if not paginator.has_previous():
+                previous_button.disabled = True
+                logger.debug("Previous button disabled")
+            else:
+                previous_button.disabled = False
+                logger.debug("Previous button enabled")
+            await interaction.response.defer(thinking=False, ephemeral=True)
+            await message_manager.update_message(view=view)
+        next_button.callback = next_button_callback
         
         @check
         @uses_db(CustomClient().sessionmaker)
@@ -1171,12 +1186,12 @@ class Shop(GroupCog):
             if target == "\0Add New Upgrade Type":
                 logger.info(f"Adding new upgrade type by {interaction.user.id}")
                 # we need to create a new upgrade type
-                modal = ui.Modal(title="Add New Upgrade Type")
-                name_input = ui.TextInput(label="Name", placeholder="Enter upgrade type name", min_length=1, max_length=30)
-                emoji_input = ui.TextInput(label="Emoji", placeholder="Enter emoji (optional)", max_length=4, required=False)
-                is_refit_input = ui.TextInput(label="Is Refit", placeholder="y/n", min_length=1, max_length=1)
-                non_purchaseable_input = ui.TextInput(label="Non Purchaseable", placeholder="y/n", min_length=1, max_length=1)
-                can_use_unit_req_input = ui.TextInput(label="Can Use Unit Req", placeholder="y/n", min_length=1, max_length=1)
+                modal = ui.Modal(title=tmpl.shop_add_new_upgrade_type_modal_title)
+                name_input = ui.TextInput(label=tmpl.shop_upgrade_type_name_label, placeholder=tmpl.shop_upgrade_type_name_placeholder, min_length=1, max_length=30)
+                emoji_input = ui.TextInput(label=tmpl.shop_emoji_label, placeholder=tmpl.shop_emoji_placeholder, max_length=4, required=False)
+                is_refit_input = ui.TextInput(label=tmpl.shop_is_refit_label, placeholder=tmpl.shop_yn_placeholder, min_length=1, max_length=1)
+                non_purchaseable_input = ui.TextInput(label=tmpl.shop_non_purchaseable_label, placeholder=tmpl.shop_yn_placeholder, min_length=1, max_length=1)
+                can_use_unit_req_input = ui.TextInput(label=tmpl.shop_can_use_unit_req_label, placeholder=tmpl.shop_yn_placeholder, min_length=1, max_length=1)
                 
                 modal.add_item(name_input)
                 modal.add_item(emoji_input)
@@ -1204,7 +1219,7 @@ class Shop(GroupCog):
                     session.add(new_upgrade_type)
                     session.commit()
                     await interaction.response.defer(thinking=False, ephemeral=True)
-                    await message_manager.update_message(content="Upgrade type added", view=ui.View())
+                    await message_manager.update_message(content=tmpl.shop_upgrade_type_added, view=ui.View())
                 
                 modal.on_submit = modal_submit
                 await interaction.response.send_modal(modal)
@@ -1214,26 +1229,27 @@ class Shop(GroupCog):
                 def ui_factory(upgrade_type: UpgradeType) -> tuple[ui.View, Embed]:
                     nonlocal target
                     view = ui.View()
-                    embed = Embed(title=f"Upgrade Type: {upgrade_type.name}")
+                    embed = Embed(title=tmpl.shop_upgrade_type_title.format(name=upgrade_type.name))
                     embed.add_field(name="Emoji", value=upgrade_type.emoji or "None")
                     embed.add_field(name="Is Refit", value="Yes" if upgrade_type.is_refit else "No")
                     embed.add_field(name="Non Purchaseable", value="Yes" if upgrade_type.non_purchaseable else "No")
                     embed.add_field(name="Can Use Unit Req", value="Yes" if upgrade_type.can_use_unit_req else "No")
                     
-                    rename_button = ui.Button(label="Rename", style=ButtonStyle.primary)
-                    delete_button = ui.Button(label="Delete", style=ButtonStyle.danger)
+                    rename_button = ui.Button(label=tmpl.shop_rename_button, style=ButtonStyle.primary)
+                    delete_button = ui.Button(label=tmpl.shop_delete_button, style=ButtonStyle.danger)
                     view.add_item(rename_button)
                     view.add_item(delete_button)
                     
                     upgrade_type_ = upgrade_type.name # we can't use closure scoped instances, so we need to make a closure scoped PK of the instance instead
                     
                     @check
+                    @error_reporting(True)
                     async def rename_button_callback(interaction: Interaction):
                         # Create modal for new name
-                        modal = ui.Modal(title="Rename Upgrade Type")
+                        modal = ui.Modal(title=tmpl.shop_rename_upgrade_type_modal_title)
                         new_name_input = ui.TextInput(
-                            label="New Name",
-                            placeholder="Enter new upgrade type name",
+                            label=tmpl.shop_new_name_label,
+                            placeholder=tmpl.shop_new_name_placeholder,
                             default=upgrade_type_,
                             min_length=1,
                             max_length=30
@@ -1252,13 +1268,13 @@ class Shop(GroupCog):
                             
                             # Validate new name
                             if not new_name:
-                                await interaction.response.send_message("Name cannot be empty", ephemeral=True)
+                                await interaction.response.send_message(tmpl.shop_name_cannot_be_empty, ephemeral=True)
                                 return
                             
                             # Check if new name already exists
                             existing = session.query(UpgradeType).filter(UpgradeType.name == new_name).first()
                             if existing:
-                                await interaction.response.send_message(f"Upgrade type '{new_name}' already exists", ephemeral=True)
+                                await interaction.response.send_message(tmpl.shop_upgrade_type_already_exists.format(name=new_name), ephemeral=True)
                                 return
                             
                             logger.info(f"Starting rename operation: '{upgrade_type.name}' -> '{new_name}'")
@@ -1301,7 +1317,7 @@ class Shop(GroupCog):
                             # Update the target variable for subsequent operations
                             target = new_name
                             
-                            await interaction.response.send_message(f"Upgrade type '{upgrade_type.name}' renamed to '{new_name}'", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_upgrade_type_renamed.format(old=upgrade_type.name, new=new_name), ephemeral=True)
                             
                             # Refresh the UI with the new name
                             updated_upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == new_name).first()
@@ -1319,14 +1335,14 @@ class Shop(GroupCog):
                     async def delete_button_callback(interaction: Interaction, session: Session):
                         upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type_).first()
                         if upgrade_type.shop_upgrades:
-                            await interaction.response.send_message("You cannot delete an upgrade type that has shop upgrades assigned to it", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_cannot_delete_has_shop_upgrades, ephemeral=True)
                             return
                         if upgrade_type.player_upgrades:
-                            await interaction.response.send_message("You cannot delete an upgrade type that has player upgrades assigned to it", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_cannot_delete_has_player_upgrades, ephemeral=True)
                             return
                         session.delete(upgrade_type)
                         session.commit()
-                        await interaction.response.send_message("Upgrade type deleted", ephemeral=True)
+                        await interaction.response.send_message(tmpl.shop_upgrade_type_deleted, ephemeral=True)
                         await message_manager.delete_message()
                     
                     delete_button.callback = delete_button_callback
@@ -1342,12 +1358,12 @@ class Shop(GroupCog):
                     return view, embed
                 
                 view, embed = ui_factory(upgrade_type_)
-                await message_manager.update_message(content="Please set up the upgrade type", view=view, embed=embed)
+                await message_manager.update_message(content=tmpl.shop_please_setup_upgrade_type, view=view, embed=embed)
                 await interaction.response.defer(thinking=False, ephemeral=True)
         
         select.callback = select_callback
         await interaction.response.defer(thinking=False, ephemeral=True)
-        await message_manager.update_message(content=f"Please select an upgrade type", view=view)
+        await message_manager.update_message(content=tmpl.shop_please_select_upgrade_type, view=view)
 
     @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
@@ -1355,71 +1371,79 @@ class Shop(GroupCog):
         logger.info(f"Shop upgrade management accessed by {interaction.user.id} ({interaction.user.name})")
         
         # send a dropdown with all the shop upgrades and an option for adding a new shop upgrade, we may need to handle the existence of more than 25 shop upgrades which means we need to paginate
-        logger.debug("Querying shop upgrades")
-        shop_upgrades = session.query(ShopUpgrade).all()
-        logger.debug(f"Found {len(shop_upgrades)} shop upgrades")
-        check = ac.check(self.original_author(interaction))
-        
+        logger.debug("Querying shop upgrades for pagination")
+        shop_upgrades = session.query(ShopUpgrade.id, ShopUpgrade.name).all()
         # Add the "Add New" option to the list so pagination handles it naturally
-        shop_upgrades.append(type('MockShopUpgrade', (), {'name': '\0Add New Shop Upgrade', 'id': -1})())
-        
-        if len(shop_upgrades) > 25:
-            # we need to paginate
-            page = 0
-            items_per_page = 25
-            total_pages = (len(shop_upgrades) + items_per_page - 1) // items_per_page
-            
-            def create_view(page: int) -> ui.View:
-                view = ui.View()
-                start_idx = page * items_per_page
-                end_idx = min(start_idx + items_per_page, len(shop_upgrades))
-                current_shop_upgrades = shop_upgrades[start_idx:end_idx]
-                
-                select = ui.Select(placeholder="Select a shop upgrade")
-                
-                for shop_upgrade in current_shop_upgrades:
-                    select.add_option(label=shop_upgrade.name, value=str(shop_upgrade.id))
-                
-                view.add_item(select)
-                
-                if total_pages > 1:
-                    previous_button = ui.Button(label="Previous", style=ButtonStyle.secondary, disabled=(page == 0))
-                    next_button = ui.Button(label="Next", style=ButtonStyle.secondary, disabled=(page == total_pages - 1))
-                    view.add_item(previous_button)
-                    view.add_item(next_button)
-                
-                return view
-            
-            view = create_view(page)
-            
-            @check
-            async def previous_button_callback(interaction: Interaction):
-                nonlocal page
-                page = max(0, page - 1)
-                new_view = create_view(page)
-                await interaction.response.edit_message(view=new_view)
-            
-            @check
-            async def next_button_callback(interaction: Interaction):
-                nonlocal page
-                page = min(total_pages - 1, page + 1)
-                new_view = create_view(page)
-                await interaction.response.edit_message(view=new_view)
-            
-            if total_pages > 1:
-                view.children[1].callback = previous_button_callback
-                view.children[2].callback = next_button_callback
-        else:
-            # no pagination needed
-            view = ui.View()
-            select = ui.Select(placeholder="Select a shop upgrade")
-            
-            for shop_upgrade in shop_upgrades:
-                select.add_option(label=shop_upgrade.name, value=str(shop_upgrade.id))
-            
-            view.add_item(select)
+        shop_upgrades.append(("\0Add New Shop Upgrade", "\0Add New Shop Upgrade"))
+        paginator: Paginator[tuple] = Paginator(shop_upgrades, 25)
+        logger.debug(f"Found {len(shop_upgrades)-1} shop upgrades + add option, {len(paginator)} pages")
+        view = ui.View()
+        select = ui.Select(placeholder=tmpl.shop_upgrade_select_placeholder)
+        previous_button = ui.Button(label=tmpl.shop_previous_button, style=ButtonStyle.secondary, disabled=True)
+        next_button = ui.Button(label=tmpl.shop_next_button, style=ButtonStyle.secondary, disabled=not paginator.has_next())
+        predicate = self.original_author(interaction)
+        check = ac.check(predicate)
+        view.add_item(previous_button)
+        view.add_item(select)
+        view.add_item(next_button)
+
+        for shop_upgrade in paginator.current():
+            select.add_option(label=shop_upgrade[1], value=str(shop_upgrade[0]))
         
         @check
+        @error_reporting(True)
+        async def previous_button_callback(interaction: Interaction):
+            nonlocal paginator
+            logger.debug("Previous button clicked")
+            paginator.previous()
+            logger.debug(f"Paginator moved to previous page: {paginator.index}")
+            select.options.clear()
+            for shop_upgrade in paginator.current():
+                select.add_option(label=shop_upgrade[1], value=str(shop_upgrade[0]))
+            if not paginator.has_next():
+                next_button.disabled = True
+                logger.debug("Next button disabled")
+            else:
+                next_button.disabled = False
+                logger.debug("Next button enabled")
+            if not paginator.has_previous():
+                previous_button.disabled = True
+                logger.debug("Previous button disabled")
+            else:
+                previous_button.disabled = False
+                logger.debug("Previous button enabled")
+            await interaction.response.defer(thinking=False, ephemeral=True)
+            await message_manager.update_message(view=view)
+        previous_button.callback = previous_button_callback
+
+        @check
+        @error_reporting(True)
+        async def next_button_callback(interaction: Interaction):
+            nonlocal paginator
+            logger.debug("Next button clicked")
+            paginator.next()
+            logger.debug(f"Paginator moved to next page: {paginator.index}")
+            select.options.clear()
+            for shop_upgrade in paginator.current():
+                select.add_option(label=shop_upgrade[1], value=str(shop_upgrade[0]))
+            if not paginator.has_next():
+                next_button.disabled = True
+                logger.debug("Next button disabled")
+            else:
+                next_button.disabled = False
+                logger.debug("Next button enabled")
+            if not paginator.has_previous():
+                previous_button.disabled = True
+                logger.debug("Previous button disabled")
+            else:
+                previous_button.disabled = False
+                logger.debug("Previous button enabled")
+            await interaction.response.defer(thinking=False, ephemeral=True)
+            await message_manager.update_message(view=view)
+        next_button.callback = next_button_callback
+        
+        @check
+        @error_reporting(True)
         @uses_db(CustomClient().sessionmaker)
         async def select_callback(interaction: Interaction, session: Session):
             # here is the complicated part, we have two cases, either the data is "\0add_new_shop_upgrade" or it's a valid shop upgrade id
@@ -1432,74 +1456,130 @@ class Shop(GroupCog):
                 upgrade_types = session.query(UpgradeType).all()
                 unit_types = session.query(UnitType).all()
                 
-                modal = ui.Modal(title="Add New Shop Upgrade")
-                name_input = ui.TextInput(label="Name", placeholder="Enter shop upgrade name", min_length=1, max_length=30)
-                type_input = ui.TextInput(label="Type", placeholder="Enter upgrade type name", min_length=1, max_length=30)
-                cost_input = ui.TextInput(label="Cost", placeholder="Enter cost", min_length=1, max_length=10)
-                refit_target_input = ui.TextInput(label="Refit Target", placeholder="Enter refit target unit type (optional)", max_length=15, required=False)
-                required_upgrade_id_input = ui.TextInput(label="Required Upgrade ID", placeholder="Enter required upgrade ID (optional)", max_length=10, required=False)
-                disabled_input = ui.TextInput(label="Disabled", placeholder="y/n", min_length=1, max_length=1)
-                repeatable_input = ui.TextInput(label="Repeatable", placeholder="y/n", min_length=1, max_length=1)
-                unit_types_input = ui.TextInput(label="Compatible Unit Types", placeholder="Enter unit types (one per line)", style=TextStyle.paragraph, required=False)
+                # Create view with dropdowns for UpgradeType and booleans
+                view = ui.View()
                 
-                modal.add_item(name_input)
-                modal.add_item(type_input)
-                modal.add_item(cost_input)
-                modal.add_item(refit_target_input)
-                modal.add_item(required_upgrade_id_input)
-                modal.add_item(disabled_input)
-                modal.add_item(repeatable_input)
-                modal.add_item(unit_types_input)
+                # UpgradeType dropdown
+                upgrade_type_options = [SelectOption(label=ut.name, value=ut.name) for ut in upgrade_types]
+                upgrade_type_select = ui.Select(placeholder=tmpl.shop_select_upgrade_type_placeholder, options=upgrade_type_options)
+                
+                disabled_select = ui.Select(placeholder=tmpl.shop_disabled_placeholder, options=[
+                    SelectOption(label="No", value="n"),
+                    SelectOption(label="Yes", value="y")
+                ])
+                repeatable_select = ui.Select(placeholder=tmpl.shop_repeatable_placeholder, options=[
+                    SelectOption(label="No", value="n"),
+                    SelectOption(label="Yes", value="y")
+                ])
+                
+                view.add_item(upgrade_type_select)
+                view.add_item(disabled_select)
+                view.add_item(repeatable_select)
+                
+                # Store the selected values
+                selected_values = {"upgrade_type": None, "disabled": False, "repeatable": False}
                 
                 @check
                 @error_reporting(True)
-                async def modal_submit(interaction: Interaction):
-                    logger.info(f"Adding new shop upgrade by {interaction.user.id}")
-                    name = name_input.value.strip()
-                    type_name = type_input.value.strip().upper()
-                    cost = int(cost_input.value.strip())
-                    refit_target = refit_target_input.value.strip().upper() if refit_target_input.value.strip() else None
-                    required_upgrade_id = int(required_upgrade_id_input.value.strip()) if required_upgrade_id_input.value.strip() else None
-                    disabled = disabled_input.value.strip().lower() == "y"
-                    repeatable = repeatable_input.value.strip().lower() == "y"
-                    unit_types_text = unit_types_input.value.strip()
-                    
-                    # Parse unit types from newline-separated text
-                    compatible_unit_types = [ut.strip().upper() for ut in unit_types_text.split('\n') if ut.strip()] if unit_types_text else []
-                    
-                    new_shop_upgrade = ShopUpgrade(
-                        name=name,
-                        type=type_name,
-                        cost=cost,
-                        refit_target=refit_target,
-                        required_upgrade_id=required_upgrade_id,
-                        disabled=disabled,
-                        repeatable=repeatable
-                    )
-                    session.add(new_shop_upgrade)
-                    session.flush()  # Get the ID
-                    
-                    # Create ShopUpgradeUnitTypes associations
-                    for unit_type_name in compatible_unit_types:
-                        association = ShopUpgradeUnitTypes(
-                            shop_upgrade_id=new_shop_upgrade.id,
-                            unit_type=unit_type_name
-                        )
-                        session.add(association)
-                    
-                    session.commit()
+                async def upgrade_type_callback(interaction: Interaction):
+                    selected_values["upgrade_type"] = upgrade_type_select.values[0] if upgrade_type_select.values else None
                     await interaction.response.defer(thinking=False, ephemeral=True)
-                    await message_manager.update_message(content="Shop upgrade added", view=ui.View())
+                    await message_manager.update_message(content=tmpl.shop_upgrade_type_status.format(type=selected_values['upgrade_type']), view=view)
                 
-                modal.on_submit = modal_submit
-                await interaction.response.send_modal(modal)
+                @check
+                @error_reporting(True)
+                async def disabled_callback(interaction: Interaction):
+                    selected_values["disabled"] = disabled_select.values[0] == "y" if disabled_select.values else False
+                    await interaction.response.defer(thinking=False, ephemeral=True)
+                    await message_manager.update_message(content=tmpl.shop_disabled_status.format(status='Yes' if selected_values['disabled'] else 'No'), view=view)
+                
+                @check
+                @error_reporting(True)
+                async def repeatable_callback(interaction: Interaction):
+                    selected_values["repeatable"] = repeatable_select.values[0] == "y" if repeatable_select.values else False
+                    await interaction.response.defer(thinking=False, ephemeral=True)
+                    await message_manager.update_message(content=tmpl.shop_repeatable_status.format(status='Yes' if selected_values['repeatable'] else 'No'), view=view)
+                
+                # Add a button to proceed to modal when all selections are made
+                proceed_button = ui.Button(label=tmpl.shop_proceed_to_details_button, style=ButtonStyle.primary)
+                
+                @check
+                @error_reporting(True)
+                async def proceed_callback(interaction: Interaction):
+                    if not selected_values["upgrade_type"]:
+                        await interaction.response.send_message(tmpl.shop_please_select_upgrade_type, ephemeral=True)
+                        return
+                    
+                    # Now show the modal with the remaining fields
+                    modal = ui.Modal(title=tmpl.shop_add_new_shop_upgrade_modal_title)
+                    name_input = ui.TextInput(label=tmpl.shop_upgrade_name_label, placeholder=tmpl.shop_upgrade_name_placeholder, min_length=1, max_length=30)
+                    cost_input = ui.TextInput(label=tmpl.shop_upgrade_cost_label, placeholder=tmpl.shop_cost_placeholder, min_length=1, max_length=10)
+                    refit_target_input = ui.TextInput(label=tmpl.shop_refit_target_label, placeholder=tmpl.shop_refit_target_optional_placeholder, max_length=15, required=False)
+                    required_upgrade_id_input = ui.TextInput(label="Required Upgrade ID", placeholder=tmpl.shop_required_upgrade_id_placeholder, max_length=10, required=False)
+                    unit_types_input = ui.TextInput(label="Compatible Unit Types", placeholder=tmpl.shop_compatible_unit_types_placeholder, style=TextStyle.paragraph, required=False)
+                    
+                    modal.add_item(name_input)
+                    modal.add_item(cost_input)
+                    modal.add_item(refit_target_input)
+                    modal.add_item(required_upgrade_id_input)
+                    modal.add_item(unit_types_input)
+                    
+                    @check
+                    @error_reporting(True)
+                    async def modal_submit(interaction: Interaction):
+                        logger.info(f"Adding new shop upgrade by {interaction.user.id}")
+                        name = name_input.value.strip()
+                        cost = int(cost_input.value.strip())
+                        refit_target = refit_target_input.value.strip().upper() if refit_target_input.value.strip() else None
+                        required_upgrade_id = int(required_upgrade_id_input.value.strip()) if required_upgrade_id_input.value.strip() else None
+                        unit_types_text = unit_types_input.value.strip()
+                        
+                        # Parse unit types from newline-separated text
+                        compatible_unit_types = [ut.strip().upper() for ut in unit_types_text.split('\n') if ut.strip()] if unit_types_text else []
+                        
+                        new_shop_upgrade = ShopUpgrade(
+                            name=name,
+                            type=selected_values["upgrade_type"],
+                            cost=cost,
+                            refit_target=refit_target,
+                            required_upgrade_id=required_upgrade_id,
+                            disabled=selected_values["disabled"],
+                            repeatable=selected_values["repeatable"]
+                        )
+                        session.add(new_shop_upgrade)
+                        session.flush()  # Get the ID
+                        
+                        # Create ShopUpgradeUnitTypes associations
+                        for unit_type_name in compatible_unit_types:
+                            association = ShopUpgradeUnitTypes(
+                                shop_upgrade_id=new_shop_upgrade.id,
+                                unit_type=unit_type_name
+                            )
+                            session.add(association)
+                        
+                        session.commit()
+                        await interaction.response.defer(thinking=False, ephemeral=True)
+                        await message_manager.update_message(content=tmpl.shop_upgrade_added, view=ui.View())
+                    
+                    modal.on_submit = modal_submit
+                    await interaction.response.send_modal(modal)
+                
+                proceed_button.callback = proceed_callback
+                view.add_item(proceed_button)
+                
+                # Set up the individual dropdown callbacks
+                upgrade_type_select.callback = upgrade_type_callback
+                disabled_select.callback = disabled_callback
+                repeatable_select.callback = repeatable_callback
+                
+                await interaction.response.send_message(tmpl.shop_please_select_boolean_options, view=view, ephemeral=True)
             else:
                 shop_upgrade_ = session.query(ShopUpgrade).filter(ShopUpgrade.id == int(target)).first()
                 # we need an embed with the shop upgrade's data, a rename button, a delete button, and edit fields
                 def ui_factory(shop_upgrade: ShopUpgrade) -> tuple[ui.View, Embed]:
                     nonlocal target
                     view = ui.View()
-                    embed = Embed(title=f"Shop Upgrade: {shop_upgrade.name}")
+                    embed = Embed(title=tmpl.shop_upgrade_title.format(name=shop_upgrade.name))
                     embed.add_field(name="Type", value=shop_upgrade.type)
                     embed.add_field(name="Cost", value=str(shop_upgrade.cost))
                     embed.add_field(name="Refit Target", value=shop_upgrade.refit_target or "None")
@@ -1511,8 +1591,8 @@ class Shop(GroupCog):
                     compatible_unit_types = [assoc.unit_type for assoc in shop_upgrade.unit_types]
                     embed.add_field(name="Compatible Unit Types", value="\n".join(compatible_unit_types) if compatible_unit_types else "None", inline=False)
                     
-                    rename_button = ui.Button(label="Rename", style=ButtonStyle.primary)
-                    delete_button = ui.Button(label="Delete", style=ButtonStyle.danger)
+                    rename_button = ui.Button(label=tmpl.shop_rename_button, style=ButtonStyle.primary)
+                    delete_button = ui.Button(label=tmpl.shop_delete_button, style=ButtonStyle.danger)
                     edit_button = ui.Button(label="Edit", style=ButtonStyle.secondary)
                     view.add_item(rename_button)
                     view.add_item(delete_button)
@@ -1521,13 +1601,16 @@ class Shop(GroupCog):
                     shop_upgrade_id_ = shop_upgrade.id # we can't use closure scoped instances, so we need to make a closure scoped PK of the instance instead
                     
                     @check
-                    async def rename_button_callback(interaction: Interaction):
+                    @error_reporting(True)
+                    @uses_db(CustomClient().sessionmaker)
+                    async def rename_button_callback(interaction: Interaction, session:Session):
                         # Create modal for new name
-                        modal = ui.Modal(title="Rename Shop Upgrade")
+                        modal = ui.Modal(title=tmpl.shop_edit_shop_upgrade_modal_title)
+                        shop_upgrade_ = session.merge(shop_upgrade)
                         new_name_input = ui.TextInput(
-                            label="New Name",
-                            placeholder="Enter new shop upgrade name",
-                            default=shop_upgrade.name,
+                            label=tmpl.shop_new_name_label,
+                            placeholder=tmpl.shop_new_name_placeholder,
+                            default=shop_upgrade_.name,
                             min_length=1,
                             max_length=30
                         )
@@ -1545,13 +1628,13 @@ class Shop(GroupCog):
                             
                             # Validate new name
                             if not new_name:
-                                await interaction.response.send_message("Name cannot be empty", ephemeral=True)
+                                await interaction.response.send_message(tmpl.shop_name_cannot_be_empty, ephemeral=True)
                                 return
                             
                             # Check if new name already exists
                             existing = session.query(ShopUpgrade).filter(ShopUpgrade.name == new_name).first()
                             if existing:
-                                await interaction.response.send_message(f"Shop upgrade '{new_name}' already exists", ephemeral=True)
+                                await interaction.response.send_message(tmpl.shop_upgrade_already_exists.format(name=new_name), ephemeral=True)
                                 return
                             
                             logger.info(f"Starting rename operation: '{shop_upgrade.name}' -> '{new_name}'")
@@ -1567,12 +1650,12 @@ class Shop(GroupCog):
                             # Update the target variable for subsequent operations
                             target = str(shop_upgrade.id)
                             
-                            await interaction.response.send_message(f"Shop upgrade '{shop_upgrade.name}' renamed to '{new_name}'", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_upgrade_renamed.format(old=shop_upgrade.name, new=new_name), ephemeral=True)
                             
                             # Refresh the UI with the new name
                             updated_shop_upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == shop_upgrade.id).first()
                             new_view, new_embed = ui_factory(updated_shop_upgrade)
-                            await message_manager.update_message(content="Please set up the shop upgrade", view=new_view, embed=new_embed)
+                            await message_manager.update_message(content=tmpl.shop_please_select_options_to_edit, view=new_view, embed=new_embed)
                         
                         modal.on_submit = modal_submit
                         await interaction.response.send_modal(modal)
@@ -1585,14 +1668,14 @@ class Shop(GroupCog):
                     async def delete_button_callback(interaction: Interaction, session: Session):
                         shop_upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == shop_upgrade_id_).first()
                         if shop_upgrade.player_upgrades:
-                            await interaction.response.send_message("You cannot delete a shop upgrade that has player upgrades assigned to it", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_cannot_delete_has_player_upgrades, ephemeral=True)
                             return
                         if shop_upgrade.unit_types:
-                            await interaction.response.send_message("You cannot delete a shop upgrade that has unit type associations assigned to it", ephemeral=True)
+                            await interaction.response.send_message(tmpl.shop_cannot_delete_has_unit_type_associations, ephemeral=True)
                             return
                         session.delete(shop_upgrade)
                         session.commit()
-                        await interaction.response.send_message("Shop upgrade deleted", ephemeral=True)
+                        await interaction.response.send_message(tmpl.shop_upgrade_deleted, ephemeral=True)
                         await message_manager.delete_message()
                     
                     delete_button.callback = delete_button_callback
@@ -1600,81 +1683,152 @@ class Shop(GroupCog):
                     @check
                     @error_reporting(True)
                     async def edit_button_callback(interaction: Interaction):
-                        # Create modal for editing
-                        modal = ui.Modal(title="Edit Shop Upgrade")
+                        # Create view with dropdowns for editing
+                        shop_upgrade_ = session.merge(shop_upgrade)
                         
                         # Get current values
-                        compatible_unit_types = [assoc.unit_type for assoc in shop_upgrade.unit_types]
+                        compatible_unit_types = [assoc.unit_type for assoc in shop_upgrade_.unit_types]
                         unit_types_text = "\n".join(compatible_unit_types)
                         
-                        name_input = ui.TextInput(label="Name", placeholder="Enter shop upgrade name", default=shop_upgrade.name, min_length=1, max_length=30)
-                        type_input = ui.TextInput(label="Type", placeholder="Enter upgrade type name", default=shop_upgrade.type, min_length=1, max_length=30)
-                        cost_input = ui.TextInput(label="Cost", placeholder="Enter cost", default=str(shop_upgrade.cost), min_length=1, max_length=10)
-                        refit_target_input = ui.TextInput(label="Refit Target", placeholder="Enter refit target unit type (optional)", default=shop_upgrade.refit_target or "", max_length=15, required=False)
-                        required_upgrade_id_input = ui.TextInput(label="Required Upgrade ID", placeholder="Enter required upgrade ID (optional)", default=str(shop_upgrade.required_upgrade_id) if shop_upgrade.required_upgrade_id else "", max_length=10, required=False)
-                        disabled_input = ui.TextInput(label="Disabled", placeholder="y/n", default="y" if shop_upgrade.disabled else "n", min_length=1, max_length=1)
-                        repeatable_input = ui.TextInput(label="Repeatable", placeholder="y/n", default="y" if shop_upgrade.repeatable else "n", min_length=1, max_length=1)
-                        unit_types_input = ui.TextInput(label="Compatible Unit Types", placeholder="Enter unit types (one per line)", default=unit_types_text, style=TextStyle.paragraph, required=False)
+                        # Get all upgrade types for dropdown
+                        upgrade_types = session.query(UpgradeType).all()
                         
-                        modal.add_item(name_input)
-                        modal.add_item(type_input)
-                        modal.add_item(cost_input)
-                        modal.add_item(refit_target_input)
-                        modal.add_item(required_upgrade_id_input)
-                        modal.add_item(disabled_input)
-                        modal.add_item(repeatable_input)
-                        modal.add_item(unit_types_input)
+                        view = ui.View()
+                        
+                        # UpgradeType dropdown with current value selected
+                        upgrade_type_options = [SelectOption(label=ut.name, value=ut.name) for ut in upgrade_types]
+                        upgrade_type_select = ui.Select(placeholder=tmpl.shop_select_upgrade_type_placeholder, options=upgrade_type_options)
+                        # Set the current value as default
+                        for option in upgrade_type_select.options:
+                            if option.value == shop_upgrade_.type:
+                                option.default = True
+                                break
+                        
+                        disabled_select = ui.Select(placeholder=tmpl.shop_disabled_placeholder, options=[
+                            SelectOption(label="Disabled: No", value="n", default=not shop_upgrade_.disabled),
+                            SelectOption(label="Disabled: Yes", value="y", default=shop_upgrade_.disabled)
+                        ])
+                        repeatable_select = ui.Select(placeholder=tmpl.shop_repeatable_placeholder, options=[
+                            SelectOption(label="Repeatable: No", value="n", default=not shop_upgrade_.repeatable),
+                            SelectOption(label="Repeatable: Yes", value="y", default=shop_upgrade_.repeatable)
+                        ])
+                        
+                        view.add_item(upgrade_type_select)
+                        view.add_item(disabled_select)
+                        view.add_item(repeatable_select)
+                        
+                        # Store the selected values
+                        selected_values = {
+                            "upgrade_type": shop_upgrade_.type,
+                            "disabled": shop_upgrade_.disabled,
+                            "repeatable": shop_upgrade_.repeatable,
+                            "unit_types_text": unit_types_text
+                        }
                         
                         @check
                         @error_reporting(True)
-                        @uses_db(CustomClient().sessionmaker)
-                        async def modal_submit(interaction: Interaction, session: Session):
-                            shop_upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == shop_upgrade_id_).first()
-                            
-                            name = name_input.value.strip()
-                            type_name = type_input.value.strip().upper()
-                            cost = int(cost_input.value.strip())
-                            refit_target = refit_target_input.value.strip().upper() if refit_target_input.value.strip() else None
-                            required_upgrade_id = int(required_upgrade_id_input.value.strip()) if required_upgrade_id_input.value.strip() else None
-                            disabled = disabled_input.value.strip().lower() == "y"
-                            repeatable = repeatable_input.value.strip().lower() == "y"
-                            unit_types_text = unit_types_input.value.strip()
-                            
-                            # Parse unit types from newline-separated text
-                            new_compatible_unit_types = [ut.strip().upper() for ut in unit_types_text.split('\n') if ut.strip()] if unit_types_text else []
-                            
-                            # Update shop upgrade fields
-                            shop_upgrade.name = name
-                            shop_upgrade.type = type_name
-                            shop_upgrade.cost = cost
-                            shop_upgrade.refit_target = refit_target
-                            shop_upgrade.required_upgrade_id = required_upgrade_id
-                            shop_upgrade.disabled = disabled
-                            shop_upgrade.repeatable = repeatable
-                            
-                            # Update unit type associations
-                            # Remove existing associations
-                            for assoc in shop_upgrade.unit_types:
-                                session.delete(assoc)
-                            
-                            # Add new associations
-                            for unit_type_name in new_compatible_unit_types:
-                                association = ShopUpgradeUnitTypes(
-                                    shop_upgrade_id=shop_upgrade.id,
-                                    unit_type=unit_type_name
-                                )
-                                session.add(association)
-                            
-                            session.commit()
-                            await interaction.response.send_message("Shop upgrade updated", ephemeral=True)
-                            
-                            # Refresh the UI
-                            updated_shop_upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == shop_upgrade.id).first()
-                            new_view, new_embed = ui_factory(updated_shop_upgrade)
-                            await message_manager.update_message(content="Please set up the shop upgrade", view=new_view, embed=new_embed)
+                        async def upgrade_type_callback(interaction: Interaction):
+                            selected_values["upgrade_type"] = upgrade_type_select.values[0] if upgrade_type_select.values else shop_upgrade_.type
+                            await interaction.response.defer(thinking=False, ephemeral=True)
+                            await message_manager.update_message(content=tmpl.shop_upgrade_type_status.format(type=selected_values['upgrade_type']), view=view)
                         
-                        modal.on_submit = modal_submit
-                        await interaction.response.send_modal(modal)
+                        @check
+                        @error_reporting(True)
+                        async def disabled_callback(interaction: Interaction):
+                            selected_values["disabled"] = disabled_select.values[0] == "y" if disabled_select.values else shop_upgrade_.disabled
+                            await interaction.response.defer(thinking=False, ephemeral=True)
+                            await message_manager.update_message(content=tmpl.shop_disabled_status.format(status='Yes' if selected_values['disabled'] else 'No'), view=view)
+                        
+                        @check
+                        @error_reporting(True)
+                        async def repeatable_callback(interaction: Interaction):
+                            selected_values["repeatable"] = repeatable_select.values[0] == "y" if repeatable_select.values else shop_upgrade_.repeatable
+                            await interaction.response.defer(thinking=False, ephemeral=True)
+                            await message_manager.update_message(content=tmpl.shop_repeatable_status.format(status='Yes' if selected_values['repeatable'] else 'No'), view=view)
+                        
+                        # Add a button to proceed to modal when all selections are made
+                        proceed_button = ui.Button(label=tmpl.shop_proceed_to_details_button, style=ButtonStyle.primary)
+                        
+                        @check
+                        @error_reporting(True)
+                        async def proceed_callback(interaction: Interaction):
+                            if not selected_values["upgrade_type"]:
+                                await interaction.response.send_message(tmpl.shop_please_select_upgrade_type, ephemeral=True)
+                                return
+                            
+                            # Now show the modal with the remaining fields
+                            modal = ui.Modal(title=tmpl.shop_edit_shop_upgrade_modal_title)
+                            name_input = ui.TextInput(label=tmpl.shop_upgrade_name_label, placeholder=tmpl.shop_upgrade_name_placeholder, default=shop_upgrade_.name, min_length=1, max_length=30)
+                            cost_input = ui.TextInput(label=tmpl.shop_upgrade_cost_label, placeholder=tmpl.shop_cost_placeholder, default=str(shop_upgrade_.cost), min_length=1, max_length=10)
+                            refit_target_input = ui.TextInput(label=tmpl.shop_refit_target_label, placeholder=tmpl.shop_refit_target_optional_placeholder, default=shop_upgrade_.refit_target or "", max_length=15, required=False)
+                            required_upgrade_id_input = ui.TextInput(label="Required Upgrade ID", placeholder=tmpl.shop_required_upgrade_id_placeholder, default=str(shop_upgrade_.required_upgrade_id) if shop_upgrade_.required_upgrade_id else "", max_length=10, required=False)
+                            unit_types_input = ui.TextInput(label="Compatible Unit Types", placeholder=tmpl.shop_compatible_unit_types_placeholder, default=selected_values["unit_types_text"], style=TextStyle.paragraph, required=False)
+                            
+                            modal.add_item(name_input)
+                            modal.add_item(cost_input)
+                            modal.add_item(refit_target_input)
+                            modal.add_item(required_upgrade_id_input)
+                            modal.add_item(unit_types_input)
+                            
+                            @check
+                            @error_reporting(True)
+                            @uses_db(CustomClient().sessionmaker)
+                            async def modal_submit(interaction: Interaction, session: Session):
+                                shop_upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == shop_upgrade_id_).first()
+                                
+                                name = name_input.value.strip()
+                                cost = int(cost_input.value.strip())
+                                refit_target = refit_target_input.value.strip().upper() if refit_target_input.value.strip() else None
+                                required_upgrade_id = int(required_upgrade_id_input.value.strip()) if required_upgrade_id_input.value.strip() else None
+                                unit_types_text = unit_types_input.value.strip()
+                                
+                                # Parse unit types from newline-separated text
+                                new_compatible_unit_types = [ut.strip().upper() for ut in unit_types_text.split('\n') if ut.strip()] if unit_types_text else []
+                                
+                                # Update shop upgrade fields
+                                shop_upgrade.name = name
+                                shop_upgrade.type = selected_values["upgrade_type"]
+                                shop_upgrade.cost = cost
+                                shop_upgrade.refit_target = refit_target
+                                shop_upgrade.required_upgrade_id = required_upgrade_id
+                                shop_upgrade.disabled = selected_values["disabled"]
+                                shop_upgrade.repeatable = selected_values["repeatable"]
+                                
+                                # Update unit type associations
+                                # Remove existing associations
+                                for assoc in shop_upgrade.unit_types:
+                                    session.delete(assoc)
+                                
+                                # Add new associations
+                                for unit_type_name in new_compatible_unit_types:
+                                    association = ShopUpgradeUnitTypes(
+                                        shop_upgrade_id=shop_upgrade.id,
+                                        unit_type=unit_type_name
+                                    )
+                                    session.add(association)
+                                
+                                session.commit()
+                                await interaction.response.defer(thinking=False, ephemeral=True)
+                                await message_manager.update_message(content=tmpl.shop_upgrade_updated, view=ui.View())
+                            
+                            modal.on_submit = modal_submit
+                            await interaction.response.send_modal(modal)
+                        
+                        proceed_button.callback = proceed_callback
+                        view.add_item(proceed_button)
+                        
+                        # Set up the individual dropdown callbacks
+                        upgrade_type_select.callback = upgrade_type_callback
+                        disabled_select.callback = disabled_callback
+                        repeatable_select.callback = repeatable_callback
+                        
+                        await interaction.response.send_message("Please select the options to edit, then proceed to details", view=view, ephemeral=True)
+                        
+                        # Refresh the UI
+                        updated_shop_upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == shop_upgrade_.id).first()
+                        new_view, new_embed = ui_factory(updated_shop_upgrade)
+                        await message_manager.update_message(content="Please set up the shop upgrade", view=new_view, embed=new_embed)
+                        
                     
                     edit_button.callback = edit_button_callback
                     
@@ -1694,7 +1848,7 @@ class Shop(GroupCog):
         
         select.callback = select_callback
         await interaction.response.defer(thinking=False, ephemeral=True)
-        await message_manager.update_message(content=f"Please select a shop upgrade", view=view)
+        await message_manager.update_message(content=tmpl.shop_please_select_unit_type, view=view)
     
 
 

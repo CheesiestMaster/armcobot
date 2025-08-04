@@ -105,6 +105,22 @@ class Campaign(BaseModel):
     # relationships
     units: Mapped[list[Unit]] = relationship("Unit", back_populates="campaign", lazy="select")
     invites: Mapped[list[CampaignInvite]] = relationship("CampaignInvite", back_populates="campaign", cascade="all, delete-orphan", lazy="select")
+    players: Mapped[set[Player]] = relationship(
+        "Player",
+        secondary="units",
+        primaryjoin="Campaign.id == Unit.campaign_id",
+        secondaryjoin="Unit.player_id == Player.id",
+        collection_class=set,
+        lazy="select"
+    )
+    live_players: Mapped[set[Player]] = relationship(
+        "Player",
+        secondary="units",
+        primaryjoin="and_(Campaign.id == Unit.campaign_id, Unit.status == 'ACTIVE')",
+        secondaryjoin="Unit.player_id == Player.id",
+        collection_class=set,
+        lazy="select"
+    )
 
 class CampaignInvite(BaseModel):
     __tablename__ = "campaign_invites"
@@ -138,10 +154,10 @@ class Player(BaseModel):
         uselist=False,
         viewonly=True
     )
-    active_unit: Mapped[Optional[Unit]] = relationship(
+    active_units: Mapped[list[Unit]] = relationship(
         "Unit",
         primaryjoin="and_(Player.id == Unit.player_id, Unit.active == True)",
-        uselist=False,
+        uselist=True,
         viewonly=True,
     )
 

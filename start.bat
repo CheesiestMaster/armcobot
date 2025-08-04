@@ -6,17 +6,35 @@ if exist terminate.flag (
 if exist update.flag (
     del update.flag
 )
+if exist pending.flag (
+    del pending.flag
+)
 echo. > PID
 
 call .venv\Scripts\activate.bat
 set LOOP_ACTIVE=true
 
+set count=0
+
 :loop
+echo. > pending.flag
 python main.py
 if exist terminate.flag (
     echo Terminating...
     goto end
 )
+
+if exist pending.flag (
+    set /a count+=1
+    if %count% gtr 5 (
+        echo Too many restarts without a successful init, terminating...
+        goto end
+    )
+) else (
+    set count=0
+)
+del pending.flag 2>nul
+
 if exist update.flag (
     echo Updating...
     git fetch

@@ -39,10 +39,6 @@ class Debug(GroupCog):
         self._setup_context_menus() # context menus cannot be instance methods, so we need to nest them
         #self._bump_briefing.start()
 
-    @Cog.listener()
-    async def on_interaction(self, interaction: Interaction):
-        logger.debug(f"Interaction received: {interaction.data}")
-
     async def _autocomplete_extensions(self, interaction: Interaction, current: str):
         return [ac.Choice(name=extension, value=extension) for extension in self.extensions if current.lower() in extension.lower() and not extension.startswith("template")]
 
@@ -454,7 +450,7 @@ class Debug(GroupCog):
             output_lines.append(line)
             current_length = new_length
         output_lines.reverse()
-        await interaction.response.send_message("\n".join(output_lines), ephemeral=True)
+        await interaction.response.send_message(("\n".join(output_lines))[:2000], ephemeral=True)
 
     has_run = True # False
     @loop(hours=3)

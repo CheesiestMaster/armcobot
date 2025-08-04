@@ -45,7 +45,9 @@ class Search(GroupCog):
         if not player:
             await interaction.response.send_message(tmpl.search_no_company, ephemeral=CustomClient().use_ephemeral)
             return
-        unit = session.query(Unit).filter(Unit.player_id == player.id, Unit.active == True).first()
+        # Get the first active unit for default selection
+        active_units = player.active_units
+        unit = active_units[0] if active_units else None
         aos = session.query(Unit.area_operation).distinct().all()
 
         class TypeSelect(ui.Select):

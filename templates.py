@@ -253,6 +253,101 @@ shop_select_upgrade_type_message = "Please select an upgrade type"
 shop_select_upgrade_type_placeholder = "Select an upgrade type"
 shop_create_upgrade_button = "Create Upgrade"
 
+# Shop management UI
+shop_manage_select_content = "Select what you want to manage"
+shop_unit_type_button = "Unit Type"
+shop_upgrade_type_button = "Upgrade Type"
+shop_upgrade_button = "Upgrade"
+
+# Unit Type Management
+shop_unit_type_select_placeholder = "Select a unit type"
+shop_add_new_unit_type_modal_title = "Add New Unit Type"
+shop_unit_type_name_label = "Unit Type Name"
+shop_unit_type_name_placeholder = "Enter the name of the new unit type"
+shop_is_base_placeholder = "Is this a base unit?"
+shop_unit_req_amount_placeholder = f"Unit {MAIN_CURRENCY_SHORT} Amount"
+shop_done_button = "Done"
+shop_please_setup_unit_type = "Please set up the unit type"
+shop_unit_type_added = "Unit type added"
+shop_unit_type_title = "Unit Type: {unit_type}"
+shop_rename_button = "Rename"
+shop_delete_button = "Delete"
+shop_rename_unit_type_modal_title = "Rename Unit Type"
+shop_new_name_label = "New Name"
+shop_new_name_placeholder = "Enter new unit type name"
+shop_name_cannot_be_empty = "Name cannot be empty"
+shop_unit_type_already_exists = "Unit type '{name}' already exists"
+shop_unit_type_renamed = "Unit type '{old}' renamed to '{new}'"
+shop_unit_type_updated = "Unit type updated"
+shop_unit_type_deleted = "Unit type deleted"
+
+# Unit Type Delete Errors
+shop_cannot_delete_has_units = "You cannot delete a unit type that has units assigned to it"
+shop_cannot_delete_has_original_units = "You cannot delete a unit type that has original units assigned to it"
+shop_cannot_delete_has_refit_targets = "You cannot delete a unit type that has refit targets assigned to it"
+shop_cannot_delete_has_compatible_upgrades = "You cannot delete a unit type that has compatible upgrades assigned to it"
+
+# Upgrade Type Management
+shop_upgrade_type_select_placeholder = "Select an upgrade type"
+shop_add_new_upgrade_type_modal_title = "Add New Upgrade Type"
+shop_upgrade_type_name_label = "Name"
+shop_upgrade_type_name_placeholder = "Enter upgrade type name"
+shop_emoji_label = "Emoji"
+shop_emoji_placeholder = "Enter emoji (optional)"
+shop_is_refit_label = "Is Refit"
+shop_yn_placeholder = "y/n"
+shop_non_purchaseable_label = "Non Purchaseable"
+shop_can_use_unit_req_label = "Can Use Unit Req"
+shop_upgrade_type_added = "Upgrade type added"
+shop_upgrade_type_title = "Upgrade Type: {name}"
+shop_rename_upgrade_type_modal_title = "Rename Upgrade Type"
+shop_upgrade_type_already_exists = "Upgrade type '{name}' already exists"
+shop_upgrade_type_renamed = "Upgrade type '{old}' renamed to '{new}'"
+shop_please_setup_upgrade_type = "Please set up the upgrade type"
+shop_upgrade_type_deleted = "Upgrade type deleted"
+
+# Upgrade Type Delete Errors
+shop_cannot_delete_has_shop_upgrades = "You cannot delete an upgrade type that has shop upgrades assigned to it"
+shop_cannot_delete_has_player_upgrades = "You cannot delete an upgrade type that has player upgrades assigned to it"
+
+# Shop Upgrade Management
+shop_upgrade_select_placeholder = "Select a shop upgrade"
+shop_select_upgrade_type_placeholder = "Select Upgrade Type"
+shop_disabled_placeholder = "Disabled"
+shop_repeatable_placeholder = "Repeatable"
+shop_proceed_to_details_button = "Proceed to Details"
+shop_add_new_shop_upgrade_modal_title = "Add New Shop Upgrade"
+shop_upgrade_name_placeholder = "Enter shop upgrade name"
+shop_cost_placeholder = "Enter cost"
+shop_refit_target_optional_placeholder = "Enter refit target unit type (optional)"
+shop_required_upgrade_id_placeholder = "Enter required upgrade ID (optional)"
+shop_compatible_unit_types_placeholder = "Enter unit types (one per line)"
+shop_please_select_upgrade_type = "Please select an upgrade type"
+shop_please_select_boolean_options = "Please select the boolean options, then fill out the modal"
+shop_upgrade_added = "Shop upgrade added"
+shop_upgrade_title = "Shop Upgrade: {name}"
+shop_edit_shop_upgrade_modal_title = "Edit Shop Upgrade"
+shop_upgrade_already_exists = "Shop upgrade '{name}' already exists"
+shop_upgrade_renamed = "Shop upgrade '{old}' renamed to '{new}'"
+shop_please_select_options_to_edit = "Please select the options to edit, then proceed to details"
+shop_upgrade_updated = "Shop upgrade updated"
+shop_upgrade_deleted = "Shop upgrade deleted"
+
+# Shop Upgrade Delete Errors
+shop_cannot_delete_has_player_upgrades = "You cannot delete a shop upgrade that has player upgrades assigned to it"
+shop_cannot_delete_has_unit_type_associations = "You cannot delete a shop upgrade that has unit type associations assigned to it"
+
+# Navigation
+shop_previous_button = "Previous"
+shop_next_button = "Next"
+
+# Status Messages
+shop_upgrade_type_status = "Upgrade Type: {type}"
+shop_disabled_status = "Disabled: {status}"
+shop_repeatable_status = "Repeatable: {status}"
+shop_please_select_unit_type = "Please select a unit type"
+shop_please_select_upgrade_type = "Please select an upgrade type"
+
 # Import any other user template overrides
 try:
     from user_templates import * #type: ignore

@@ -274,8 +274,12 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         if not _player:
             await interaction.response.send_message("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
             return
-        _unit = session.query(Unit).filter(Unit.player_id == _player.id, Unit.active == True).first()
-        if not _unit:
+        # Check for active units first
+        active_units = _player.active_units
+        if active_units:
+            # Use the first active unit
+            _unit = active_units[0]
+        else:
             # check for their stockpile unit, if that also doesn't exist, send a message saying so
             _stockpile = session.query(Unit).filter(Unit.player_id == _player.id, Unit.unit_type == "STOCKPILE").first()
             if not _stockpile:

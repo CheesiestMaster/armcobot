@@ -178,19 +178,34 @@ class Campaigns(GroupCog):
             await interaction.response.send_message("You don't have permission to payout this campaign", ephemeral=True)
             return
         logger.info(f"Paying out campaign {campaign} with base_req={base_req}, survivor_req={survivor_req}, base_bp={base_bp}, survivor_bp={survivor_bp}")
-        # payout all players in the campaign
-        for unit in _campaign.units:
-            logger.debug(f"Paying out {unit.callsign} for {campaign}")
-            unit.player.rec_points += base_req
-            unit.player.bonus_pay += base_bp
-            if unit.status == UnitStatus.ACTIVE:
-                unit.player.rec_points += survivor_req
-                unit.player.bonus_pay += survivor_bp
+        
+        # Get all players and live players using the new relationships
+        all_players = _campaign.players
+        live_players = _campaign.live_players
+        dead_players = all_players - live_players  # Set algebra to get players with no active units
+        
+        logger.debug(f"Campaign {campaign}: {len(all_players)} total players, {len(live_players)} live players, {len(dead_players)} dead players")
+        
+        # Payout base rewards to all players in the campaign
+        for player in all_players:
+            logger.debug(f"Paying out base rewards to {player.name} for {campaign}")
+            player.rec_points += base_req
+            player.bonus_pay += base_bp
+        
+        # Payout survivor rewards only to players with active units
+        for player in live_players:
+            logger.debug(f"Paying out survivor rewards to {player.name} for {campaign}")
+            player.rec_points += survivor_req
+            player.bonus_pay += survivor_bp
+        
         session.commit()
         await interaction.response.defer(ephemeral=True)
-        for unit in _campaign.units:
-            logger.debug(f"Putting {unit.callsign} in update queue for {campaign}")
-            self.bot.queue.put_nowait((1, unit.player, 0)) # we have to split the payout and reporting into two separate loops, because otherwise we get a deadlock
+        
+        # Queue updates for all affected players
+        for player in all_players:
+            logger.debug(f"Putting {player.name} in update queue for {campaign}")
+            self.bot.queue.put_nowait((1, player, 0))
+        
         await interaction.followup.send(f"Campaign {campaign} payout complete", ephemeral=True)
 
     @ac.command(name="invite", description="Invite a player to a campaign")

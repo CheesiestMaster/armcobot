@@ -19,7 +19,7 @@ Modules:
 from discord import Interaction, Intents, Status, Activity, ActivityType, Member
 from discord.ext.commands import Bot
 from discord.ext import tasks
-from os import getenv
+from os import getenv, unlink
 from sqlalchemy.orm import Session
 from models import *
 from sqlalchemy import text, func
@@ -534,6 +534,11 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         and logging the bot's information.
         """
         logger.info(f"Logged in as {self.user}")
+        # Remove pending.flag to indicate successful startup
+        try:
+            unlink("./pending.flag")
+        except FileNotFoundError:
+            pass  # File doesn't exist, which is fine
         #await self.set_bot_nick("S.A.M.")
         asyncio.create_task(self.queue_consumer())
         await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign", type=ActivityType.playing))

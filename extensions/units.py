@@ -230,10 +230,10 @@ class Unit(GroupCog):
                     return
 
                 logger.triage(f"Checking if player {_player.name} has any active units")
-                has_active_unit = session.query(exists().where(Unit_model.player_id == _player.id, Unit_model.active == True)).scalar()
-                if has_active_unit:
-                    logger.warning(f"{interaction.user.global_name} already has an active unit")
-                    await interaction.response.send_message("You already have an active unit", ephemeral=True)
+                max_active_units = int(os.getenv("MAX_ACTIVE_UNITS", "1"))
+                if len(_player.active_units) >= max_active_units:
+                    logger.warning(f"{interaction.user.global_name} already has {len(_player.active_units)} active unit(s) (max: {max_active_units})")
+                    await interaction.response.send_message(f"You already have {len(_player.active_units)} active unit(s) (maximum allowed: {max_active_units})", ephemeral=True)
                     return
 
                 if unit.status != UnitStatus.INACTIVE:
@@ -308,28 +308,37 @@ class Unit(GroupCog):
         await interaction.response.send_message("Please select the unit to remove", view=view, ephemeral=CustomClient().use_ephemeral)
         
     @ac.command(name="deactivate", description="Deactivate a unit")
+    @ac.describe(callsign="The callsign of the unit to deactivate")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def deactivateunit(self, interaction: Interaction, session: Session):
-        logger.debug(f"Deactivating unit for {interaction.user.id}")
-        player: Player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-        if not player:
-            await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+    async def deactivateunit(self, interaction: Interaction, callsign: str, session: Session):
+        logger.debug(f"Deactivating unit with callsign {callsign} for {interaction.user.id}")
+        
+        # Find the unit by callsign
+        unit = session.query(Unit_model).filter(Unit_model.callsign == callsign).first()
+        if not unit:
+            await interaction.response.send_message("Unit with that callsign not found", ephemeral=CustomClient().use_ephemeral)
             return
         
-        active_unit = session.query(Unit_model).filter(Unit_model.player_id == player.id, Unit_model.active == True).first()
-        if not active_unit:
-            await interaction.response.send_message("You don't have any active units", ephemeral=CustomClient().use_ephemeral)
+        # Verify the unit belongs to the user
+        if unit.player.discord_id != interaction.user.id:
+            await interaction.response.send_message("That unit doesn't belong to you", ephemeral=CustomClient().use_ephemeral)
             return
         
-        original_callsign = active_unit.callsign
-        logger.debug(f"Deactivating unit with callsign {active_unit.callsign}")
-        active_unit.active = False
-        active_unit.status = UnitStatus.INACTIVE if active_unit.status == UnitStatus.ACTIVE else active_unit.status
-        active_unit.callsign = None
-        active_unit.campaign_id = None
+        # Check if the unit is active
+        if not unit.active:
+            await interaction.response.send_message("That unit is not active", ephemeral=CustomClient().use_ephemeral)
+            return
+        
+        original_callsign = unit.callsign
+        logger.debug(f"Deactivating unit with callsign {unit.callsign}")
+        unit.active = False
+        unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
+        unit.callsign = None
+        unit.campaign_id = None
+        session.commit()
 
         await interaction.response.send_message(f"Unit with callsign {original_callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
-        self.bot.queue.put_nowait((1, player, 0))
+        self.bot.queue.put_nowait((1, unit.player, 0))
 
     @ac.command(name="units", description="Display a list of all Units for a Player")
     @ac.describe(player="The player to deliver results for")
