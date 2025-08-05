@@ -1236,8 +1236,10 @@ class Shop(GroupCog):
                     embed.add_field(name="Can Use Unit Req", value="Yes" if upgrade_type.can_use_unit_req else "No")
                     
                     rename_button = ui.Button(label=tmpl.shop_rename_button, style=ButtonStyle.primary)
+                    edit_button = ui.Button(label="Edit", style=ButtonStyle.secondary)
                     delete_button = ui.Button(label=tmpl.shop_delete_button, style=ButtonStyle.danger)
                     view.add_item(rename_button)
+                    view.add_item(edit_button)
                     view.add_item(delete_button)
                     
                     upgrade_type_ = upgrade_type.name # we can't use closure scoped instances, so we need to make a closure scoped PK of the instance instead
@@ -1328,6 +1330,122 @@ class Shop(GroupCog):
                         await interaction.response.send_modal(modal)
                     
                     rename_button.callback = rename_button_callback
+                    
+                    @check
+                    @error_reporting(True)
+                    async def edit_button_callback(interaction: Interaction):
+                        # Create edit view with selects for booleans and emoji button
+                        edit_view = ui.View()
+                        
+                        # Create selects for the 3 booleans
+                        is_refit_select = ui.Select(
+                            placeholder="Is Refit",
+                            options=[
+                                ui.SelectOption(label="Yes", value="true", default=upgrade_type.is_refit),
+                                ui.SelectOption(label="No", value="false", default=not upgrade_type.is_refit)
+                            ]
+                        )
+                        
+                        non_purchaseable_select = ui.Select(
+                            placeholder="Non Purchaseable",
+                            options=[
+                                ui.SelectOption(label="Yes", value="true", default=upgrade_type.non_purchaseable),
+                                ui.SelectOption(label="No", value="false", default=not upgrade_type.non_purchaseable)
+                            ]
+                        )
+                        
+                        can_use_unit_req_select = ui.Select(
+                            placeholder="Can Use Unit Req",
+                            options=[
+                                ui.SelectOption(label="Yes", value="true", default=upgrade_type.can_use_unit_req),
+                                ui.SelectOption(label="No", value="false", default=not upgrade_type.can_use_unit_req)
+                            ]
+                        )
+                        
+                        # Emoji button
+                        emoji_button = ui.Button(label="Set Emoji", style=ButtonStyle.primary)
+                        
+                        edit_view.add_item(is_refit_select)
+                        edit_view.add_item(non_purchaseable_select)
+                        edit_view.add_item(can_use_unit_req_select)
+                        edit_view.add_item(emoji_button)
+                        
+                        # Save button
+                        save_button = ui.Button(label="Save Changes", style=ButtonStyle.success)
+                        edit_view.add_item(save_button)
+                        
+                        @check
+                        @error_reporting(True)
+                        @uses_db(CustomClient().sessionmaker)
+                        async def save_button_callback(interaction: Interaction, session: Session):
+                            # Get the current upgrade type
+                            current_upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type_).first()
+                            
+                            # Update the boolean values
+                            current_upgrade_type.is_refit = is_refit_select.values[0] == "true" if is_refit_select.values else current_upgrade_type.is_refit
+                            current_upgrade_type.non_purchaseable = non_purchaseable_select.values[0] == "true" if non_purchaseable_select.values else current_upgrade_type.non_purchaseable
+                            current_upgrade_type.can_use_unit_req = can_use_unit_req_select.values[0] == "true" if can_use_unit_req_select.values else current_upgrade_type.can_use_unit_req
+                            
+                            session.commit()
+                            
+                            await interaction.response.send_message("Upgrade type updated successfully!", ephemeral=True)
+                            
+                            # Refresh the UI with updated values
+                            updated_upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type_).first()
+                            new_view, new_embed = ui_factory(updated_upgrade_type)
+                            await message_manager.update_message(content="Please set up the upgrade type", view=new_view, embed=new_embed)
+                        
+                        save_button.callback = save_button_callback
+                        
+                        @check
+                        @error_reporting(True)
+                        async def emoji_button_callback(interaction: Interaction):
+                            # Create modal for emoji input
+                            emoji_modal = ui.Modal(title="Set Upgrade Type Emoji")
+                            emoji_input = ui.TextInput(
+                                label="Emoji",
+                                placeholder="Enter emoji (e.g., ⚔️, 🛡️, 🏹)",
+                                default=upgrade_type.emoji or "",
+                                max_length=10
+                            )
+                            emoji_modal.add_item(emoji_input)
+                            
+                            @check
+                            @error_reporting(True)
+                            @uses_db(CustomClient().sessionmaker)
+                            async def emoji_modal_submit(interaction: Interaction, session: Session):
+                                new_emoji = emoji_input.value.strip()
+                                
+                                # Get the current upgrade type
+                                current_upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type_).first()
+                                
+                                # Update the emoji
+                                current_upgrade_type.emoji = new_emoji if new_emoji else None
+                                
+                                session.commit()
+                                
+                                await interaction.response.send_message(f"Emoji updated to: {new_emoji if new_emoji else 'None'}", ephemeral=True)
+                                
+                                # Refresh the UI with updated emoji
+                                updated_upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type_).first()
+                                new_view, new_embed = ui_factory(updated_upgrade_type)
+                                await message_manager.update_message(content="Please set up the upgrade type", view=new_view, embed=new_embed)
+                            
+                            emoji_modal.on_submit = emoji_modal_submit
+                            await interaction.response.send_modal(emoji_modal)
+                        
+                        emoji_button.callback = emoji_button_callback
+                        
+                        # Update the message with the edit view
+                        edit_embed = Embed(title=f"Edit Upgrade Type: {upgrade_type.name}")
+                        edit_embed.add_field(name="Current Emoji", value=upgrade_type.emoji or "None")
+                        edit_embed.add_field(name="Current Is Refit", value="Yes" if upgrade_type.is_refit else "No")
+                        edit_embed.add_field(name="Current Non Purchaseable", value="Yes" if upgrade_type.non_purchaseable else "No")
+                        edit_embed.add_field(name="Current Can Use Unit Req", value="Yes" if upgrade_type.can_use_unit_req else "No")
+                        
+                        await message_manager.update_message(content="Edit upgrade type settings", view=edit_view, embed=edit_embed)
+                    
+                    edit_button.callback = edit_button_callback
                     
                     @check
                     @error_reporting(True)
