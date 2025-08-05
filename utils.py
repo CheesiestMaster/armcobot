@@ -251,12 +251,12 @@ class Paginator:
         return self
     
     def next(self, is_iter: bool = False) -> list[P]:
+        self.index += 1
         if self.index >= len(self.items):
             if is_iter:
                 raise StopIteration
             else:
                 return self.items[self.index] # bump off the end and return the same item
-        self.index += 1
         return self.items[self.index]
     
     def previous(self) -> list[P]:

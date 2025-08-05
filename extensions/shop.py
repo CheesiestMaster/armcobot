@@ -372,6 +372,10 @@ class Shop(GroupCog):
                 The currency amount used for the current page
             """
             select.options.clear()
+
+            using_unit_req = current_unit_req > 0
+
+            currency = current_unit_req if using_unit_req else current_rec_points
             
             for upgrade_id in upgrade_ids:
                 logger.triage(f"Processing upgrade ID {upgrade_id} for display")
@@ -402,9 +406,6 @@ class Shop(GroupCog):
                 if not _upgrade.repeatable and owned_upgrade:
                     logger.triage(f"Skipping non-repeatable upgrade {_upgrade.name} as it is already owned")
                     continue
-
-                # Determine which currency to use (unit requisition or player requisition points)
-                currency = current_unit_req if _upgrade.upgrade_type.can_use_unit_req and current_unit_req > 0 else current_rec_points
                 
                 # Add ❌ indicator if player can't afford the upgrade
                 insufficient = "❌" if _upgrade.cost > currency else ""
@@ -465,6 +466,7 @@ class Shop(GroupCog):
         if paginator.has_next():
             next_button.disabled = False
             
+            @error_reporting(False)
             @uses_db(CustomClient().sessionmaker)
             async def next_button_callback(interaction: Interaction, session: Session):
                 """Callback for navigating to the next page of upgrades"""
@@ -1131,6 +1133,7 @@ class Shop(GroupCog):
             select.add_option(label=upgrade_type[0], value=upgrade_type[0])
         
         @check
+        @error_reporting(True)
         async def previous_button_callback(interaction: Interaction):
             nonlocal paginator
             logger.debug("Previous button clicked")
@@ -1156,6 +1159,7 @@ class Shop(GroupCog):
         previous_button.callback = previous_button_callback
 
         @check
+        @error_reporting(True)
         async def next_button_callback(interaction: Interaction):
             nonlocal paginator
             logger.debug("Next button clicked")
@@ -1181,6 +1185,7 @@ class Shop(GroupCog):
         next_button.callback = next_button_callback
         
         @check
+        @error_reporting(True)
         @uses_db(CustomClient().sessionmaker)
         async def select_callback(interaction: Interaction, session: Session):
             # here is the complicated part, we have two cases, either the data is "\0add_new_upgrade_type" or it's a valid upgrade type name
