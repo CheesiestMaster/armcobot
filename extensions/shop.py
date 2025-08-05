@@ -220,6 +220,7 @@ class Shop(GroupCog):
             logger.triage(f"Unit {unit_name} is proposed, checking requisition points")
             buy_button = ui.Button(label=tmpl.shop_buy_unit_button, style=ButtonStyle.success, disabled=rec_points < 1)
             
+            @error_reporting(False)
             @uses_db(CustomClient().sessionmaker)
             async def buy_button_callback(interaction: Interaction, session: Session):
                 """
@@ -318,6 +319,9 @@ class Shop(GroupCog):
         
         # Get unit details including name, type, and unit requisition
         _unit = session.query(Unit).filter(Unit.id == unit_id).first()
+        if not _unit:
+            logger.error(f"Unit {unit_id} not found")
+            raise ValueError(f"Unit {unit_id} not found")
         logger.triage(f"Unit {_unit.name} has {_unit.unit_req} unit requisition")
         unit_req = _unit.unit_req
         unit_name = _unit.name

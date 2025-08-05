@@ -199,17 +199,61 @@ class Debug(GroupCog):
             async def on_submit(_interaction: Interaction):
                 sql_query = _interaction.data["components"][0]["components"][0]["value"]
                 try:
-                    logger.info(f"Running query: {sql_query}")
-                    result = session.execute(text(sql_query))
+                    # Split query on semicolons and run sequentially
+                    queries = [q.strip() for q in sql_query.split(';') if q.strip()]
+                    logger.info(f"Running {len(queries)} queries sequentially")
+                    
+                    all_results = []
+                    for i, query in enumerate(queries):
+                        logger.info(f"Running query {i+1}/{len(queries)}: {query}")
+                        try:
+                            result = session.execute(text(query))
+                            
+                            try:
+                                rows = result.fetchall()
+                                all_results.append((i+1, query, rows))
+                            except Exception as fetch_error:
+                                # If fetchall fails, still add the result but don't fail the transaction
+                                # This handles cases like INSERT/UPDATE/DELETE that don't return rows
+                                all_results.append((i+1, query, None))
+                                logger.debug(f"Query {i+1} returned no rows (likely INSERT/UPDATE/DELETE): {fetch_error}")
+                        except Exception as query_error:
+                            # If the query execution itself fails, propagate the exception immediately
+                            logger.error(f"Query {i+1} failed: {query_error}")
+                            raise query_error
+                    
+                    # Single commit for all queries to maintain transactional atomicity
                     session.commit()
-                    try:
-                        rows = result.fetchall()
-                    except Exception:
-                        rows = None
-                    await _interaction.response.send_message(tmpl.debug_query_result.format(rows=rows) if rows else tmpl.debug_query_no_rows, ephemeral=self.bot.use_ephemeral)
+                    logger.info("All queries committed successfully")
+                    
+                    # Single commit for all queries to maintain transactional atomicity
+                    session.commit()
+                    logger.info("All queries committed successfully")
+                    
+                    # Build response message
+                    response_text = ""
+                    for query_num, query, rows in all_results:
+                        if rows:
+                            response_text += f"**Query {query_num}:**\n```{query}```\n**Result:**\n```{rows}```\n\n"
+                        else:
+                            response_text += f"**Query {query_num}:**\n```{query}```\n**Result:** No rows returned\n\n"
+                    
+                    # Use followup if response is already done, otherwise send_message
+                    if _interaction.response.is_done():
+                        await _interaction.followup.send(response_text, ephemeral=self.bot.use_ephemeral)
+                    else:
+                        await _interaction.response.send_message(response_text, ephemeral=self.bot.use_ephemeral)
+                        
                 except Exception as e:
                     logger.error(f"Error running query: {e}")
-                    await _interaction.response.send_message(tmpl.debug_query_error.format(e=e), ephemeral=self.bot.use_ephemeral)
+                    # Rollback on error to maintain transactional atomicity
+                    session.rollback()
+                    logger.info("Transaction rolled back due to error")
+                    error_message = tmpl.debug_query_error.format(e=e)
+                    if _interaction.response.is_done():
+                        await _interaction.followup.send(error_message, ephemeral=self.bot.use_ephemeral)
+                    else:
+                        await _interaction.response.send_message(error_message, ephemeral=self.bot.use_ephemeral)
 
             query_modal.on_submit = on_submit
             await interaction.response.send_modal(query_modal)
