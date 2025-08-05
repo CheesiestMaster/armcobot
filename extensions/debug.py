@@ -226,10 +226,6 @@ class Debug(GroupCog):
                     session.commit()
                     logger.info("All queries committed successfully")
                     
-                    # Single commit for all queries to maintain transactional atomicity
-                    session.commit()
-                    logger.info("All queries committed successfully")
-                    
                     # Build response message
                     response_text = ""
                     for query_num, query, rows in all_results:
@@ -238,11 +234,8 @@ class Debug(GroupCog):
                         else:
                             response_text += f"**Query {query_num}:**\n```{query}```\n**Result:** No rows returned\n\n"
                     
-                    # Use followup if response is already done, otherwise send_message
-                    if _interaction.response.is_done():
-                        await _interaction.followup.send(response_text, ephemeral=self.bot.use_ephemeral)
-                    else:
-                        await _interaction.response.send_message(response_text, ephemeral=self.bot.use_ephemeral)
+                    # Chunk the response if it's too large
+                    await self._send_chunked_response(_interaction, response_text)
                         
                 except Exception as e:
                     logger.error(f"Error running query: {e}")
@@ -268,10 +261,59 @@ class Debug(GroupCog):
                 rows = result.fetchall()
             except Exception:
                 rows = None
-            await interaction.response.send_message(tmpl.debug_query_result.format(rows=rows) if rows else tmpl.debug_query_no_rows, ephemeral=self.bot.use_ephemeral)
+            
+            response_text = tmpl.debug_query_result.format(rows=rows) if rows else tmpl.debug_query_no_rows
+            await self._send_chunked_response(interaction, response_text)
         except Exception as e:
             logger.error(f"Error running query: {e}")
             await interaction.response.send_message(tmpl.debug_query_error.format(e=e), ephemeral=self.bot.use_ephemeral)
+
+    async def _send_chunked_response(self, interaction: Interaction, text: str, chunk_size: int = 2000):
+        """
+        Send a response in chunks if it exceeds the Discord message limit.
+        
+        Args:
+            interaction: The Discord interaction
+            text: The text to send
+            chunk_size: Maximum characters per chunk (default 2000)
+        """
+        if len(text) <= chunk_size:
+            # Single message is fine
+            if interaction.response.is_done():
+                await interaction.followup.send(text, ephemeral=self.bot.use_ephemeral)
+            else:
+                await interaction.response.send_message(text, ephemeral=self.bot.use_ephemeral)
+            return
+        
+        # Need to chunk the response
+        chunks = []
+        current_chunk = ""
+        
+        # Split by lines to avoid breaking in the middle of a line
+        lines = text.split('\n')
+        
+        for line in lines:
+            # If adding this line would exceed chunk size, start a new chunk
+            if len(current_chunk) + len(line) + 1 > chunk_size:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = line
+            else:
+                current_chunk += ('\n' + line) if current_chunk else line
+        
+        # Add the last chunk if it has content
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        # Send the first chunk as the main response
+        if interaction.response.is_done():
+            await interaction.followup.send(chunks[0], ephemeral=self.bot.use_ephemeral)
+        else:
+            await interaction.response.send_message(chunks[0], ephemeral=self.bot.use_ephemeral)
+        
+        # Send remaining chunks as followups
+        for chunk in chunks[1:]:
+            await interaction.followup.send(chunk, ephemeral=self.bot.use_ephemeral)
 
     @uses_db(CustomClient().sessionmaker)
     async def botcompany(self, interaction: Interaction, _: MessageManager, session: Session):
