@@ -253,6 +253,8 @@ class Paginator:
     def next(self, is_iter: bool = False) -> list[P]:
         logger.debug(f"Paginator.next() called: current_index={self.index}, total_items={len(self.items)}, is_iter={is_iter}")
         
+        old_index = self.index
+        self.index += 1
         if self.index >= len(self.items):
             logger.debug(f"Index {self.index} >= len({len(self.items)}), at end of items")
             if is_iter:
@@ -263,8 +265,6 @@ class Paginator:
                 self.index = len(self.items) - 1
                 return self.items[self.index] # bump off the end and return the same item
         
-        old_index = self.index
-        self.index += 1
         logger.debug(f"Index incremented: {old_index} -> {self.index}, returning item at new index")
         return self.items[self.index]
     
