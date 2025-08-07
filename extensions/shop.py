@@ -371,6 +371,7 @@ class Shop(GroupCog):
             Returns:
                 The currency amount used for the current page
             """
+            select.disabled = False
             select.options.clear()
 
             using_unit_req = current_unit_req > 0
@@ -458,6 +459,11 @@ class Shop(GroupCog):
             
         previous_button.callback = previous_button_callback
         view.add_item(previous_button)
+
+        if not select.options:
+            logger.error(f"No options found for select menu for unit {unit_name}")
+            select.add_option(label="There's nothing here, You might not be allowed to buy the upgrades that would have been on this page", value="0")
+            select.disabled = True
         
         # Add the main upgrade selection dropdown
         view.add_item(select)
