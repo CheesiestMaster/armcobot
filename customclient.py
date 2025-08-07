@@ -203,8 +203,16 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 continue
             # we need to recraft the tuple before we can log it, because the session is detached
             if len(task) == 3:
+                if not task[1]:
+                    logger.error("Task is a tuple of length 3, but the second element is None, skipping")
+                    nosleep = True
+                    continue
                 task = (task[0], session.merge(task[1]), task[2])
             elif len(task) == 2:
+                if not task[1]:
+                    logger.error("Task is a tuple of length 2, but the second element is None, skipping")
+                    nosleep = True
+                    continue
                 task = (task[0], session.merge(task[1]), 0)
             elif len(task) == 1:
                 if not task[0] == 4:
