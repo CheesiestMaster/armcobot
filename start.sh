@@ -21,6 +21,7 @@ while true; do
 
     if [ -f ./pending.flag ]; then
         count=$((count+1))
+        echo "Restart count: $count"
         if [ $count -gt 5 ]; then
             echo "Too many restarts without a successful init, terminating..."
             break
