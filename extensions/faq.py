@@ -15,7 +15,7 @@ async def is_answerer(interaction: Interaction):
         """
         Checks if the user is an answerer
         """
-        valid = interaction.user.id in {int(getenv("BOT_OWNER_ID", "533009808501112881")), int(getenv("FAQ_ANSWERER_1", "805560300258590753")), int(getenv("FAQ_ANSWERER_2", "379951076343939072"))}
+        valid = interaction.user.id in {int(getenv("BOT_OWNER_ID")), int(getenv("FAQ_ANSWERER_1")), int(getenv("FAQ_ANSWERER_2"))}
         if not valid:
             await interaction.response.send_message(tmpl.not_authorized, ephemeral=True)
         return valid

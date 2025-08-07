@@ -46,11 +46,19 @@ class Debug(GroupCog):
     async def _is_mod(self, interaction: Interaction):
         try:
             logger.debug(f"Checking if {interaction.user.global_name} is a mod")
-            casting_guild=self.bot.get_guild(int(os.getenv("MAIN_GUILD_ID", 222052888531173386)))
-            logger.debug(f"Casting guild: {casting_guild} from environ {os.getenv('MAIN_GUILD_ID')}")
+            
+            # Try to use MAIN_GUILD_ID from environment first
+            main_guild_id = os.getenv("MAIN_GUILD_ID")
+            if main_guild_id:
+                casting_guild = self.bot.get_guild(int(main_guild_id))
+                logger.debug(f"Using MAIN_GUILD_ID: {main_guild_id}")
+            else:
+                # Fall back to interaction guild if environment variable is not set
+                casting_guild = interaction.guild
+                logger.debug("Using interaction guild as fallback")
             
             if casting_guild is None:
-                logger.error(f"Failed to get guild for mod check - guild cache may be unavailable")
+                logger.debug("No guild available for mod check")
                 return False
                 
             cast_user = casting_guild.get_member(interaction.user.id)
@@ -475,7 +483,7 @@ class Debug(GroupCog):
     @uses_db(CustomClient().sessionmaker)
     async def test(self, interaction: Interaction, session: Session):
         await interaction.response.defer(ephemeral=True)
-        main_guild = self.bot.get_guild(int(os.getenv("MAIN_GUILD_ID", "222052888531173386")))
+        main_guild = self.bot.get_guild(int(os.getenv("MAIN_GUILD_ID")))
         if main_guild:
             # get all the users and roles in the environment, and send f"{key}: {value.mention}" for each
             message = "Users:\n"

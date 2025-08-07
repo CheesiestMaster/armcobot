@@ -470,9 +470,14 @@ class Shop(GroupCog):
             @uses_db(CustomClient().sessionmaker)
             async def next_button_callback(interaction: Interaction, session: Session):
                 """Callback for navigating to the next page of upgrades"""
+                logger.debug(f"Next button callback triggered by user {interaction.user.global_name}")
+                
                 # Get fresh data from database
                 unit_name, unit_req = session.query(Unit.name, Unit.unit_req).filter(Unit.id == unit_id).first()
+                logger.debug(f"Retrieved unit data: name={unit_name}, unit_req={unit_req}")
+                
                 rec_points = session.query(Player.rec_points).filter(Player.id == player_id).scalar()
+                logger.debug(f"Retrieved player rec_points: {rec_points}")
                 
                 logger.triage(f"Navigating to next page of upgrades for unit {unit_name}")
                 await interaction.response.defer(thinking=False, ephemeral=True)
@@ -480,15 +485,23 @@ class Shop(GroupCog):
                 
                 # Update page and repopulate options
                 nonlocal page, select, previous_button, next_button
+                old_page = page
                 page = paginator.next()
+                logger.debug(f"Page navigation: {old_page} -> {page}")
+                
                 currency = populate_select_options(page, unit_req, rec_points)
+                logger.debug(f"Populated select options with currency: {currency}")
                 
                 # Update button states based on pagination
                 if previous_button:
                     previous_button.disabled = not paginator.has_previous()
+                    logger.debug(f"Previous button disabled: {previous_button.disabled}")
                 next_button.disabled = not paginator.has_next()
+                logger.debug(f"Next button disabled: {next_button.disabled}")
                 
+                logger.debug("Updating message with new view")
                 await message_manager.update_message(view=view)
+                logger.debug("Message update completed")
                 
             next_button.callback = next_button_callback
         view.add_item(next_button)

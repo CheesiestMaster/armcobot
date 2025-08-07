@@ -251,12 +251,21 @@ class Paginator:
         return self
     
     def next(self, is_iter: bool = False) -> list[P]:
+        logger.debug(f"Paginator.next() called: current_index={self.index}, total_items={len(self.items)}, is_iter={is_iter}")
+        
         if self.index >= len(self.items):
+            logger.debug(f"Index {self.index} >= len({len(self.items)}), at end of items")
             if is_iter:
+                logger.debug("Raising StopIteration for iterator mode")
                 raise StopIteration
             else:
+                logger.debug(f"Non-iterator mode: setting index to {len(self.items) - 1} and returning last item")
+                self.index = len(self.items) - 1
                 return self.items[self.index] # bump off the end and return the same item
+        
+        old_index = self.index
         self.index += 1
+        logger.debug(f"Index incremented: {old_index} -> {self.index}, returning item at new index")
         return self.items[self.index]
     
     def previous(self) -> list[P]:
@@ -363,12 +372,18 @@ async def toggle_command_ban(desired_state: bool, initiator: str):
         return current_state
     CustomClient().tree.interaction_check = CustomClient().check_banned_interaction if desired_state else CustomClient().no_commands
     if not desired_state:
-        comm_net = CustomClient().get_channel(int(os.getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
-        await comm_net.send(f"# Command ban has been enabled by {initiator}")
+        comm_net_id = os.getenv("COMM_NET_CHANNEL_ID")
+        if comm_net_id:
+            comm_net = CustomClient().get_channel(int(comm_net_id))
+            if comm_net:
+                await comm_net.send(f"# Command ban has been enabled by {initiator}")
         logger.info(f"Command ban enabled by {initiator}")
     else:
-        comm_net = CustomClient().get_channel(int(os.getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
-        await comm_net.send(f"# Command ban has been disabled by {initiator}")
+        comm_net_id = os.getenv("COMM_NET_CHANNEL_ID")
+        if comm_net_id:
+            comm_net = CustomClient().get_channel(int(comm_net_id))
+            if comm_net:
+                await comm_net.send(f"# Command ban has been disabled by {initiator}")
         logger.info(f"Command ban disabled by {initiator}")
     return desired_state
 

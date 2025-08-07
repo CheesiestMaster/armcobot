@@ -53,8 +53,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         - `config`: (dict) Bot configuration loaded from the database.
         - `uses_db`: (Callable) A decorator for database operations.
     """
-    mod_roles: set[int] = {int(getenv("MOD_ROLE_1", "1308924912936685609")), int(getenv("MOD_ROLE_2", "1302095620231794698"))}
-    gm_role: int = int(getenv("GM_ROLE", "1308925031069388870"))
+    mod_roles: set[int] = {int(getenv("MOD_ROLE_1")), int(getenv("MOD_ROLE_2"))}
+    gm_role: int = int(getenv("GM_ROLE"))
     session: Session
     use_ephemeral: bool
     config: dict
@@ -76,7 +76,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         DEFAULTS = {"command_prefix":"\0", "intents":defintents}
         kwargs = {**DEFAULTS, **kwargs} # merge DEFAULTS and kwargs, kwargs takes precedence
         super().__init__(**kwargs)
-        self.owner_ids = {int(getenv("BOT_OWNER_ID", "533009808501112881")), int(getenv("BOT_OWNER_ID_2", "126747253342863360"))}
+        self.owner_ids = {int(getenv("BOT_OWNER_ID")), int(getenv("BOT_OWNER_ID_2"))}
         self.sessionmaker = sessionmaker
         self.queue = asyncio.Queue()
         self.dialect = dialect
@@ -177,7 +177,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             if queue_size >= 1200 and not queue_banned:
                 logger.critical(f"Queue size is {queue_size}, this is too high!")
                 # fetch the discord user for the bot owner, message them, then call self.close()
-                owner = await self.fetch_user(int(getenv("BOT_OWNER_ID", "533009808501112881")))
+                owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))
                 if owner:
                     await owner.send("Queue size is too high, Initiating a System Ban")
                 await toggle_command_ban(True, self.user.mention)
@@ -190,7 +190,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 size_at_ban = None
             if queue_banned and queue_size >= size_at_ban+200:
                 logger.debug("Queue is still growing, Purging")
-                owner = await self.fetch_user(int(getenv("BOT_OWNER_ID", "533009808501112881")))
+                owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))
                 if owner:
                     await owner.send("Queue is still growing, Purging")
                 while not self.queue.empty():
@@ -558,11 +558,11 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
     async def shutdown_callback(self):
         try:
-            channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
+            channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID")))
         except Exception as e:
             logger.error(f"Error fetching channel: {e}")
             channel = None
-        owner = await self.fetch_user(int(getenv("BOT_OWNER_ID", "533009808501112881")))
+        owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))
         if channel:
             await channel.send(f"{owner.mention}\n# S.A.M. was terminated by the system")
         await self.close()
@@ -573,7 +573,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             import sam_startup # type: ignore
         except ImportError:
             return
-        channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
+        channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID")))
         if not channel:
             return
         startup_sequence = sam_startup.get_startup_sequence()
@@ -589,10 +589,10 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     async def notify_on_24_hours(self):
         logger.debug("Starting 24 hour notification loop")
         await asyncio.sleep(24 * 60 * 60)
-        channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID", "1211454073383952395")))
+        channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID")))
         if not channel:
             return
-        owner = await self.fetch_user(int(getenv("BOT_OWNER_ID", "533009808501112881")))
+        owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))
         await channel.send(f"{owner.mention}\n# I have successfully survived 24 Hours!")
         logger.debug("24 hour notification loop finished")
         self.notify_on_24_hours.cancel()
@@ -642,7 +642,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             if last_ping and (datetime.now() - last_ping).total_seconds() < 10:
                 await interaction.response.send_message("I've been pinged recently, wait a bit before pinging again", ephemeral=True)
                 return
-            last_pinger = interaction.user.id if not interaction.user.id == int(getenv("BOT_OWNER_ID", "533009808501112881")) else last_pinger # don't lockout the owner from pings
+            last_pinger = interaction.user.id if not interaction.user.id == int(getenv("BOT_OWNER_ID")) else last_pinger # don't lockout the owner from pings
             last_ping = datetime.now()
             await interaction.response.send_message(f"Pong! I was last restarted at <t:{int(self.start_time.timestamp())}:F>, <t:{int(self.start_time.timestamp())}:R>")
 
