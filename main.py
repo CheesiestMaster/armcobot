@@ -38,8 +38,6 @@ if not os.getenv("BOT_TOKEN") or os.getenv("BOT_TOKEN") == "TOKEN":
     raise EnvironmentError("BOT_TOKEN is not set")
 if not os.getenv("DATABASE_URL") or os.getenv("DATABASE_URL") == "URL":
     raise EnvironmentError("DATABASE_URL is not set")
-if not os.getenv("MYSQL_PASSWORD") or os.getenv("MYSQL_PASSWORD") == "PASSWORD":
-    raise EnvironmentError("MYSQL_PASSWORD is not set")
 
 import re
 def human_size_to_bytes(size_str):
