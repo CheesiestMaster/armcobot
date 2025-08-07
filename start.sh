@@ -32,6 +32,7 @@ while true; do
 
     if [ -f ./update.flag ]; then
         echo "Updating..."
+        rm -f ./update.flag
         git fetch
         # check if there is a difference on ./start.sh
         if [ "$(git diff ./start.sh)" != "" ]; then
