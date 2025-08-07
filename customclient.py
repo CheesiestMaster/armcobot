@@ -34,7 +34,6 @@ from prometheus_client import Counter
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
 
-logging.basicConfig(level=logging.getLevelName(getenv("LOG_LEVEL", "INFO")))
 logger = logging.getLogger(__name__)
 logging.getLogger("discord").setLevel(logging.WARNING)
 

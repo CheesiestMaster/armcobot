@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import logging
+from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 import sys
 import os
-
 from coloredformatter import ColoredFormatter
+
+# Environ setup
 if not os.path.exists("global.env"):
     raise FileNotFoundError("global.env not found")
 load_dotenv("global.env")
@@ -13,6 +15,15 @@ if not os.path.exists(LOCAL_ENV_FILE):
     # touch the file
     open(LOCAL_ENV_FILE, "w").close()
 load_dotenv(LOCAL_ENV_FILE, override=True)
+
+# check that secrets aren't set prematurely
+if os.getenv("BOT_TOKEN"):
+    raise EnvironmentError("BOT_TOKEN set in global or local environment file, please move it to the sensitive environment file")
+if os.getenv("DATABASE_URL"):
+    raise EnvironmentError("DATABASE_URL set in global or local environment file, please move it to the sensitive environment file")
+if os.getenv("MYSQL_PASSWORD"):
+    raise EnvironmentError("MYSQL_PASSWORD set in global or local environment file, please move it to the sensitive environment file")
+
 SENSITIVE_ENV_FILE = os.getenv("SENSITIVE_ENV_FILE")
 if not os.path.exists(SENSITIVE_ENV_FILE):
     # create the file with the required variables
@@ -23,14 +34,70 @@ if not os.path.exists(SENSITIVE_ENV_FILE):
     raise FileNotFoundError("SENSITIVE_ENV_FILE wasn't found so a new one was created, please fill it in")
 
 load_dotenv(SENSITIVE_ENV_FILE, override=True)
+if not os.getenv("BOT_TOKEN") or os.getenv("BOT_TOKEN") == "TOKEN":
+    raise EnvironmentError("BOT_TOKEN is not set")
+if not os.getenv("DATABASE_URL") or os.getenv("DATABASE_URL") == "URL":
+    raise EnvironmentError("DATABASE_URL is not set")
+if not os.getenv("MYSQL_PASSWORD") or os.getenv("MYSQL_PASSWORD") == "PASSWORD":
+    raise EnvironmentError("MYSQL_PASSWORD is not set")
+
+import re
+def human_size_to_bytes(size_str):
+    """
+    Convert a human-readable file size string into bytes.
+
+    This function takes a string representing a file size with units such as 
+    'KB', 'MB', 'GB', etc., and converts it into an integer representing the 
+    size in bytes. It supports both decimal (e.g., 'KB') and binary (e.g., 'KiB') 
+    prefixes.
+
+    Parameters:
+    size_str (str): A string representing the file size, e.g., '10 MB', '5.5 GiB'.
+
+    Returns:
+    int: The size in bytes.
+
+    Raises:
+    ValueError: If the input string is not a valid size format.
+
+    Example:
+    >>> human_size_to_bytes('10 MB')
+    10000000
+    >>> human_size_to_bytes('5.5 GiB')
+    5905580032
+    """
+    sizes = {
+        "b": 1,
+        "kb": 1000, "kib": 1024,
+        "mb": 1000**2, "mib": 1024**2,
+        "gb": 1000**3, "gib": 1024**3,
+        "tb": 1000**4, "tib": 1024**4,
+        "pb": 1000**5, "pib": 1024**5,
+        "eb": 1000**6, "eib": 1024**6,
+        "zb": 1000**7, "zib": 1024**7,
+        "yb": 1000**8, "yib": 1024**8,
+    }
+    pattern = r"^(\d+(\.\d+)?)\s*([kmgtpezy]?i?b)?$"
+    size_str = size_str.strip().replace(" ", "").replace("_", "").replace(",", "").lower()
+    match = re.match(pattern, size_str)
+    if not match:
+        raise ValueError(f"Invalid size string: {size_str}")
+    value, _, unit = match.groups()
+    unit = unit or "b" # default to bytes if no unit is provided
+    value = float(value)
+    return int(value * sizes[unit])
 
 # add a file handler to the root logger
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(ColoredFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-logging.basicConfig(level=logging.DEBUG,
+file_handler = RotatingFileHandler(os.getenv("LOG_FILE"), 
+                                   maxBytes=human_size_to_bytes(os.getenv("LOG_FILE_SIZE")), 
+                                   backupCount=int(os.getenv("LOG_FILE_BACKUP_COUNT")))
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logging.basicConfig(level=logging.getLevelName(os.getenv("LOG_LEVEL", "INFO")),
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     handlers=[
-                        logging.FileHandler("armco.log"),
+                        file_handler,
                         stream_handler
                     ],
                     force=True) # needed to delete the default stderr handler

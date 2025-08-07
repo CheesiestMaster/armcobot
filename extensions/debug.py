@@ -4,7 +4,7 @@ from logging import getLogger
 import logging
 from pathlib import Path
 from discord.ext.commands import GroupCog, Bot, Cog
-from discord import Interaction, app_commands as ac, ui, TextStyle, Embed, SelectOption, Forbidden, HTTPException, Message, NotFound, TextChannel
+from discord import Interaction, app_commands as ac, ui, TextStyle, Embed, SelectOption, Forbidden, HTTPException, Message, NotFound, TextChannel, File
 from sqlalchemy import text, func
 import os
 from models import Player, Statistic, Dossier, Campaign, CampaignInvite, Unit, UnitStatus
@@ -12,7 +12,7 @@ from asyncio import QueueEmpty
 import random
 from customclient import CustomClient
 from coloredformatter import stats
-from utils import uses_db, toggle_command_ban, is_server
+from utils import error_reporting, uses_db, toggle_command_ban, is_server
 from sqlalchemy.orm import Session
 from sqlalchemy import exists
 import templates as tmpl
@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from psutil import Process
 from MessageManager import MessageManager
 from discord.ext.tasks import loop
+from io import BytesIO
 logger = getLogger(__name__)
 
 process: Process = None
@@ -537,6 +538,37 @@ class Debug(GroupCog):
             current_length = new_length
         output_lines.reverse()
         await interaction.response.send_message(("\n".join(output_lines))[:2000], ephemeral=True)
+
+    @ac.command(name="logfile", description="Get the current log file as a Discord file")
+    @error_reporting(True)
+    async def logfile(self, interaction: Interaction):
+        """Get the current log file opened by __main__.file_handler as a Discord file."""
+        try:
+            # Get the log file path from environment
+            log_file_path = os.getenv("LOG_FILE")
+            if not log_file_path or not os.path.exists(log_file_path):
+                await interaction.response.send_message("Log file not found or not configured", ephemeral=True)
+                return
+            
+            # Read the log file
+            with open(log_file_path, "r", encoding="utf-8") as f:
+                log_content = f.read()
+            
+            # Create a BytesIO object with the log content
+            log_bytes = BytesIO(log_content.encode("utf-8"))
+            
+            # Create a Discord file
+            discord_file = File(log_bytes, filename=f"armco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+            
+            await interaction.response.send_message(
+                f"Current log file ({len(log_content)} characters):",
+                file=discord_file,
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            logger.error(f"Error reading log file: {e}")
+            await interaction.response.send_message(f"Error reading log file: {e}", ephemeral=True)
 
     has_run = True # False
     @loop(hours=3)
