@@ -6,7 +6,7 @@ from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOpti
 from discord.ui import View
 from models import Player, Unit as Unit_model, UnitStatus, Campaign, CampaignInvite, UnitType
 from customclient import CustomClient
-from utils import uses_db, is_management
+from utils import uses_db, is_management, error_reporting
 from sqlalchemy.orm import Session
 from sqlalchemy import exists
 from typing import Tuple
@@ -18,6 +18,42 @@ logger = getLogger(__name__)
 class Unit(GroupCog):
     def __init__(self, bot: Bot):
         self.bot = bot
+
+    def _deactivate_unit_by_id(self, unit_id: int, session: Session) -> str:
+        """
+        Helper function to deactivate a unit by its ID.
+        Returns the original callsign of the deactivated unit.
+        """
+        logger.debug(f"Deactivating unit by ID: unit_id={unit_id}")
+        
+        # Find the unit by ID
+        unit = session.query(Unit_model).filter(Unit_model.id == unit_id).first()
+        if not unit:
+            logger.warning(f"Unit not found by ID: unit_id={unit_id}")
+            raise ValueError("Unit not found")
+        
+        logger.debug(f"Found unit: id={unit.id}, name={unit.name}, callsign={unit.callsign}, player_id={unit.player.discord_id}, active={unit.active}, status={unit.status}")
+        
+        # Check if the unit is active
+        if not unit.active:
+            logger.warning(f"Attempted to deactivate already inactive unit: unit_id={unit.id}, callsign={unit.callsign}")
+            raise ValueError("Unit is not active")
+        
+        original_callsign = unit.callsign
+        original_status = unit.status
+        original_campaign_id = unit.campaign_id
+        
+        logger.debug(f"Deactivating unit: id={unit.id}, name={unit.name}, callsign={original_callsign}, status={original_status} -> INACTIVE, campaign_id={original_campaign_id} -> None")
+        
+        unit.active = False
+        unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
+        unit.callsign = None
+        unit.campaign_id = None
+        
+        session.commit()
+        logger.debug(f"Successfully deactivated unit: id={unit.id}, name={unit.name}, original_callsign={original_callsign}")
+        
+        return original_callsign
 
     @ac.command(name="create", description="Create a new unit for a player")
     @ac.describe(unit_name="The name of the unit to create")
@@ -308,51 +344,81 @@ class Unit(GroupCog):
         await interaction.response.send_message("Please select the unit to remove", view=view, ephemeral=CustomClient().use_ephemeral)
         
     @ac.command(name="deactivate", description="Deactivate a unit")
-    @ac.describe(callsign="The callsign of the unit to deactivate")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def deactivateunit(self, interaction: Interaction, callsign: str, session: Session):
-        logger.debug(f"Deactivate unit request: callsign={callsign}, user_id={interaction.user.id}, user_name={interaction.user.global_name}")
+    @error_reporting(False)
+    async def deactivateunit(self, interaction: Interaction, session: Session):
+        logger.debug(f"Deactivate unit request: user_id={interaction.user.id}, user_name={interaction.user.global_name}")
         
-        # Find the unit by callsign
-        unit = session.query(Unit_model).filter(Unit_model.callsign == callsign).first()
-        if not unit:
-            logger.warning(f"Unit not found: callsign={callsign}, user_id={interaction.user.id}")
-            await interaction.response.send_message("Unit with that callsign not found", ephemeral=CustomClient().use_ephemeral)
+        # Find the player and their active units
+        player = session.query(Player).filter(Player.discord_id == str(interaction.user.id)).first()
+        if not player:
+            logger.warning(f"Player not found: user_id={interaction.user.id}")
+            await interaction.response.send_message("You don't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
             return
         
-        logger.debug(f"Found unit: id={unit.id}, name={unit.name}, callsign={unit.callsign}, player_id={unit.player.discord_id}, active={unit.active}, status={unit.status}")
+        active_units = player.active_units
+        logger.debug(f"Found {len(active_units)} active units for player: player_id={player.id}")
         
-        # Verify the unit belongs to the user
-        if unit.player.discord_id != str(interaction.user.id):
-            logger.warning(f"Unit {unit.name} ({unit.callsign}) with player {unit.player.discord_id} does not belong to {interaction.user.id} ({interaction.user.global_name})")
-            await interaction.response.send_message("That unit doesn't belong to you", ephemeral=CustomClient().use_ephemeral)
+        if not active_units:
+            logger.warning(f"No active units found for player: player_id={player.id}")
+            await interaction.response.send_message("You don't have any active units to deactivate", ephemeral=CustomClient().use_ephemeral)
             return
         
-        # Check if the unit is active
-        if not unit.active:
-            logger.warning(f"Attempted to deactivate already inactive unit: unit_id={unit.id}, callsign={unit.callsign}, user_id={interaction.user.id}")
-            await interaction.response.send_message("That unit is not active", ephemeral=CustomClient().use_ephemeral)
-            return
-        
-        original_callsign = unit.callsign
-        original_status = unit.status
-        original_campaign_id = unit.campaign_id
-        
-        logger.debug(f"Deactivating unit: id={unit.id}, name={unit.name}, callsign={original_callsign}, status={original_status} -> INACTIVE, campaign_id={original_campaign_id} -> None")
-        
-        unit.active = False
-        unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
-        unit.callsign = None
-        unit.campaign_id = None
-        
-        session.commit()
-        logger.debug(f"Successfully deactivated unit: id={unit.id}, name={unit.name}, original_callsign={original_callsign}")
+        if len(active_units) == 1:
+            # Single active unit - deactivate it directly
+            unit = active_units[0]
+            logger.debug(f"Single active unit found, deactivating directly: unit_id={unit.id}, callsign={unit.callsign}")
+            
+            original_callsign = self._deactivate_unit_by_id(unit.id, session)
+            await interaction.response.send_message(f"Unit with callsign {original_callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
+            
+            # Queue notification
+            self.bot.queue.put_nowait((1, player, 0))
+            logger.debug(f"Queued notification for deactivated unit: player_id={player.discord_id}, unit_callsign={original_callsign}")
+        else:
+            # Multiple active units - show dropdown
+            logger.debug(f"Multiple active units found, showing dropdown: count={len(active_units)}")
+            cog = self
+            
+            class UnitDeactivateSelect(ui.Select):
+                def __init__(self, units: list[Unit_model]):
+                    options = [
+                        SelectOption(
+                            label=f"{unit.name} ({unit.callsign})", 
+                            value=str(unit.id),
+                            description=f"Unit Type: {unit.unit_type}"
+                        ) for unit in units
+                    ]
+                    super().__init__(placeholder="Select the unit to deactivate", options=options)
 
-        await interaction.response.send_message(f"Unit with callsign {original_callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
-        
-        # Queue notification
-        self.bot.queue.put_nowait((1, unit.player, 0))
-        logger.debug(f"Queued notification for deactivated unit: player_id={unit.player.discord_id}, unit_callsign={original_callsign}")
+                @uses_db(sessionmaker=CustomClient().sessionmaker)
+                @error_reporting(False)
+                async def callback(self, interaction: Interaction, session: Session):
+                    unit_id = int(self.values[0])
+                    logger.debug(f"Unit selected for deactivation: unit_id={unit_id}")
+                    
+                    # Use closure scoping to access the parent cog
+                    original_callsign = cog._deactivate_unit_by_id(unit_id, session)
+                    await interaction.response.send_message(f"Unit with callsign {original_callsign} deactivated", ephemeral=CustomClient().use_ephemeral)
+                    
+                    # Queue notification
+                    player = session.query(Player).filter(Player.discord_id == str(interaction.user.id)).first()
+                    if player:
+                        cog.bot.queue.put_nowait((1, player, 0))
+                        logger.debug(f"Queued notification for deactivated unit: player_id={player.discord_id}, unit_callsign={original_callsign}")
+
+            class DeactivateUnitView(ui.View):
+                def __init__(self, units: list[Unit_model]):
+                    super().__init__()
+                    select = UnitDeactivateSelect(units)
+                    self.add_item(select)
+
+            view = DeactivateUnitView(active_units)
+            await interaction.response.send_message(
+                f"You have {len(active_units)} active units. Please select which one to deactivate:",
+                view=view,
+                ephemeral=CustomClient().use_ephemeral
+            )
 
     @ac.command(name="units", description="Display a list of all Units for a Player")
     @ac.describe(player="The player to deliver results for")
