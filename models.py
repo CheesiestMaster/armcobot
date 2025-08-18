@@ -26,7 +26,7 @@ class BaseModel(DeclarativeBase):
         class_name = self.__class__.__name__
         # Correctly access primary key columns
         primary_keys = ", ".join(
-            [f"{key}={getattr(self, key)!r}" for key in self.__table__.primary_key.columns.keys()]
+            [f"{key}={getattr(self, key)!r}" for key in self.__table__.primary_key.columns.keys()] # type: ignore
         )
         return f"<{class_name}({primary_keys})>"
     

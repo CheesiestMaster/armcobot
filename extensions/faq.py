@@ -15,10 +15,30 @@ async def is_answerer(interaction: Interaction):
         """
         Checks if the user is an answerer
         """
-        valid = interaction.user.id in {int(getenv("BOT_OWNER_ID")), int(getenv("FAQ_ANSWERER_1")), int(getenv("FAQ_ANSWERER_2"))}
-        if not valid:
-            await interaction.response.send_message(tmpl.not_authorized, ephemeral=True)
-        return valid
+        # Check if user is one of the authorized users
+        authorized_users = {
+            int(getenv("BOT_OWNER_ID")), 
+            int(getenv("BOT_OWNER_ID_2")), 
+            int(getenv("FAQ_ANSWERER_1")), 
+            int(getenv("FAQ_ANSWERER_2"))
+        }
+        
+        # Check if user has any of the mod roles
+        mod_roles = {int(getenv("MOD_ROLE_1")), int(getenv("MOD_ROLE_2"))}
+        
+        # Check if user ID is in authorized users
+        if interaction.user.id in authorized_users:
+            return True
+            
+        if interaction.guild:
+            user_roles = {role.id for role in interaction.user.roles}
+            if user_roles & mod_roles:  # Check intersection
+                return True
+        
+        # User is not authorized
+        await interaction.response.send_message(tmpl.not_authorized, ephemeral=True)
+        return False
+
 counters = RollingCounterDict(24*60*60)
 total_views = 0
 class Faq(GroupCog):

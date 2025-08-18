@@ -69,6 +69,7 @@ no_meta_campaign_company = "You don't have a Meta Campaign company"
 already_have_company = "You already have a Meta Campaign company"
 invalid_input = "Invalid input: values cannot contain discord tags or headers"
 no_permission = "You don't have permission to run this command"
+unexpected_error = "Unexpected error, please tell Cheese"
 stopping_bot = "Stopping bot"
 restarting_bot = "Restarting bot"
 updating_bot = "Updating bot"
@@ -124,6 +125,55 @@ unit_removed = "Unit {unit.name} removed"
 unit_deactivated = "Unit with callsign {original_callsign} deactivated"
 unit_renamed = "Unit renamed to {new_name}"
 unit_killed = "Unit {callsign} killed{mia_text}"
+
+# Unit creation and management messages
+unit_created = "Unit {unit.name} created"
+unit_select_type_and_name = "Please select the unit type and enter the unit name"
+unit_select_campaign = "Select a campaign"
+unit_select_unit = "Select a unit"
+unit_no_units_available = "No units available"
+unit_campaign_invalid = "Invalid campaign"
+unit_not_eligible = "You are not eligible to join this campaign"
+unit_already_active_count = "You already have {active_count} active unit(s) (maximum allowed: {max_active})"
+unit_selected_for_campaign = "Unit {unit.name} selected for campaign {campaign_name}"
+
+# Unit removal messages
+unit_no_proposed_units = "You don't have any proposed units"
+unit_select_to_remove = "Please select the unit to remove"
+unit_select_to_rename = "Please select the unit to rename"
+unit_select_to_transfer = "Please select the unit to transfer"
+
+# Unit deactivation messages
+unit_no_active_units = "You don't have any active units to deactivate"
+unit_select_to_deactivate = "Select the unit to deactivate"
+unit_multiple_active_units = "You have {count} active units. Please select which one to deactivate:"
+
+# Unit display messages
+unit_user_no_company = "User doesn't have a Meta Campaign company"
+unit_player_units_display = "Here are {player.name}'s Units:\n\n{unit_table}"
+
+# Unit rename messages
+unit_rename_modal_title = "Rename Unit"
+unit_rename_new_name_label = "New Name"
+
+# Unit transfer messages
+unit_transfer_mention_player = "Please mention the player to transfer the unit to:"
+unit_transfer_target_no_company = "The mentioned player does not exist"
+unit_transfer_success = "Unit {unit.name} transferred to {target_player.name}"
+
+# Error messages
+# Note: unit_unexpected_error and unit_no_permission are redundant with existing templates
+
+# UI Placeholders and Labels
+unit_select_type_placeholder = "Select the type of unit to create"
+unit_create_button_label = "Create Unit"
+unit_select_campaign_placeholder = "Select a campaign"
+unit_select_unit_placeholder = "Select a unit"
+unit_no_units_option_label = "No units available"
+unit_select_remove_placeholder = "Select the unit to remove"
+unit_select_rename_placeholder = "Select the unit to rename"
+unit_select_transfer_placeholder = "Select the unit to transfer"
+unit_select_deactivate_placeholder = "Select the unit to deactivate"
 
 # Player related messages
 player_not_found = "Player not found"

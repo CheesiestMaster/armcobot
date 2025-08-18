@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from models import *
 from sqlalchemy import text, func
 from datetime import datetime, timedelta
-from typing import Any, Callable
+from typing import Any, Callable, overload
 from singleton import Singleton
 import asyncio
 import templates as tmpl
@@ -53,13 +53,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         - `config`: (dict) Bot configuration loaded from the database.
         - `uses_db`: (Callable) A decorator for database operations.
     """
-    mod_roles: set[int] = {int(getenv("MOD_ROLE_1")), int(getenv("MOD_ROLE_2"))}
-    gm_role: int = int(getenv("GM_ROLE"))
+    mod_roles: set[int] = {int(getenv("MOD_ROLE_1")), int(getenv("MOD_ROLE_2"))}  # type: ignore
+    gm_role: int = int(getenv("GM_ROLE"))  # type: ignore
     session: Session
     use_ephemeral: bool
     config: dict
     sessionmaker: Callable
     start_time: datetime
+
     def __init__(self, session: Session,/, sessionmaker: Callable, dialect: str, **kwargs):
         """
         Initializes the CustomClient instance.
@@ -76,7 +77,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         DEFAULTS = {"command_prefix":"\0", "intents":defintents}
         kwargs = {**DEFAULTS, **kwargs} # merge DEFAULTS and kwargs, kwargs takes precedence
         super().__init__(**kwargs)
-        self.owner_ids = {int(getenv("BOT_OWNER_ID")), int(getenv("BOT_OWNER_ID_2"))}
+        self.owner_ids = {int(getenv("BOT_OWNER_ID")), int(getenv("BOT_OWNER_ID_2"))}  # type: ignore
         self.sessionmaker = sessionmaker
         self.queue = asyncio.Queue()
         self.dialect = dialect
@@ -85,15 +86,15 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             _Config = Config(key="BOT_CONFIG", value={"EXTENSIONS":[]})
             session.add(_Config)
             session.commit()
-        self.config:dict = _Config.value
+        self.config:dict = _Config.value  # type: ignore
         _Medal_Emotes = session.query(Config).filter(Config.key == "MEDAL_EMOTES").first()
         if not _Medal_Emotes:
             _Medal_Emotes = Config(key="MEDAL_EMOTES", value={})
             session.add(_Medal_Emotes)
             session.commit()
-        self.medal_emotes:dict = _Medal_Emotes.value
+        self.medal_emotes:dict = _Medal_Emotes.value  # type: ignore
         self.use_ephemeral = use_ephemeral
-        self.tree.interaction_check = self.check_banned_interaction # self.no_commands # TODO: switch back to check_banned_interaction, this is a temporary measure
+        self.tree.interaction_check = self.check_banned_interaction # type: ignore
 
     async def no_commands(self, interaction: Interaction):
         if not await is_management_no_notify(interaction, silent=True):
@@ -131,7 +132,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             SQLAlchemyError: If a database operation fails.
         """
         _Config = session.query(Config).filter(Config.key == "BOT_CONFIG").first()
-        _Config.value = self.config
+        _Config.value = self.config  # type: ignore
         logger.debug(f"Resynced config: {self.config}")
 
     async def queue_consumer(self, session: Session):
@@ -161,7 +162,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         ratelimit = RollingCounterDict(30)
         nosleep = True
         queue_banned = False
-        size_at_ban = None
+        size_at_ban = 2**64  # Large number to indicate no ban
         
         while True:
             if nosleep:
@@ -177,20 +178,20 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             if queue_size >= 1200 and not queue_banned:
                 logger.critical(f"Queue size is {queue_size}, this is too high!")
                 # fetch the discord user for the bot owner, message them, then call self.close()
-                owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))
+                owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))  # type: ignore
                 if owner:
                     await owner.send("Queue size is too high, Initiating a System Ban")
-                await toggle_command_ban(True, self.user.mention)
+                await toggle_command_ban(True, self.user.mention)  # type: ignore
                 queue_banned = True
                 size_at_ban = queue_size
             if queue_banned and queue_size < 100:
                 logger.debug("Queue size is below 100, disabling command ban")
-                await toggle_command_ban(False, self.user.mention)
+                await toggle_command_ban(False, self.user.mention)  # type: ignore
                 queue_banned = False
-                size_at_ban = None
+                size_at_ban = 2**64  # Large number to indicate no ban
             if queue_banned and queue_size >= size_at_ban+200:
                 logger.debug("Queue is still growing, Purging")
-                owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))
+                owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))  # type: ignore
                 if owner:
                     await owner.send("Queue is still growing, Purging")
                 while not self.queue.empty():
@@ -223,9 +224,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 logger.error(f"Task is a tuple of length {len(task)}, skipping")
                 nosleep = True
                 continue
-            ratelimit.set(str(task[1]))
-            if ratelimit.get(str(task[1])) >=5: # window is 30s, which is 6 tasks, this requires at least 50% different tasks
-                logger.warning(f"Ratelimit hit for {task[1]}")
+            ratelimit.set(str(task[1]))  # type: ignore
+            if ratelimit.get(str(task[1])) >=5: # window is 30s, which is 6 tasks, this requires at least 50% different tasks  # type: ignore
+                logger.warning(f"Ratelimit hit for {task[1]}")  # type: ignore
                 nosleep = True
                 continue # just discard the task
             #logger.debug(f"Processing task: {task}")
@@ -281,7 +282,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             unknown_text = "\n".join(unknown_medals_list)
             # convert the rows to a string of emotes, with a space between each emote
             medal_block = "\n".join([" ".join([self.medal_emotes[medal] for medal in row]) for row in rows]) + "\n" + unknown_text
-            mention = await self.fetch_user(player.discord_id)
+            mention = await self.fetch_user(int(player.discord_id))
             mention = mention.mention if mention else ""
             
             # check for an existing dossier message, if it exists, skip creation
@@ -291,7 +292,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 # check if the message itself actually exists
                 channel = self.get_channel(self.config["dossier_channel_id"])
                 if channel:
-                    message = await channel.fetch_message(existing_dossier.message_id)
+                    message = await channel.fetch_message(int(existing_dossier.message_id))  # type: ignore
                     if message:
                         logger.debug(f"Dossier message for player {player.id} already exists, skipping creation")
                         self.queue.put_nowait((1, player, 0))
@@ -303,7 +304,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 create_dossier = False
             
             if create_dossier:
-                dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(
+                dossier_message = await self.get_channel(self.config["dossier_channel_id"]).send(  # type: ignore
                     tmpl.Dossier.format(mention=mention, player=player, medals=medal_block)
                 )
                 dossier = Dossier(player_id=player.id, message_id=dossier_message.id)
@@ -311,10 +312,10 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 logger.debug(f"Created dossier for player {player.id} with message ID {dossier_message.id}")
             
         if self.config.get("statistics_channel_id"):
-            unit_message = await self.generate_unit_message(player)
+            unit_message = await self.generate_unit_message(player)  # type: ignore
             _player = session.merge(player)
             discord_id = _player.discord_id
-            mention = await self.fetch_user(discord_id)
+            mention = await self.fetch_user(int(discord_id))
             mention = mention.mention if mention else ""
             
             # check for an existing statistics message, if it exists, skip creation
@@ -323,7 +324,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 # check if the message itself actually exists
                 channel = self.get_channel(self.config["statistics_channel_id"])
                 if channel:
-                    message = await channel.fetch_message(existing_statistics.message_id)
+                    message = await channel.fetch_message(existing_statistics.message_id) # type: ignore
                     if message:
                         logger.debug(f"Statistics message for player {_player.id} already exists, skipping creation")
                         if not requeued:
@@ -335,7 +336,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 logger.error(f"missing player id, skipping statistics creation")
                 return
             
-            statistics_message = await self.get_channel(self.config["statistics_channel_id"]).send(
+            statistics_message = await self.get_channel(self.config["statistics_channel_id"]).send( # type: ignore
                 tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message)
             )
             statistics = Statistic(player_id=_player.id, message_id=statistics_message.id)
@@ -369,9 +370,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 channel = self.get_channel(self.config["dossier_channel_id"])
                 if channel:
                     logger.debug("channel found, fetching message")
-                    message = await channel.fetch_message(dossier.message_id)
+                    message = await channel.fetch_message(dossier.message_id) # type: ignore
                     logger.debug("message found, fetching user")
-                    mention = await self.fetch_user(player.discord_id)
+                    mention = await self.fetch_user(int(player.discord_id))
                     mention = mention.mention if mention else ""
                     logger.debug("user found, editing message")
                     await message.edit(content=tmpl.Dossier.format(mention=mention, player=player, medals=""))
@@ -387,12 +388,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             if statistics:
                 channel = self.get_channel(self.config["statistics_channel_id"])
                 if channel:
-                    message = await channel.fetch_message(statistics.message_id)
+                    message = await channel.fetch_message(statistics.message_id) # type: ignore
                     discord_id = player.discord_id
-                    unit_message = await self.generate_unit_message(player)
+                    unit_message = await self.generate_unit_message(player)  # type: ignore
                     _player = session.merge(player)
                     _statistics = session.merge(statistics)
-                    mention = await self.fetch_user(discord_id)
+                    mention = await self.fetch_user(int(discord_id))
                     mention = mention.mention if mention else ""
                     await message.edit(content=tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
                     logger.debug(f"Updated statistics for player {_player.id} with message ID {_statistics.message_id}")
@@ -420,14 +421,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             dossier = instance
             channel = self.get_channel(self.config["dossier_channel_id"])
             if channel:
-                message = await channel.fetch_message(dossier.message_id)
+                message = await channel.fetch_message(dossier.message_id) # type: ignore
                 await message.delete()
                 logger.debug(f"Deleted dossier message ID {dossier.message_id} for player {dossier.player_id}")
         elif isinstance(instance, Statistic):
             statistic = instance
             channel = self.get_channel(self.config["statistics_channel_id"])
             if channel:
-                message = await channel.fetch_message(statistic.message_id)
+                message = await channel.fetch_message(statistic.message_id) # type: ignore
                 await message.delete()
                 logger.debug(f"Deleted statistics message ID {statistic.message_id} for player {statistic.player_id}")
         elif isinstance(instance, Unit):
@@ -446,6 +447,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         elif isinstance(instance, PlayerUpgrade):
             upgrade = instance
             unit = session.query(Unit).filter(Unit.id == upgrade.unit_id).first()
+            if not unit:
+                logger.error(f"Unit {upgrade.unit_id} not found for upgrade {upgrade.id}")
+                return
             player = session.query(Player).filter(Player.id == unit.player_id).first()
             if player:
                 if not requeued:
@@ -547,25 +551,25 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         except FileNotFoundError:
             pass  # File doesn't exist, which is fine
         #await self.set_bot_nick("S.A.M.")
-        asyncio.create_task(self.queue_consumer())
+        asyncio.create_task(self.queue_consumer())  # type: ignore
         await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign", type=ActivityType.playing))
         if (getenv("STARTUP_ANIMATION", "false").lower() == "true"):
             try:
                 self.startup_animation.start()
             except Exception as e:
                 logger.error(f"Error starting startup animation: {e}")
-        asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if getenv("PROD", "false").lower() == "false" else "127.0.0.1:12346"))
+        asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if getenv("PROD", "false").lower() == "false" else "127.0.0.1:12346"))  # type: ignore
 
     async def shutdown_callback(self):
         try:
-            channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID")))
+            channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID")))  # type: ignore
         except Exception as e:
             logger.error(f"Error fetching channel: {e}")
             channel = None
-        owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))
+        owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))  # type: ignore
         if channel:
-            await channel.send(f"{owner.mention}\n# S.A.M. was terminated by the system")
-        await self.close()
+            await channel.send(f"{owner.mention}\n# S.A.M. was terminated by the system") # type: ignore
+        await self.close()  # type: ignore
 
     @tasks.loop(count=1)
     async def startup_animation(self):
@@ -573,11 +577,11 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             import sam_startup # type: ignore
         except ImportError:
             return
-        channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID")))
+        channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID")))  # type: ignore
         if not channel:
             return
         startup_sequence = sam_startup.get_startup_sequence()
-        message =await channel.send(startup_sequence[0])
+        message =await channel.send(startup_sequence[0]) # type: ignore
         for frame in startup_sequence[1:]:
             await message.edit(content=frame)
             await asyncio.sleep(1)
@@ -589,11 +593,11 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     async def notify_on_24_hours(self):
         logger.debug("Starting 24 hour notification loop")
         await asyncio.sleep(24 * 60 * 60)
-        channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID")))
+        channel = await self.fetch_channel(int(getenv("COMM_NET_CHANNEL_ID")))  # type: ignore
         if not channel:
             return
-        owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))
-        await channel.send(f"{owner.mention}\n# I have successfully survived 24 Hours!")
+        owner = await self.fetch_user(int(getenv("BOT_OWNER_ID")))  # type: ignore
+        await channel.send(f"{owner.mention}\n# I have successfully survived 24 Hours!") # type: ignore
         logger.debug("24 hour notification loop finished")
         self.notify_on_24_hours.cancel()
     
@@ -642,7 +646,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             if last_ping and (datetime.now() - last_ping).total_seconds() < 10:
                 await interaction.response.send_message("I've been pinged recently, wait a bit before pinging again", ephemeral=True)
                 return
-            last_pinger = interaction.user.id if not interaction.user.id == int(getenv("BOT_OWNER_ID")) else last_pinger # don't lockout the owner from pings
+            last_pinger = interaction.user.id if not interaction.user.id == int(getenv("BOT_OWNER_ID")) else last_pinger  # type: ignore # don't lockout the owner from pings
             last_ping = datetime.now()
             await interaction.response.send_message(f"Pong! I was last restarted at <t:{int(self.start_time.timestamp())}:F>, <t:{int(self.start_time.timestamp())}:R>")
 
@@ -697,9 +701,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self._handle_create_task = decorator(self._handle_create_task)
         self._handle_update_task = decorator(self._handle_update_task)
         self._handle_delete_task = decorator(self._handle_delete_task)
-        self.generate_unit_message = decorator(self.generate_unit_message)
+        self.generate_unit_message = decorator(self.generate_unit_message)  # type: ignore
         self.close = decorator(self.close)
-        self.tree.on_error = on_error_decorator(error_counter)(self.tree.on_error)
+        self.tree.on_error = on_error_decorator(error_counter)(self.tree.on_error)  # type: ignore
         
     async def start(self, *args, **kwargs):
         """
@@ -713,5 +717,5 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         """
         self.start_time = datetime.now()
         logger.debug(f"Starting bot at {self.start_time}")
-        await super().start(getenv("BOT_TOKEN"), *args, **kwargs)
+        await super().start(getenv("BOT_TOKEN"), *args, **kwargs)  # type: ignore
         logger.debug(f"Bot has terminated at {datetime.now()}")

@@ -35,12 +35,12 @@ root_disk_usage = Gauge("root_disk_usage_percent", "Percent of / disk used")
 
 # Disk alert variables
 DISK_ALERT_THRESHOLD = 90.0
-DISK_ALERT_USER_ID = int(getenv("BOT_OWNER_ID"))
+DISK_ALERT_USER_ID = int(str(getenv("BOT_OWNER_ID")))
 last_disk_alert_time = None
 
 @loop(seconds=15)
 async def poll_metrics_fast():
-    bot: CustomClient = CustomClient()
+    bot: CustomClient = CustomClient() # type: ignore
     up.set(True)
     as_of.labels(loop="fast").set(int(datetime.now().timestamp()))
     uptime.set((datetime.now() - bot.start_time).total_seconds())
@@ -63,7 +63,7 @@ async def poll_metrics_fast():
 @loop(seconds=60)
 async def poll_metrics_slow():
     global last_disk_alert_time
-    bot: CustomClient = CustomClient()
+    bot: CustomClient = CustomClient() # type: ignore
     as_of.labels(loop="slow").set(int(datetime.now().timestamp()))
     # Add disk usage metric for /
     usage = psutil.disk_usage('/')

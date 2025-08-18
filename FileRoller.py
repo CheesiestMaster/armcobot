@@ -1,5 +1,5 @@
 from os import remove
-from typing import BinaryIO, Union
+from typing import BinaryIO, Union, Optional
 from pathlib import Path
 import logging
 
@@ -15,17 +15,17 @@ class FileRoller:
         current_handle (BinaryIO): The current file handle for the base file.
     """
 
-    def __init__(self, path: Union[str, Path], max_count: int = None):
+    def __init__(self, path: Union[str, Path], max_count: Optional[int] = None):
         """
         Initializes the FileRoller with a path and an optional maximum count of backup files.
 
         Args:
             path (Union[str, Path]): The base file path to roll.
-            max_count (int, optional): The maximum number of backup files to keep. Defaults to None.
+            max_count (Optional[int]): The maximum number of backup files to keep. Defaults to None.
         """
         self.path = Path(path) if isinstance(path, str) else path
         self.max_count = max_count
-        self.current_handle: BinaryIO = None
+        self.current_handle: Optional[BinaryIO] = None
 
     def roll(self):
         """

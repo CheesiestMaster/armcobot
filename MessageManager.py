@@ -33,14 +33,23 @@ class MessageManager:
             self.embed = embed
         if view:
             self.view = view
+        # Prepare kwargs, only including embed and view if they're not None
+        send_kwargs = kwargs.copy()
+        if self.embed is not None:
+            send_kwargs['embed'] = self.embed
+        if self.view is not None:
+            send_kwargs['view'] = self.view
+            
         if isinstance(self.destination, discord.Interaction):
             if not self.destination.response.is_done():
-                await self.destination.response.send_message(embed=self.embed, view=self.view, **kwargs)
+                await self.destination.response.send_message(**send_kwargs)
                 self.message = await self.destination.original_response()
             else:
-                self.message = await self.destination.followup.send(embed=self.embed, view=self.view, **kwargs)
+                self.message = await self.destination.followup.send(**send_kwargs)
         else:
-            self.message = await self.destination.send(embed=self.embed, view=self.view, **kwargs)
+            if self.destination is None:
+                raise ValueError("Destination is None")
+            self.message = await self.destination.send(**send_kwargs)
 
     async def update_message(self, view: Optional[View] = None, embed: Optional[discord.Embed] = None, **kwargs: Any):
         """
@@ -53,7 +62,13 @@ class MessageManager:
         if embed:
             self.embed = embed
         if self.message:
-            await self.message.edit(embed=self.embed, view=self.view, **kwargs)
+            # Prepare kwargs, only including embed and view if they're not None
+            edit_kwargs = kwargs.copy()
+            if self.embed is not None:
+                edit_kwargs['embed'] = self.embed
+            if self.view is not None:
+                edit_kwargs['view'] = self.view
+            await self.message.edit(**edit_kwargs)
         else:
             raise ValueError("No message to update. Call `send_message` first.")
         

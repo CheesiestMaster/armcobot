@@ -11,9 +11,9 @@ if not os.path.exists("global.env"):
     raise FileNotFoundError("global.env not found")
 load_dotenv("global.env")
 LOCAL_ENV_FILE = os.getenv("LOCAL_ENV_FILE")
-if not os.path.exists(LOCAL_ENV_FILE):
+if not os.path.exists(str(LOCAL_ENV_FILE)):
     # touch the file
-    open(LOCAL_ENV_FILE, "w").close()
+    open(str(LOCAL_ENV_FILE), "w").close()
 load_dotenv(LOCAL_ENV_FILE, override=True)
 
 # check that secrets aren't set prematurely
@@ -25,9 +25,9 @@ if os.getenv("MYSQL_PASSWORD"):
     raise EnvironmentError("MYSQL_PASSWORD set in global or local environment file, please move it to the sensitive environment file")
 
 SENSITIVE_ENV_FILE = os.getenv("SENSITIVE_ENV_FILE")
-if not os.path.exists(SENSITIVE_ENV_FILE):
+if not os.path.exists(str(SENSITIVE_ENV_FILE)):
     # create the file with the required variables
-    with open(SENSITIVE_ENV_FILE, "w") as f:
+    with open(str(SENSITIVE_ENV_FILE), "w") as f:
         f.write("BOT_TOKEN='TOKEN'\n")
         f.write("DATABASE_URL='URL'\n")
         f.write("MYSQL_PASSWORD='PASSWORD'\n")
@@ -88,9 +88,9 @@ def human_size_to_bytes(size_str):
 # add a file handler to the root logger
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(ColoredFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-file_handler = RotatingFileHandler(os.getenv("LOG_FILE"), 
+file_handler = RotatingFileHandler(str(os.getenv("LOG_FILE")), 
                                    maxBytes=human_size_to_bytes(os.getenv("LOG_FILE_SIZE")), 
-                                   backupCount=int(os.getenv("LOG_FILE_BACKUP_COUNT")))
+                                   backupCount=int(os.getenv("LOG_FILE_BACKUP_COUNT", 5)))
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logging.basicConfig(level=logging.getLevelName(os.getenv("LOG_LEVEL", "INFO")),
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -113,7 +113,7 @@ logging.addLevelName(9, "TRIAGE")
 def triage(self, message, *args, **kwargs):
     if self.isEnabledFor(9):
         self._log(9, message, args, **kwargs)
-logging.Logger.triage = triage
+logging.Logger.triage = triage  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ logger = logging.getLogger(__name__)
 
 # create a DB engine
 engine = create_engine(
-    url = os.getenv("DATABASE_URL"),
+    url = str(os.getenv("DATABASE_URL")),
     pool_pre_ping= True,
     pool_size=10,
     max_overflow=20)

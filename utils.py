@@ -8,7 +8,7 @@ from sqlalchemy.orm import scoped_session
 from logging import getLogger
 import asyncio
 from collections import deque
-from typing import Coroutine, Callable, TypeVar, Iterator
+from typing import Coroutine, Callable, Sequence, TypeVar, Iterator
 from discord import Interaction
 import pandas as pd
 from prometheus_client import Counter
@@ -85,18 +85,18 @@ def uses_db(sessionmaker):
                     session.rollback()
                     logger.debug(f"rolled back session for {func.__name__} due to unhandled exception")
                     raise e
-        wrapper.__signature__ = new_signature
+        wrapper.__signature__ = new_signature # type: ignore[attr-defined]
         return wrapper
     return decorator
 
 
 def string_to_list(string: str) -> list[str]:
     if "\n" in string[:40]:
-        string = set(string.split("\n"))
+        string = set(string.split("\n")) # type: ignore
     else:
-        string = set(string.split(","))
-    string = [name.strip() for name in string]
-    return string
+        string = set(string.split(",")) # type: ignore
+    string = [name.strip() for name in string] # type: ignore
+    return string # type: ignore
 
 class RollingCounter:
     def __init__(self, duration: int):
@@ -185,7 +185,7 @@ class RollingCounterDict:
             self.counters[key] = RollingCounter(self.duration)
         self.counters[key].set()
 
-    def get(self, key: str) -> int:
+    def get(self, key: str) -> int|float:
         """
         Returns the current value of the counter for the given key, or 0.0 as a sentinel if the key doesn't exist.
 
@@ -204,7 +204,7 @@ class RollingCounterDict:
         """
         self.set(key)
 
-    def __getitem__(self, key: str) -> int:
+    def __getitem__(self, key: str) -> int|float:
         """
         Returns the current value of the counter for the given key, or 0.0 as a sentinel if the key doesn't exist.
 
@@ -219,7 +219,7 @@ class RollingCounterDict:
         """
         return "\n".join([f"{key}: {self.get(key)}" for key in self.counters])
     
-    def values(self) -> list[int]:
+    def values(self) -> list[int|float]:
         """
         Returns a list of the values of the counters
         """
