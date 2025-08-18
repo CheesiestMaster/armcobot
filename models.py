@@ -51,6 +51,7 @@ class UpgradeType(BaseModel):
     is_refit: Mapped[bool] = mapped_column(Boolean, default=False)
     non_purchaseable: Mapped[bool] = mapped_column(Boolean, default=False)
     can_use_unit_req: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     
     # relationships
     shop_upgrades: Mapped[list[ShopUpgrade]] = relationship("ShopUpgrade", foreign_keys="ShopUpgrade.type", back_populates="upgrade_type", lazy="select")
@@ -85,6 +86,7 @@ class Unit(BaseModel):
     original_type_info: Mapped[Optional[UnitType]] = relationship("UnitType", foreign_keys=[original_type], lazy="joined", back_populates="original_units")
     available_upgrades: Mapped[list[ShopUpgrade]] = relationship(
         "ShopUpgrade",
+        order_by=(UpgradeType.sort_order, "ShopUpgrade.id"),
         secondary="shop_upgrade_unit_types",
         primaryjoin="Unit.unit_type==ShopUpgradeUnitTypes.unit_type",
         secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
@@ -289,6 +291,7 @@ class UnitType(BaseModel):
         secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
         back_populates="compatible_unit_types",
         overlaps="unit_types,type_info",
+        order_by=(UpgradeType.sort_order, ShopUpgrade.id),
         lazy="select")
 
 create_all = BaseModel.metadata.create_all

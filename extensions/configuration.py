@@ -6,6 +6,7 @@ from customclient import CustomClient
 from utils import uses_db
 from sqlalchemy.orm import Session
 import templates as tmpl
+import os
 logger = getLogger(__name__)
 
 class Config(GroupCog):
@@ -83,6 +84,54 @@ class Config(GroupCog):
         config_list = [f"{config.key}: {config.value}" for config in configs]
         config_str = "\n".join(config_list)
         await interaction.response.send_message(f"Configurations:\n{config_str}", ephemeral=self.bot.use_ephemeral)
+
+    @ac.command(name="show_environment", description="Display current environment configuration")
+    async def show_environment(self, interaction: Interaction):
+        """Display the current environment configuration including users, roles, and channels."""
+        await interaction.response.defer(ephemeral=True)
+        main_guild = self.bot.get_guild(int(os.getenv("MAIN_GUILD_ID")))
+        if main_guild:
+            # get all the users and roles in the environment, and send f"{key}: {value.mention}" for each
+            message = "Users:\n"
+            owner1 = main_guild.get_member(int(os.getenv("BOT_OWNER_ID")))
+            owner2 = main_guild.get_member(int(os.getenv("BOT_OWNER_ID_2")))
+            answerer1 = main_guild.get_member(int(os.getenv("FAQ_ANSWERER_1")))
+            answerer2 = main_guild.get_member(int(os.getenv("FAQ_ANSWERER_2")))
+            mod1 = main_guild.get_role(int(os.getenv("MOD_ROLE_1")))
+            mod2 = main_guild.get_role(int(os.getenv("MOD_ROLE_2")))
+            gm = main_guild.get_role(int(os.getenv("GM_ROLE")))
+            commnet = main_guild.get_channel(int(os.getenv("COMM_NET_CHANNEL_ID")))
+            statistics = main_guild.get_channel(int(CustomClient().config["statistics_channel_id"]))
+            dossier = main_guild.get_channel(int(CustomClient().config["dossier_channel_id"]))
+            message += f"Owner 1: {owner1.mention if owner1 else 'Unknown'}\n"
+            message += f"Owner 2: {owner2.mention if owner2 else 'Unknown'}\n"
+            message += f"Answerer 1: {answerer1.mention if answerer1 else 'Unknown'}\n"
+            message += f"Answerer 2: {answerer2.mention if answerer2 else 'Unknown'}\n"
+            message += "Roles:\n"
+            message += f"Mod 1: {mod1.mention if mod1 else 'Unknown'}\n"
+            message += f"Mod 2: {mod2.mention if mod2 else 'Unknown'}\n"
+            message += f"GM: {gm.mention if gm else 'Unknown'}\n"
+            message += "Channels:\n"
+            message += f"CommNet: {commnet.mention if commnet else 'Unknown'}\n"
+            message += f"Statistics: {statistics.mention if statistics else 'Unknown'}\n"
+            message += f"Dossier: {dossier.mention if dossier else 'Unknown'}\n"
+            message += "\nEnvironment Variables:\n"
+            message += f"PROD: {os.getenv('PROD', 'Not set')}\n"
+            message += f"EPHEMERAL: {os.getenv('EPHEMERAL', 'Not set')}\n"
+            message += f"LOG_LEVEL: {os.getenv('LOG_LEVEL', 'Not set')}\n"
+            message += f"LOG_FILE: {os.getenv('LOG_FILE', 'Not set')}\n"
+            message += f"LOG_FILE_SIZE: {os.getenv('LOG_FILE_SIZE', 'Not set')}\n"
+            message += f"LOG_FILE_BACKUP_COUNT: {os.getenv('LOG_FILE_BACKUP_COUNT', 'Not set')}\n"
+            message += f"LOCAL_ENV_FILE: {os.getenv('LOCAL_ENV_FILE', 'Not set')}\n"
+            message += f"SENSITIVE_ENV_FILE: {os.getenv('SENSITIVE_ENV_FILE', 'Not set')}\n"
+            message += f"BANNED_CHARS: {os.getenv('BANNED_CHARS', 'Not set')}\n"
+            message += f"ALLOWED_DOMAINS: {os.getenv('ALLOWED_DOMAINS', 'Not set')}\n"
+            message += f"BACKPAY_ON_START: {os.getenv('BACKPAY_ON_START', 'Not set')}\n"
+            message += f"MAX_ACTIVE_UNITS: {os.getenv('MAX_ACTIVE_UNITS', 'Not set')}\n"
+            message += f"INITIAL_REQ: {os.getenv('INITIAL_REQ', 'Not set')}\n"
+            await interaction.followup.send(message)
+        else:
+            await interaction.followup.send("Main guild not found")
 
 bot: Bot = None
 async def setup(_bot: Bot):

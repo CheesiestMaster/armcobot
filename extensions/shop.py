@@ -1262,12 +1262,15 @@ class Shop(GroupCog):
                     embed.add_field(name="Is Refit", value="Yes" if upgrade_type.is_refit else "No")
                     embed.add_field(name="Non Purchaseable", value="Yes" if upgrade_type.non_purchaseable else "No")
                     embed.add_field(name="Can Use Unit Req", value="Yes" if upgrade_type.can_use_unit_req else "No")
+                    embed.add_field(name="Sort Order", value=str(upgrade_type.sort_order))
                     
                     rename_button = ui.Button(label=tmpl.shop_rename_button, style=ButtonStyle.primary)
                     edit_button = ui.Button(label="Edit", style=ButtonStyle.secondary)
+                    sort_order_button = ui.Button(label="Set Sort Order", style=ButtonStyle.secondary)
                     delete_button = ui.Button(label=tmpl.shop_delete_button, style=ButtonStyle.danger)
                     view.add_item(rename_button)
                     view.add_item(edit_button)
+                    view.add_item(sort_order_button)
                     view.add_item(delete_button)
                     
                     upgrade_type_ = upgrade_type.name # we can't use closure scoped instances, so we need to make a closure scoped PK of the instance instead
@@ -1315,7 +1318,8 @@ class Shop(GroupCog):
                                 emoji=upgrade_type.emoji,
                                 is_refit=upgrade_type.is_refit,
                                 non_purchaseable=upgrade_type.non_purchaseable,
-                                can_use_unit_req=upgrade_type.can_use_unit_req
+                                can_use_unit_req=upgrade_type.can_use_unit_req,
+                                sort_order=upgrade_type.sort_order
                             )
                             session.add(new_upgrade_type)
                             logger.info(f"Created new UpgradeType: {new_name}")
@@ -1364,6 +1368,12 @@ class Shop(GroupCog):
                     async def edit_button_callback(interaction: Interaction):
                         # Create edit view with selects for booleans and emoji button
                         edit_view = ui.View()
+
+                        upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type_).first()
+
+                        if not upgrade_type:
+                            await interaction.response.send_message(tmpl.unexpected_error, ephemeral=True)
+                            return
                         
                         # Create selects for the 3 booleans
                         is_refit_select = ui.Select(
@@ -1477,6 +1487,49 @@ class Shop(GroupCog):
                     
                     @check
                     @error_reporting(True)
+                    async def sort_order_button_callback(interaction: Interaction):
+                        # Create modal for sort order input
+                        sort_order_modal = ui.Modal(title="Set Upgrade Type Sort Order")
+                        sort_order_input = ui.TextInput(
+                            label="Sort Order",
+                            placeholder="Enter sort order (e.g., 1, 2, 3)",
+                            default=str(upgrade_type.sort_order),
+                            max_length=10
+                        )
+                        sort_order_modal.add_item(sort_order_input)
+                        
+                        @check
+                        @error_reporting(True)
+                        @uses_db(CustomClient().sessionmaker)
+                        async def sort_order_modal_submit(interaction: Interaction, session: Session):
+                            try:
+                                new_sort_order = int(sort_order_input.value.strip())
+                                
+                                # Get the current upgrade type
+                                current_upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type_).first()
+                                
+                                # Update the sort order
+                                current_upgrade_type.sort_order = new_sort_order
+                                
+                                session.commit()
+                                
+                                await interaction.response.send_message(f"Sort order updated to: {new_sort_order}", ephemeral=True)
+                                
+                                # Refresh the UI with updated sort order
+                                updated_upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type_).first()
+                                new_view, new_embed = ui_factory(updated_upgrade_type)
+                                await message_manager.update_message(content="Please set up the upgrade type", view=new_view, embed=new_embed)
+                                
+                            except ValueError:
+                                await interaction.response.send_message("Please enter a valid integer for sort order", ephemeral=True)
+                        
+                        sort_order_modal.on_submit = sort_order_modal_submit
+                        await interaction.response.send_modal(sort_order_modal)
+                    
+                    sort_order_button.callback = sort_order_button_callback
+                    
+                    @check
+                    @error_reporting(True)
                     @uses_db(CustomClient().sessionmaker)
                     async def delete_button_callback(interaction: Interaction, session: Session):
                         upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type_).first()
@@ -1518,7 +1571,7 @@ class Shop(GroupCog):
         
         # send a dropdown with all the shop upgrades and an option for adding a new shop upgrade, we may need to handle the existence of more than 25 shop upgrades which means we need to paginate
         logger.debug("Querying shop upgrades for pagination")
-        shop_upgrades = session.query(ShopUpgrade.id, ShopUpgrade.name).all()
+        shop_upgrades = session.query(ShopUpgrade.id, ShopUpgrade.name).order_by(UpgradeType.sort_order, ShopUpgrade.id).all()
         # Add the "Add New" option to the list so pagination handles it naturally
         shop_upgrades.append(("\0Add New Shop Upgrade", "\0Add New Shop Upgrade"))
         paginator: Paginator[tuple] = Paginator(shop_upgrades, 25)
