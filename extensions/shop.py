@@ -1369,24 +1369,24 @@ class Shop(GroupCog):
                         is_refit_select = ui.Select(
                             placeholder="Is Refit",
                             options=[
-                                ui.SelectOption(label="Yes", value="true", default=upgrade_type.is_refit),
-                                ui.SelectOption(label="No", value="false", default=not upgrade_type.is_refit)
+                                SelectOption(label="Yes", value="true", default=upgrade_type.is_refit),
+                                SelectOption(label="No", value="false", default=not upgrade_type.is_refit)
                             ]
                         )
                         
                         non_purchaseable_select = ui.Select(
                             placeholder="Non Purchaseable",
                             options=[
-                                ui.SelectOption(label="Yes", value="true", default=upgrade_type.non_purchaseable),
-                                ui.SelectOption(label="No", value="false", default=not upgrade_type.non_purchaseable)
+                                SelectOption(label="Yes", value="true", default=upgrade_type.non_purchaseable),
+                                SelectOption(label="No", value="false", default=not upgrade_type.non_purchaseable)
                             ]
                         )
                         
                         can_use_unit_req_select = ui.Select(
                             placeholder="Can Use Unit Req",
                             options=[
-                                ui.SelectOption(label="Yes", value="true", default=upgrade_type.can_use_unit_req),
-                                ui.SelectOption(label="No", value="false", default=not upgrade_type.can_use_unit_req)
+                                SelectOption(label="Yes", value="true", default=upgrade_type.can_use_unit_req),
+                                SelectOption(label="No", value="false", default=not upgrade_type.can_use_unit_req)
                             ]
                         )
                         
