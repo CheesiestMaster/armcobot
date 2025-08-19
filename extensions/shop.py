@@ -1497,6 +1497,7 @@ class Shop(GroupCog):
                     @error_reporting(True)
                     async def sort_order_button_callback(interaction: Interaction):
                         # Create modal for sort order input
+                        upgrade_type = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type_).first()
                         sort_order_modal = ui.Modal(title="Set Upgrade Type Sort Order")
                         sort_order_input = ui.TextInput(
                             label="Sort Order",
