@@ -1399,6 +1399,14 @@ class Shop(GroupCog):
                                 SelectOption(label="No", value="false", default=not upgrade_type.can_use_unit_req)
                             ]
                         )
+
+                        @check
+                        async def callback(interaction: Interaction):
+                            await interaction.response.defer(thinking=False, ephemeral=True)
+                        
+                        is_refit_select.callback = callback
+                        non_purchaseable_select.callback = callback
+                        can_use_unit_req_select.callback = callback
                         
                         # Emoji button
                         emoji_button = ui.Button(label="Set Emoji", style=ButtonStyle.primary)
