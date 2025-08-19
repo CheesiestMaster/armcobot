@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import sys
 import os
 from coloredformatter import ColoredFormatter
+import stat
 
 # Environ setup
 if not os.path.exists("global.env"):
@@ -27,11 +28,21 @@ if os.getenv("MYSQL_PASSWORD"):
 SENSITIVE_ENV_FILE = os.getenv("SENSITIVE_ENV_FILE")
 if not os.path.exists(str(SENSITIVE_ENV_FILE)):
     # create the file with the required variables
-    with open(str(SENSITIVE_ENV_FILE), "w") as f:
+    with os.fdopen(os.open(str(SENSITIVE_ENV_FILE), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_EXCL, 0o600), "w") as f:
         f.write("BOT_TOKEN='TOKEN'\n")
         f.write("DATABASE_URL='URL'\n")
         f.write("MYSQL_PASSWORD='PASSWORD'\n")
     raise FileNotFoundError("SENSITIVE_ENV_FILE wasn't found so a new one was created, please fill it in")
+
+# Check file permissions - should be 0o600 (owner read/write only)
+if os.name != 'nt':  # Skip on Windows
+    file_stat = os.stat(str(SENSITIVE_ENV_FILE))
+    if file_stat.st_mode & (stat.S_IRWXG | stat.S_IRWXO) != 0:
+        raise EnvironmentError(f"SENSITIVE_ENV_FILE has insecure permissions: {oct(file_stat.st_mode & 0o777)}. File should not have group or world permissions")
+    if os.path.islink(str(SENSITIVE_ENV_FILE)):
+        raise EnvironmentError(f"SENSITIVE_ENV_FILE is a symlink, please remove it")
+    if os.path.isdir(str(SENSITIVE_ENV_FILE)):
+        raise EnvironmentError(f"SENSITIVE_ENV_FILE is a directory, please remove it")
 
 load_dotenv(SENSITIVE_ENV_FILE, override=True)
 if not os.getenv("BOT_TOKEN") or os.getenv("BOT_TOKEN") == "TOKEN":
