@@ -62,38 +62,6 @@ class Extension(BaseModel):
     # column
     name: Mapped[str] = mapped_column(String(264), primary_key=True) # this table is just a list of loaded extensions, hence only one column and no relationships
 
-class Unit(BaseModel):
-    __tablename__ = "units"
-    # columns
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(30), index=True)
-    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True, nullable=False)
-    unit_type: Mapped[str] = mapped_column(ForeignKey("unit_types.unit_type"))
-    status: Mapped[UnitStatus] = mapped_column(Enum(UnitStatus), default=UnitStatus.PROPOSED)
-    legacy: Mapped[bool] = mapped_column(Boolean, default=False)
-    active: Mapped[bool] = mapped_column(Boolean, default=False)
-    campaign_id: Mapped[Optional[int]] = mapped_column(ForeignKey("campaigns.id"), nullable=True)
-    callsign: Mapped[str] = mapped_column(String(15), index=True, unique=True, nullable=True)
-    area_operation: Mapped[str] = mapped_column(String(30), default="ARMCO")
-    original_type: Mapped[Optional[str]] = mapped_column(ForeignKey("unit_types.unit_type"), nullable=True)
-    unit_req: Mapped[int] = mapped_column(Integer, default=0)
-    
-    # relationships
-    player: Mapped[Player] = relationship("Player", back_populates="units")
-    upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", back_populates="unit", cascade="all, delete-orphan", lazy="select")
-    campaign: Mapped[Optional[Campaign]] = relationship("Campaign", back_populates="units")
-    type_info: Mapped[UnitType] = relationship("UnitType", foreign_keys=[unit_type], lazy="joined", back_populates="units", cascade="save-update")
-    original_type_info: Mapped[Optional[UnitType]] = relationship("UnitType", foreign_keys=[original_type], lazy="joined", back_populates="original_units")
-    available_upgrades: Mapped[list[ShopUpgrade]] = relationship(
-        "ShopUpgrade",
-        order_by=(UpgradeType.sort_order, lambda: ShopUpgrade.id),
-        secondary="shop_upgrade_unit_types",
-        primaryjoin="Unit.unit_type==ShopUpgradeUnitTypes.unit_type",
-        secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
-        overlaps="unit_types,type_info",
-        lazy="select",
-        viewonly=True)
-
 class Campaign(BaseModel):
     __tablename__ = "campaigns"
     # columns
@@ -252,6 +220,38 @@ class ShopUpgrade(BaseModel):
         overlaps="unit_types,type_info",
         lazy="select")
     upgrade_type: Mapped[UpgradeType] = relationship("UpgradeType", foreign_keys=[type], back_populates="shop_upgrades", lazy="joined")
+
+class Unit(BaseModel):
+    __tablename__ = "units"
+    # columns
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(30), index=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True, nullable=False)
+    unit_type: Mapped[str] = mapped_column(ForeignKey("unit_types.unit_type"))
+    status: Mapped[UnitStatus] = mapped_column(Enum(UnitStatus), default=UnitStatus.PROPOSED)
+    legacy: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
+    campaign_id: Mapped[Optional[int]] = mapped_column(ForeignKey("campaigns.id"), nullable=True)
+    callsign: Mapped[str] = mapped_column(String(15), index=True, unique=True, nullable=True)
+    area_operation: Mapped[str] = mapped_column(String(30), default="ARMCO")
+    original_type: Mapped[Optional[str]] = mapped_column(ForeignKey("unit_types.unit_type"), nullable=True)
+    unit_req: Mapped[int] = mapped_column(Integer, default=0)
+    
+    # relationships
+    player: Mapped[Player] = relationship("Player", back_populates="units")
+    upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", back_populates="unit", cascade="all, delete-orphan", lazy="select")
+    campaign: Mapped[Optional[Campaign]] = relationship("Campaign", back_populates="units")
+    type_info: Mapped[UnitType] = relationship("UnitType", foreign_keys=[unit_type], lazy="joined", back_populates="units", cascade="save-update")
+    original_type_info: Mapped[Optional[UnitType]] = relationship("UnitType", foreign_keys=[original_type], lazy="joined", back_populates="original_units")
+    available_upgrades: Mapped[list[ShopUpgrade]] = relationship(
+        "ShopUpgrade",
+        order_by=(UpgradeType.sort_order, ShopUpgrade.id),
+        secondary="shop_upgrade_unit_types",
+        primaryjoin="Unit.unit_type==ShopUpgradeUnitTypes.unit_type",
+        secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
+        overlaps="unit_types,type_info",
+        lazy="select",
+        viewonly=True)
 
 class ShopUpgradeUnitTypes(BaseModel):
     __tablename__ = "shop_upgrade_unit_types"
