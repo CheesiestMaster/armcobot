@@ -1,6 +1,6 @@
 from __future__ import annotations
-from sqlalchemy import Integer, String, Enum, ForeignKey, PickleType, Boolean, BigInteger
-from sqlalchemy.orm import relationship, DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import Integer, String, Enum, ForeignKey, PickleType, Boolean, BigInteger, select
+from sqlalchemy.orm import relationship, DeclarativeBase, Mapped, mapped_column, column_property
 from sqlalchemy.ext.hybrid import hybrid_property
 from enum import Enum as PyEnum
 import logging
@@ -198,6 +198,8 @@ class ShopUpgrade(BaseModel):
     disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     repeatable: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    sort_key = column_property(select(UpgradeType.sort_order).where(UpgradeType.name == type))
+
     # relationships
     player_upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", back_populates="shop_upgrade", cascade="all", lazy="select")
     unit_types: Mapped[list[ShopUpgradeUnitTypes]] = relationship("ShopUpgradeUnitTypes", back_populates="shop_upgrade", cascade="all, delete-orphan", lazy="select")
@@ -245,7 +247,7 @@ class Unit(BaseModel):
     original_type_info: Mapped[Optional[UnitType]] = relationship("UnitType", foreign_keys=[original_type], lazy="joined", back_populates="original_units")
     available_upgrades: Mapped[list[ShopUpgrade]] = relationship(
         "ShopUpgrade",
-        order_by=(UpgradeType.sort_order, ShopUpgrade.id),
+        order_by=(ShopUpgrade.sort_key, ShopUpgrade.id),
         secondary="shop_upgrade_unit_types",
         primaryjoin="Unit.unit_type==ShopUpgradeUnitTypes.unit_type",
         secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
@@ -291,7 +293,7 @@ class UnitType(BaseModel):
         secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
         back_populates="compatible_unit_types",
         overlaps="unit_types,type_info",
-        order_by=(UpgradeType.sort_order, ShopUpgrade.id),
+        order_by=(ShopUpgrade.sort_key, ShopUpgrade.id),
         lazy="select")
 
 create_all = BaseModel.metadata.create_all
