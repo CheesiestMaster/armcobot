@@ -502,7 +502,7 @@ class Debug(GroupCog):
         await interaction.response.send_message(tmpl.debug_log_level.format(level=level), ephemeral=True)
 
     @ac.command(name="tail", description="Get the last ~2000 characters of the log file")
-    async def tail(self, interaction: Interaction):
+    async def tail(self, interaction: Interaction, offset: int = 0):
         with open(os.getenv("LOG_FILE"), "r") as f:
             f.seek(0, os.SEEK_END)
             f.seek(max(0, f.tell() - 2500))
@@ -516,7 +516,9 @@ class Debug(GroupCog):
             good_lines = lines[1:]
         output_lines = []
         current_length = 0
-        for line in reversed(good_lines):
+        # Skip the specified number of lines from the bottom
+        lines_to_process = good_lines[:-offset] if offset > 0 else good_lines
+        for line in reversed(lines_to_process):
             new_length = current_length + len(line)
             if new_length > 2000:
                 break

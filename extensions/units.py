@@ -323,17 +323,19 @@ class Unit(GroupCog):
                 for unit in units:
                     session.expunge(unit)
 
+            @error_reporting(False)
             @uses_db(sessionmaker=CustomClient().sessionmaker)
             async def callback(self, interaction: Interaction, session: Session):
+                await interaction.response.defer(ephemeral=CustomClient().use_ephemeral)
                 unit: Unit_model = session.query(Unit_model).filter(Unit_model.name == self.values[0], Unit_model.player_id == self.player_id).first()
                 if unit.unit_type == "STOCKPILE":
-                    await interaction.response.send_message(tmpl.stockpile_cannot_remove, ephemeral=CustomClient().use_ephemeral)
+                    await interaction.followup.send(tmpl.stockpile_cannot_remove, ephemeral=CustomClient().use_ephemeral)
                     return
                 logger.debug(f"Removing unit {unit.name}")
                 session.delete(unit)
                 session.commit()
                 CustomClient().queue.put_nowait((1, player, 0)) # this is a nested class, so we have to invoke the singleton instead of using self.bot.queue
-                await interaction.response.send_message(tmpl.unit_removed.format(unit=unit), ephemeral=CustomClient().use_ephemeral)
+                await interaction.followup.send(tmpl.unit_removed.format(unit=unit), ephemeral=CustomClient().use_ephemeral)
 
         view = View()
         try:
@@ -392,8 +394,8 @@ class Unit(GroupCog):
                     ]
                     super().__init__(placeholder=tmpl.unit_select_deactivate_placeholder, options=options)
 
-                @uses_db(sessionmaker=CustomClient().sessionmaker)
                 @error_reporting(False)
+                @uses_db(sessionmaker=CustomClient().sessionmaker)
                 async def callback(self, interaction: Interaction, session: Session):
                     unit_id = int(self.values[0])
                     logger.debug(f"Unit selected for deactivation: unit_id={unit_id}")
