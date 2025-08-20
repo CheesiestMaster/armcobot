@@ -539,18 +539,11 @@ class Debug(GroupCog):
                 await interaction.followup.send("Log file not found or not configured", ephemeral=True)
                 return
             
-            # Read the log file
-            with open(log_file_path, "r", encoding="utf-8") as f:
-                log_content = f.read()
-            
-            # Create a BytesIO object with the log content
-            log_bytes = BytesIO(log_content.encode("utf-8"))
-            
-            # Create a Discord file
-            discord_file = File(log_bytes, filename=f"armco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+            # Create a Discord file directly from the log file
+            discord_file = File(log_file_path, filename=f"armco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
             
             await interaction.followup.send(
-                f"Current log file ({len(log_content)} characters):",
+                f"Current log file:",
                 file=discord_file,
                 ephemeral=True
             )

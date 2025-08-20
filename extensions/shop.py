@@ -1580,7 +1580,7 @@ class Shop(GroupCog):
         
         # send a dropdown with all the shop upgrades and an option for adding a new shop upgrade, we may need to handle the existence of more than 25 shop upgrades which means we need to paginate
         logger.debug("Querying shop upgrades for pagination")
-        shop_upgrades = session.query(ShopUpgrade.id, ShopUpgrade.name).order_by(UpgradeType.sort_order, ShopUpgrade.id).all()
+        shop_upgrades = session.query(ShopUpgrade.id, ShopUpgrade.name).order_by(ShopUpgrade.sort_key, ShopUpgrade.id).all()
         # Add the "Add New" option to the list so pagination handles it naturally
         shop_upgrades.append(("\0Add New Shop Upgrade", "\0Add New Shop Upgrade"))
         paginator: Paginator[tuple] = Paginator(shop_upgrades, 25)
