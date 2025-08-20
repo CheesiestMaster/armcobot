@@ -531,11 +531,12 @@ class Debug(GroupCog):
     @error_reporting(True)
     async def logfile(self, interaction: Interaction):
         """Get the current log file opened by __main__.file_handler as a Discord file."""
+        await interaction.response.defer(ephemeral=True)
         try:
             # Get the log file path from environment
             log_file_path = os.getenv("LOG_FILE")
             if not log_file_path or not os.path.exists(log_file_path):
-                await interaction.response.send_message("Log file not found or not configured", ephemeral=True)
+                await interaction.followup.send("Log file not found or not configured", ephemeral=True)
                 return
             
             # Read the log file
@@ -548,7 +549,7 @@ class Debug(GroupCog):
             # Create a Discord file
             discord_file = File(log_bytes, filename=f"armco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
             
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"Current log file ({len(log_content)} characters):",
                 file=discord_file,
                 ephemeral=True
@@ -556,7 +557,7 @@ class Debug(GroupCog):
             
         except Exception as e:
             logger.error(f"Error reading log file: {e}")
-            await interaction.response.send_message(f"Error reading log file: {e}", ephemeral=True)
+            await interaction.followup.send(f"Error reading log file: {e}", ephemeral=True)
 
     has_run = True # False
     @loop(hours=3)
