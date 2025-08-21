@@ -79,6 +79,7 @@ class Unit(GroupCog):
                 logger.triage("Created unit creation view with type selector")
 
             @ui.button(label=tmpl.unit_create_button_label, style=ButtonStyle.primary)
+            @error_reporting(False)
             @uses_db(sessionmaker=CustomClient().sessionmaker)
             async def create_unit_callback(self, interaction: Interaction, button: ui.Button, session: Session):
                 logger.triage(f"Create unit button pressed by {interaction.user.global_name}")
@@ -138,6 +139,12 @@ class Unit(GroupCog):
                 
                 session.commit()
                 logger.triage("Committed unit creation to database")
+                
+                # Guard check: verify no unexpected PlayerUpgrade records were created
+                created_unit = session.query(Unit_model).filter(Unit_model.player_id == player_id, Unit_model.name == unit_name).first()
+                if created_unit and len(created_unit.upgrades) > 0:
+                    logger.error(f"Unexpected PlayerUpgrade records created for unit {unit_name}: {[up.name for up in created_unit.upgrades]}")
+                    raise RuntimeError(f"Unexpected PlayerUpgrade records created during unit creation: {[up.name for up in created_unit.upgrades]}")
                 
                 await interaction.followup.send(tmpl.unit_created.format(unit=unit), ephemeral=True)
                 logger.triage("Sent success message to user")
