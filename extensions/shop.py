@@ -593,12 +593,6 @@ class Shop(GroupCog):
                 logger.triage(f"Starting refit purchase workflow for unit {_unit.name} to {upgrade.refit_target}")
                 refit_target = upgrade.refit_target
                 refit_cost = upgrade.cost
-
-                refit_target_object = session.query(UnitType).filter(UnitType.unit_type == refit_target).first()
-                if not refit_target_object:
-                    logger.triage(f"Refit target unit type {refit_target} not found")
-                    await interaction.response.send_message(tmpl.unexpected_error, ephemeral=True)
-                    return
                 
                 # Get current upgrades on the unit
                 current_upgrades: list[PlayerUpgrade] = _unit.upgrades
@@ -627,7 +621,7 @@ class Shop(GroupCog):
                 # Change unit type and deduct cost
                 logger.triage(f"Changing unit type from {_unit.unit_type} to {refit_target}")
                 _unit.unit_type = refit_target
-                _unit.unit_req = refit_target_object.unit_req
+                _unit.unit_req = upgrade.target_type_info.unit_req
                 _player.rec_points -= refit_cost
                 logger.triage(f"Deducted {refit_cost} RP from player. New balance: {_player.rec_points}")
                 
