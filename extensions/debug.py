@@ -531,26 +531,29 @@ class Debug(GroupCog):
     @error_reporting(True)
     async def logfile(self, interaction: Interaction):
         """Get the current log file opened by __main__.file_handler as a Discord file."""
+        logger.debug(f"Logfile command invoked by {interaction.user.id} ({interaction.user.global_name})")
         await interaction.response.defer(ephemeral=True)
-        try:
-            # Get the log file path from environment
-            log_file_path = os.getenv("LOG_FILE")
-            if not log_file_path or not os.path.exists(log_file_path):
-                await interaction.followup.send("Log file not found or not configured", ephemeral=True)
-                return
-            
-            # Create a Discord file directly from the log file
-            discord_file = File(log_file_path, filename=f"armco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
-            
-            await interaction.followup.send(
-                f"Current log file:",
-                file=discord_file,
-                ephemeral=True
-            )
-            
-        except Exception as e:
-            logger.error(f"Error reading log file: {e}")
-            await interaction.followup.send(f"Error reading log file: {e}", ephemeral=True)
+        
+        # Get the log file path from environment
+        log_file_path = os.getenv("LOG_FILE")
+        logger.debug(f"Log file path from environment: {log_file_path}")
+        
+        if not log_file_path or not os.path.exists(log_file_path):
+            logger.debug(f"Log file not found or not configured: {log_file_path}")
+            await interaction.followup.send("Log file not found or not configured", ephemeral=True)
+            return
+        
+        logger.debug(f"Log file exists, creating Discord file object")
+        # Create a Discord file directly from the log file
+        discord_file = File(log_file_path, filename=f"armco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+        
+        logger.debug(f"Sending log file to user: {discord_file.filename}")
+        await interaction.followup.send(
+            f"Current log file:",
+            file=discord_file,
+            ephemeral=True
+        )
+        logger.debug(f"Log file sent successfully to {interaction.user.id}")
 
     has_run = True # False
     @loop(hours=3)
