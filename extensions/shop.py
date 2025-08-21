@@ -1992,7 +1992,7 @@ class Shop(GroupCog):
                                 unit_types_text = unit_types_input.value.strip()
                                 
                                 # Parse unit types from newline-separated text
-                                new_compatible_unit_types = [ut.strip().upper() for ut in unit_types_text.split('\n') if ut.strip()] if unit_types_text else []
+                                new_compatible_unit_types = {ut.strip().upper() for ut in unit_types_text.split('\n') if ut.strip()} if unit_types_text else set()
                                 
                                 # Update shop upgrade fields
                                 shop_upgrade.name = name
@@ -2007,8 +2007,10 @@ class Shop(GroupCog):
                                 # Remove existing associations
                                 for assoc in shop_upgrade.unit_types:
                                     session.delete(assoc)
+
+                                session.flush()
                                 
-                                # Add new associations
+                                # Add new associations (no duplicates possible due to set)
                                 for unit_type_name in new_compatible_unit_types:
                                     association = ShopUpgradeUnitTypes(
                                         shop_upgrade_id=shop_upgrade.id,
