@@ -659,7 +659,7 @@ class Shop(GroupCog):
                 
                 # Update interface and show success message
                 view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager)
-                embed.description = tmpl.you_have_bought_refit.format(refit_target=refit_target, refit_cost=refit_cost)
+                embed.description = tmpl.you_have_bought_refit.format(refit_target=refit_target, refit_cost=refit_cost) + (tmpl.refit_unit_req.format(unit_req=_unit.unit_req) if _unit.unit_req > 0 else "")
                 embed.color = 0x00ff00  # Green for success
                 await message_manager.update_message(view=view, embed=embed)
                 if not interaction.response.is_done():
