@@ -1,3 +1,4 @@
+import logging
 import re
 import os
 from functools import lru_cache, wraps
@@ -5,7 +6,7 @@ from inspect import Signature
 import traceback
 import discord
 from sqlalchemy.orm import scoped_session
-from logging import getLogger
+from logging import Logger, getLogger
 import asyncio
 from collections import deque
 from typing import Coroutine, Callable, Sequence, TypeVar, Iterator
@@ -448,5 +449,20 @@ def inject(**_kwargs):
         def wrapper(*args, **kwargs):
             kwargs_ = {**_kwargs, **kwargs}
             return func(*args, **kwargs_)
+        return wrapper
+    return decorator
+
+def with_log_level(logger: Logger|str, level: int = logging.DEBUG):
+    if isinstance(logger, str):
+        logger = getLogger(logger)
+    def decorator(func: Callable):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            old_level = logger.level
+            logger.setLevel(level)
+            try:
+                return func(*args, **kwargs)
+            finally:
+                logger.setLevel(old_level)
         return wrapper
     return decorator

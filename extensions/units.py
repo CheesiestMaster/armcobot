@@ -1,12 +1,13 @@
 import io
 from logging import getLogger
+import logging
 import discord
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOption, User
 from discord.ui import View
 from models import Player, Unit as Unit_model, UnitStatus, Campaign, CampaignInvite, UnitType
 from customclient import CustomClient
-from utils import uses_db, is_management, error_reporting
+from utils import uses_db, is_management, error_reporting, with_log_level
 from sqlalchemy.orm import Session
 from sqlalchemy import exists
 from typing import Tuple
@@ -80,6 +81,7 @@ class Unit(GroupCog):
 
             @ui.button(label=tmpl.unit_create_button_label, style=ButtonStyle.primary)
             @error_reporting(False)
+            @with_log_level("sqlalchemy.engine") # temporarily set the level to debug because of an issue in this function
             @uses_db(sessionmaker=CustomClient().sessionmaker)
             async def create_unit_callback(self, interaction: Interaction, button: ui.Button, session: Session):
                 logger.triage(f"Create unit button pressed by {interaction.user.global_name}")
