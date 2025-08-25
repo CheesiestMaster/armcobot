@@ -4,7 +4,7 @@ from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, TextStyle, app_commands as ac, ui, SelectOption, ButtonStyle, Embed
 from models import Player, Unit, UnitStatus, ShopUpgrade, ShopUpgradeUnitTypes, PlayerUpgrade, UnitType, UpgradeType
 from customclient import CustomClient
-from utils import inject, uses_db, string_to_list, Paginator, error_reporting
+from utils import inject, uses_db, Paginator, error_reporting
 from sqlalchemy.orm import Session
 from MessageManager import MessageManager
 import templates as tmpl
@@ -2061,9 +2061,6 @@ class Shop(GroupCog):
         await interaction.response.defer(thinking=False, ephemeral=True)
         await message_manager.update_message(content=tmpl.shop_please_select_unit_type, view=view)
     
-
-
-
 bot: Bot = None
 async def setup(_bot: Bot):
     global bot

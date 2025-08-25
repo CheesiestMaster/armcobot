@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-import logging
-from logging.handlers import RotatingFileHandler
+from coloredformatter import ColoredFormatter
 from dotenv import load_dotenv
+from logging.handlers import RotatingFileHandler
+import logging
 import sys
 import os
-from coloredformatter import ColoredFormatter
 import stat
+import re
 
 # Environ setup
 if not os.path.exists("global.env"):
@@ -50,7 +51,7 @@ if not os.getenv("BOT_TOKEN") or os.getenv("BOT_TOKEN") == "TOKEN":
 if not os.getenv("DATABASE_URL") or os.getenv("DATABASE_URL") == "URL":
     raise EnvironmentError("DATABASE_URL is not set")
 
-import re
+
 def human_size_to_bytes(size_str):
     """
     Convert a human-readable file size string into bytes.

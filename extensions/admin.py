@@ -328,6 +328,14 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                     await interaction.response.send_message("Unit not found", ephemeral=self.bot.use_ephemeral)
                     return
                 
+                # Delete all upgrades associated with the unit first
+                for upgrade in unit.upgrades:
+                    session.delete(upgrade)
+                
+                # Flush to ensure upgrades are deleted before unit deletion
+                session.flush()
+                
+                # Now delete the unit
                 session.delete(unit)
                 logger.debug(f"Unit with the id {unit_id} was deleted from player {player.name}")
                 await interaction.response.send_message(f"Unit {unit.name} has been removed", ephemeral=self.bot.use_ephemeral)

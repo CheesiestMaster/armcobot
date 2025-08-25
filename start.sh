@@ -2,7 +2,6 @@
 
 rm -f ./terminate.flag
 rm -f ./update.flag
-rm -f ./pending.flag
 # clear the PID file
 echo "" > ./PID
 

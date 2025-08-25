@@ -309,7 +309,7 @@ async def callback_listener(callback: Coroutine, bind:str):
         server = await asyncio.start_server(listener, address, port)
         await server.serve_forever()
     except Exception as e:
-        logger.error(f"Error in callback_listener: {e}") # we don't want to crash the bot if the callback happens twice, whichh would OSE 98
+        logger.error(f"Error in callback_listener: {e}") # we don't want to crash the bot if the callback happens twice, which would OSE 98
         return
 
 def check_notify(message: str = "You are not allowed to run this command"):

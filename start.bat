@@ -6,9 +6,6 @@ if exist terminate.flag (
 if exist update.flag (
     del update.flag
 )
-if exist pending.flag (
-    del pending.flag
-)
 echo. > PID
 
 call .venv\Scripts\activate.bat
