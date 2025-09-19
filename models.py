@@ -296,19 +296,21 @@ class UnitType(BaseModel):
         order_by=(ShopUpgrade.sort_key, ShopUpgrade.id),
         lazy="select")
     tags: Mapped[list[Tags]] = relationship("Tags", secondary="unit_type_tags", back_populates="unit_types", lazy="select")
+    unit_type_tags: Mapped[list[UnitTypeTags]] = relationship("UnitTypeTags", back_populates="unit_type_info", lazy="select")
 
 class Tags(BaseModel):
     __tablename__ = "tags"
 
     name: Mapped[str] = mapped_column(String(30), primary_key=True)
     unit_types: Mapped[list[UnitType]] = relationship("UnitType", secondary="unit_type_tags", back_populates="tags", lazy="select")
+    unit_type_tags: Mapped[list[UnitTypeTags]] = relationship("UnitTypeTags", back_populates="tag_info", lazy="select")
 
 class UnitTypeTags(BaseModel):
     __tablename__ = "unit_type_tags"
     unit_type: Mapped[str] = mapped_column(ForeignKey("unit_types.unit_type"), primary_key=True)
     tag: Mapped[str] = mapped_column(ForeignKey("tags.name"), primary_key=True)
-    unit_type: Mapped[UnitType] = relationship("UnitType", back_populates="unit_type_tags", lazy="joined")
-    tag: Mapped[Tags] = relationship("Tags", back_populates="unit_type_tags", lazy="joined")
+    unit_type_info: Mapped[UnitType] = relationship("UnitType", back_populates="unit_type_tags", lazy="joined")
+    tag_info: Mapped[Tags] = relationship("Tags", back_populates="unit_type_tags", lazy="joined")
 
 create_all = BaseModel.metadata.create_all
 Base = BaseModel # alias just for external tooling convenience
