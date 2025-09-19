@@ -198,7 +198,7 @@ class ShopUpgrade(BaseModel):
     disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     repeatable: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    sort_key = column_property(select(UpgradeType.sort_order).where(UpgradeType.name == type))
+    sort_key = column_property(select(UpgradeType.sort_order).where(UpgradeType.name == type).scalar_subquery())
 
     # relationships
     player_upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", back_populates="shop_upgrade", cascade="all", lazy="select")
@@ -241,7 +241,7 @@ class Unit(BaseModel):
     
     # relationships
     player: Mapped[Player] = relationship("Player", back_populates="units")
-    upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", back_populates="unit", cascade="delete-orphan", lazy="select")
+    upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", back_populates="unit", cascade="delete, delete-orphan", lazy="select")
     campaign: Mapped[Optional[Campaign]] = relationship("Campaign", back_populates="units")
     type_info: Mapped[UnitType] = relationship("UnitType", foreign_keys=[unit_type], lazy="joined", back_populates="units", cascade="save-update")
     original_type_info: Mapped[Optional[UnitType]] = relationship("UnitType", foreign_keys=[original_type], lazy="joined", back_populates="original_units")
