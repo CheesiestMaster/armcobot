@@ -695,6 +695,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         logger.debug("Slash commands synced")
         import prometheus
 
+        vp = await asyncio.create_subprocess_exec("git", "rev-parse", "--short", "HEAD", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await vp.communicate()
+        if vp.returncode != 0:
+            logger.error(f"Error getting version: {stderr.decode() if stderr else 'Unknown error'}")
+            self.version = "Unknown"
+        else:
+            self.version = stdout.decode().strip()
+
         # wrap all the consumer methods in uses_db now, since we can access the sessionmaker after init
         decorator = uses_db(sessionmaker=self.sessionmaker)
         self.queue_consumer = decorator(self.queue_consumer)

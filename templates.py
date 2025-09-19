@@ -49,7 +49,8 @@ question_removed = "Question removed from the FAQ"
 question_edited = "Question edited in the FAQ"
 here_is_question_file = "Here is the question file"
 
-stats_template = """Uptime: {uptime} Started at: {start_time}
+stats_template = """Version: {version}
+Uptime: {uptime} Started at: {start_time}
 Memory: {resident:0.2f} MB
 CPU: {cpu_time:0.2f} seconds ({average_cpu:0.2f} average)
 Debug logs: today: {today_DEBUG} total: {total_DEBUG}

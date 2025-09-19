@@ -384,6 +384,7 @@ class Debug(GroupCog):
     
     async def stats(self, interaction: Interaction, _: MessageManager):
         uptime: timedelta = datetime.now() - self.bot.start_time
+        version = self.bot.version
         start_time = f"<t:{int(self.bot.start_time.timestamp())}:F>"
         if process:
             resident = process.memory_info().rss / 1024 ** 2 # resident memory in MB
