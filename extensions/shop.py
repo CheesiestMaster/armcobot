@@ -620,6 +620,21 @@ class Shop(GroupCog):
 
                 # Change unit type and deduct cost
                 logger.triage(f"Changing unit type from {_unit.unit_type} to {refit_target}")
+
+                # if original_type is None, set it to the current unit type, if it is not None, add an upgrade of the type SPECIAL with the name of the current unit type
+                if _unit.original_type is None:
+                    _unit.original_type = _unit.unit_type
+                else:
+                    new_upgrade = PlayerUpgrade(
+                        unit_id=_unit.id, 
+                        name=_unit.unit_type, 
+                        type="SPECIAL", 
+                        original_price=0, 
+                        non_transferable=True, 
+                        shop_upgrade_id=None
+                    )
+                    session.add(new_upgrade)
+
                 _unit.unit_type = refit_target
                 _unit.unit_req = upgrade.target_type_info.unit_req
                 _player.rec_points -= refit_cost
