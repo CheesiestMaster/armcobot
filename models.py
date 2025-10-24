@@ -90,7 +90,7 @@ class UpgradeType(BaseModel):
     # Table options
     __table_args__ = (
         {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4', 'mysql_collate': 'utf8mb4_unicode_ci'},
-        {'sqlite_without_rowid': True},
+        {'sqlite_with_rowid': False},
     )
     
     # columns
@@ -111,7 +111,7 @@ class Extension(BaseModel):
     # Table options
     __table_args__ = (
         {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4', 'mysql_collate': 'utf8mb4_unicode_ci'},
-        {'sqlite_without_rowid': True},
+        {'sqlite_with_rowid': False},
     )
     
     # column
@@ -165,7 +165,7 @@ class CampaignInvite(BaseModel):
     # Table options (PKs are implicitly indexed)
     __table_args__ = (
         {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4', 'mysql_collate': 'utf8mb4_unicode_ci'},
-        {'sqlite_without_rowid': True},
+        {'sqlite_with_rowid': False},
     )
     
     # just an association table for the many-to-many relationship between campaigns and invited players
@@ -273,7 +273,7 @@ class Config(BaseModel):
     # Table options
     __table_args__ = (
         {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4', 'mysql_collate': 'utf8mb4_unicode_ci'},
-        {'sqlite_without_rowid': True},
+        {'sqlite_with_rowid': False},
     )
     
     # columns
@@ -406,7 +406,7 @@ class ShopUpgradeUnitTypes(BaseModel):
     __table_args__ = (
         Index('ix_shop_upgrade_unit_types_unit_type_shop_upgrade_id', 'unit_type', 'shop_upgrade_id'),
         {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4', 'mysql_collate': 'utf8mb4_unicode_ci'},
-        {'sqlite_without_rowid': True},
+        {'sqlite_with_rowid': False},
     )
     
     # columns - composite primary key with unit_type first
@@ -465,7 +465,7 @@ class Tags(BaseModel):
     # Table options
     __table_args__ = (
         {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4', 'mysql_collate': 'utf8mb4_unicode_ci'},
-        {'sqlite_without_rowid': True},
+        {'sqlite_with_rowid': False},
     )
 
     name: Mapped[str] = mapped_column(String(30), primary_key=True, nullable=False)
@@ -478,7 +478,7 @@ class UnitTypeTags(BaseModel):
     # Table options (PKs are implicitly indexed)
     __table_args__ = (
         {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4', 'mysql_collate': 'utf8mb4_unicode_ci'},
-        {'sqlite_without_rowid': True},
+        {'sqlite_with_rowid': False},
     )
     
     unit_type: Mapped[str] = mapped_column(ForeignKey("unit_types.unit_type", ondelete="CASCADE"), primary_key=True, nullable=False)
