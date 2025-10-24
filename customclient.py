@@ -29,6 +29,7 @@ from singleton import Singleton
 import asyncio
 import templates as tmpl
 import logging
+import os
 from utils import uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator
 from prometheus_client import Counter
 
@@ -81,20 +82,46 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self.sessionmaker = sessionmaker
         self.queue = asyncio.Queue()
         self.dialect = dialect
+        self.consumer_running = False
+        self.shutdown_hook_running = False
         _Config = session.query(Config).filter(Config.key == "BOT_CONFIG").first()
         if not _Config:
             _Config = Config(key="BOT_CONFIG", value={"EXTENSIONS":[]})
             session.add(_Config)
             session.commit()
+        
+        # If the stored value is a string (e.g., from pickle serialization), convert it to dict
+        if isinstance(_Config.value, str):
+            try:
+                import ast
+                # Try to safely evaluate the string as a Python literal
+                _Config.value = ast.literal_eval(_Config.value)
+                session.commit()  # Save the corrected value back to DB
+            except (ValueError, SyntaxError):
+                # If ast fails, keep as string and log warning
+                logger.warning(f"Could not parse config value from string: {_Config.value}")
+        
         self.config:dict = _Config.value  # type: ignore
         _Medal_Emotes = session.query(Config).filter(Config.key == "MEDAL_EMOTES").first()
         if not _Medal_Emotes:
             _Medal_Emotes = Config(key="MEDAL_EMOTES", value={})
             session.add(_Medal_Emotes)
             session.commit()
+        
+        # If the stored value is a string (e.g., from pickle serialization), convert it to dict
+        if isinstance(_Medal_Emotes.value, str):
+            try:
+                import ast
+                # Try to safely evaluate the string as a Python literal
+                _Medal_Emotes.value = ast.literal_eval(_Medal_Emotes.value)
+                session.commit()  # Save the corrected value back to DB
+            except (ValueError, SyntaxError):
+                # If ast fails, keep as string and log warning
+                logger.warning(f"Could not parse medal_emotes value from string: {_Medal_Emotes.value}")
+        
         self.medal_emotes:dict = _Medal_Emotes.value  # type: ignore
         self.use_ephemeral = use_ephemeral
-        self.tree.interaction_check = self.check_banned_interaction # type: ignore
+        self.tree.interaction_check = self.no_commands if os.path.exists("maintenance.flag") else self.check_banned_interaction # type: ignore
 
     async def no_commands(self, interaction: Interaction):
         if not await is_management_no_notify(interaction, silent=True):
@@ -151,6 +178,10 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         Raises:
             Exception: If task processing encounters an error.
         """
+        if self.consumer_running:
+            logger.warning("Queue consumer is already running, skipping")
+            return
+        self.consumer_running = True
         logger.info("queue consumer started")
         unknown_handler = lambda task: logger.error(f"Unknown task type: {task}")
         handlers = {
@@ -252,6 +283,8 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     task = (*task, new_fail_count)  # Add fail count
                 self.queue.put_nowait(task)
             self.queue.task_done()
+        self.consumer_running = False
+        logger.info("queue consumer stopped")
 
     # we are going to start subdividing the queue consumer into multiple functions, for clarity
 
@@ -558,7 +591,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 self.startup_animation.start()
             except Exception as e:
                 logger.error(f"Error starting startup animation: {e}")
-        asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if getenv("PROD", "false").lower() == "false" else "127.0.0.1:12346"))  # type: ignore
+        if not self.shutdown_hook_running:
+            self.shutdown_hook_running = True
+            asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if getenv("PROD", "false").lower() == "false" else "127.0.0.1:12346"))  # type: ignore
 
     async def shutdown_callback(self):
         try:

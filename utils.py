@@ -9,7 +9,7 @@ from sqlalchemy.orm import scoped_session
 from logging import Logger, getLogger
 import asyncio
 from collections import deque
-from typing import Coroutine, Callable, Sequence, TypeVar, Iterator
+from typing import Coroutine, Callable, TypeVar, Iterator
 from discord import Interaction
 import pandas as pd
 from prometheus_client import Counter
@@ -68,7 +68,7 @@ def uses_db(sessionmaker):
         new_signature = original_signature.replace(parameters=new_params)
         @wraps(func)
         async def wrapper(*args, **kwargs): 
-            with session_scope() as session: # we are not currently using async with, because the sessionmaker is not async yet
+            with session_scope() as session:
                 try:
                     logger.debug(f"calling {func.__name__}")
                     result = await func(*args, session=session, **kwargs)
@@ -372,6 +372,23 @@ async def toggle_command_ban(desired_state: bool, initiator: str):
     if current_state == desired_state:
         return current_state
     CustomClient().tree.interaction_check = CustomClient().check_banned_interaction if desired_state else CustomClient().no_commands
+    
+    # Create/remove maintenance.flag file based on command ban state
+    if not desired_state:
+        # Command ban is active - create maintenance flag
+        try:
+            open("maintenance.flag", "w").close()
+        except Exception:
+            pass  # Ignore file creation failures
+    else:
+        # Command ban is not active - remove maintenance flag
+        try:
+            os.unlink("maintenance.flag")
+        except FileNotFoundError:
+            pass  # Ignore if file doesn't exist
+        except Exception:
+            pass  # Ignore other failures
+    
     if not desired_state:
         comm_net_id = os.getenv("COMM_NET_CHANNEL_ID")
         if comm_net_id:
