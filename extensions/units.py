@@ -99,7 +99,7 @@ class Unit(GroupCog):
                     await interaction.response.send_message(tmpl.player_max_proposed_units, ephemeral=CustomClient().use_ephemeral)
                     return
 
-                unit_count = len(player.units)
+                unit_count = session.query(Unit_model).filter(Unit_model.player_id == player_id, Unit_model.unit_type != "STOCKPILE").count()
                 logger.triage(f"Found {unit_count} units for player")
                 if unit_count >= 25:
                     logger.triage("Player already has maximum units")
