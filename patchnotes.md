@@ -1,3 +1,4 @@
+**V1.1.1**: Added maximum unit count to prevent broken dropdowns, fixed some bugs introduced in the previous update
 **V1.1.0**: Major database cleanup and rework
 **V1.0.10**: Added shop management command, 
 **V1.0.9**: Major shop rework, moved some state to the database instead of hardcoded, added better commenting to the shop

@@ -96,6 +96,13 @@ class Unit(GroupCog):
                 logger.triage(f"Found {proposed_count} proposed units for player")
                 if proposed_count >= 3:
                     logger.triage("Player already has maximum proposed units")
+                    await interaction.response.send_message(tmpl.player_max_proposed_units, ephemeral=CustomClient().use_ephemeral)
+                    return
+
+                unit_count = len(player.units)
+                logger.triage(f"Found {unit_count} units for player")
+                if unit_count >= 25:
+                    logger.triage("Player already has maximum units")
                     await interaction.response.send_message(tmpl.player_max_units, ephemeral=CustomClient().use_ephemeral)
                     return
 
