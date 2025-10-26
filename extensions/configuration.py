@@ -7,6 +7,7 @@ from utils import uses_db
 from sqlalchemy.orm import Session
 import templates as tmpl
 import os
+from dotenv import dotenv_values
 logger = getLogger(__name__)
 
 class Config(GroupCog):
@@ -89,18 +90,26 @@ class Config(GroupCog):
     async def show_environment(self, interaction: Interaction):
         """Display the current environment configuration including users, roles, and channels."""
         await interaction.response.defer(ephemeral=True)
-        main_guild = self.bot.get_guild(int(os.getenv("MAIN_GUILD_ID")))
+        
+        # Load environment variables from both global.env and LOCAL_ENV_FILE
+        env_values = dotenv_values("global.env")
+        local_env_file = env_values.get("LOCAL_ENV_FILE")
+        if local_env_file and os.path.exists(local_env_file):
+            local_env_values = dotenv_values(local_env_file)
+            env_values.update(local_env_values)
+        
+        main_guild = self.bot.get_guild(int(env_values.get("MAIN_GUILD_ID")))
         if main_guild:
             # get all the users and roles in the environment, and send f"{key}: {value.mention}" for each
             message = "Users:\n"
-            owner1 = main_guild.get_member(int(os.getenv("BOT_OWNER_ID")))
-            owner2 = main_guild.get_member(int(os.getenv("BOT_OWNER_ID_2")))
-            answerer1 = main_guild.get_member(int(os.getenv("FAQ_ANSWERER_1")))
-            answerer2 = main_guild.get_member(int(os.getenv("FAQ_ANSWERER_2")))
-            mod1 = main_guild.get_role(int(os.getenv("MOD_ROLE_1")))
-            mod2 = main_guild.get_role(int(os.getenv("MOD_ROLE_2")))
-            gm = main_guild.get_role(int(os.getenv("GM_ROLE")))
-            commnet = main_guild.get_channel(int(os.getenv("COMM_NET_CHANNEL_ID")))
+            owner1 = main_guild.get_member(int(env_values.get("BOT_OWNER_ID")))
+            owner2 = main_guild.get_member(int(env_values.get("BOT_OWNER_ID_2")))
+            answerer1 = main_guild.get_member(int(env_values.get("FAQ_ANSWERER_1")))
+            answerer2 = main_guild.get_member(int(env_values.get("FAQ_ANSWERER_2")))
+            mod1 = main_guild.get_role(int(env_values.get("MOD_ROLE_1")))
+            mod2 = main_guild.get_role(int(env_values.get("MOD_ROLE_2")))
+            gm = main_guild.get_role(int(env_values.get("GM_ROLE")))
+            commnet = main_guild.get_channel(int(env_values.get("COMM_NET_CHANNEL_ID")))
             statistics = main_guild.get_channel(int(CustomClient().config["statistics_channel_id"]))
             dossier = main_guild.get_channel(int(CustomClient().config["dossier_channel_id"]))
             message += f"Owner 1: {owner1.mention if owner1 else 'Unknown'}\n"
@@ -115,20 +124,25 @@ class Config(GroupCog):
             message += f"CommNet: {commnet.mention if commnet else 'Unknown'}\n"
             message += f"Statistics: {statistics.mention if statistics else 'Unknown'}\n"
             message += f"Dossier: {dossier.mention if dossier else 'Unknown'}\n"
-            message += "\nEnvironment Variables:\n"
-            message += f"PROD: {os.getenv('PROD', 'Not set')}\n"
-            message += f"EPHEMERAL: {os.getenv('EPHEMERAL', 'Not set')}\n"
-            message += f"LOG_LEVEL: {os.getenv('LOG_LEVEL', 'Not set')}\n"
-            message += f"LOG_FILE: {os.getenv('LOG_FILE', 'Not set')}\n"
-            message += f"LOG_FILE_SIZE: {os.getenv('LOG_FILE_SIZE', 'Not set')}\n"
-            message += f"LOG_FILE_BACKUP_COUNT: {os.getenv('LOG_FILE_BACKUP_COUNT', 'Not set')}\n"
-            message += f"LOCAL_ENV_FILE: {os.getenv('LOCAL_ENV_FILE', 'Not set')}\n"
-            message += f"SENSITIVE_ENV_FILE: {os.getenv('SENSITIVE_ENV_FILE', 'Not set')}\n"
-            message += f"BANNED_CHARS: {os.getenv('BANNED_CHARS', 'Not set')}\n"
-            message += f"ALLOWED_DOMAINS: {os.getenv('ALLOWED_DOMAINS', 'Not set')}\n"
-            message += f"BACKPAY_ON_START: {os.getenv('BACKPAY_ON_START', 'Not set')}\n"
-            message += f"MAX_ACTIVE_UNITS: {os.getenv('MAX_ACTIVE_UNITS', 'Not set')}\n"
-            message += f"INITIAL_REQ: {os.getenv('INITIAL_REQ', 'Not set')}\n"
+            message += "\nEnvironment Variables (Current | Global | Local):\n"
+            env_vars = [
+                'PROD', 'EPHEMERAL', 'LOG_LEVEL', 'LOG_FILE', 'LOG_FILE_SIZE', 
+                'LOG_FILE_BACKUP_COUNT', 'LOCAL_ENV_FILE', 'SENSITIVE_ENV_FILE',
+                'BANNED_CHARS', 'ALLOWED_DOMAINS', 'BACKPAY_ON_START', 
+                'MAX_ACTIVE_UNITS', 'INITIAL_REQ'
+            ]
+            
+            for var in env_vars:
+                current_val = os.getenv(var, 'Not set')
+                global_val = dotenv_values("global.env").get(var, 'Not set')
+                local_val = 'Not set'
+                if local_env_file and os.path.exists(local_env_file):
+                    local_val = dotenv_values(local_env_file).get(var, 'Not set')
+                
+                message += f"{var}:\n"
+                message += f"  Current: {current_val}\n"
+                message += f"  Global:  {global_val}\n"
+                message += f"  Local:   {local_val}\n"
             await interaction.followup.send(message)
         else:
             await interaction.followup.send("Main guild not found")

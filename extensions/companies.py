@@ -25,7 +25,7 @@ class Company(GroupCog):
             return
         
         # create a new Player in the database
-        player = Player(discord_id=interaction.user.id, name=interaction.user.name, rec_points=os.getenv("INITIAL_REQ", 1))
+        player = Player(discord_id=interaction.user.id, name=interaction.user.name, rec_points=os.getenv("INITIAL_REQ"))
         session.add(player)
         session.commit() # flush to get the player id
         await asyncio.sleep(0.1) # we need an awaitable here so the consumer can act on the new player
