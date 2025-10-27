@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from discord.ext.commands import GroupCog, Bot, Cog
 from discord import Interaction, app_commands as ac, ui, TextStyle, Embed, SelectOption, Forbidden, HTTPException, Message, NotFound, TextChannel, File
+from dotenv import dotenv_values
 from sqlalchemy import text, func
 import os
 from models import Player, Statistic, Dossier, Campaign, CampaignInvite, Unit, UnitStatus
@@ -483,8 +484,10 @@ class Debug(GroupCog):
     @ac.command(name="test", description="Does whatever Cheese made it do today")
     @uses_db(CustomClient().sessionmaker)
     async def test(self, interaction: Interaction, session: Session):
-        await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send("I Do Nothing Right Now")
+        global_env = dotenv_values("global.env")
+        local_env = dotenv_values(global_env.get("LOCAL_ENV_FILE"))
+        environ = {k:v for k,v in os.environ.items() if k in global_env.keys()} # filter out secrets and system environment variables
+        await interaction.response.send_message(f"Global Environment:\n{global_env}\nLocal Environment:\n{local_env}\nEnvironment Variables:\n{environ}", ephemeral=True)
 
     @ac.command(name="logmark", description="make a marker in the logs")
     async def logmark(self, interaction: Interaction):

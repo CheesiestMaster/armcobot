@@ -268,17 +268,23 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     @uses_db(sessionmaker=CustomClient().sessionmaker)
     async def specialupgrade(self, interaction: Interaction, player: Member, name: str, session: Session):
         """
-        Give a unique or relic item to a player’s active unit.
+        Give a unique or relic item to a player's active unit.
         """
         _player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
             await interaction.response.send_message("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
             return
+        
         # Check for active units first
         active_units = _player.active_units
         if active_units:
-            # Use the first active unit
-            _unit = active_units[0]
+            if len(active_units) == 1:
+                # Only one active unit, use it directly
+                _unit = active_units[0]
+                await self._create_special_upgrade(interaction, _player, _unit, name, session)
+            else:
+                # Multiple active units, show select menu
+                await self._show_unit_select(interaction, _player, active_units, name, session)
         else:
             # check for their stockpile unit, if that also doesn't exist, send a message saying so
             _stockpile = session.query(Unit).filter(Unit.player_id == _player.id, Unit.unit_type == "STOCKPILE").first()
@@ -286,14 +292,56 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 await interaction.response.send_message("Player does not have an active unit or stockpile", ephemeral=self.bot.use_ephemeral)
                 return
             _unit = _stockpile
+            await self._create_special_upgrade(interaction, _player, _unit, name, session)
+
+    async def _create_special_upgrade(self, interaction: Interaction, _player: Player, _unit: Unit, name: str, session: Session):
+        """Create the special upgrade and send response."""
         # create an PlayerUpgrade with the given name, type "SPECIAL", and the unit as the parent
         if len(name) > 30:
             await interaction.response.send_message("Name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)
             return
         upgrade = PlayerUpgrade(name=name, type="SPECIAL", unit_id=_unit.id)
         session.add(upgrade)
-        await interaction.response.send_message(f"Special upgrade {name} given to {_player.name}", ephemeral=self.bot.use_ephemeral)
+        await interaction.response.send_message(f"Special upgrade {name} given to {_player.name}'s unit {_unit.name}", ephemeral=self.bot.use_ephemeral)
         self.bot.queue.put_nowait((1, _player, 0))
+
+    async def _show_unit_select(self, interaction: Interaction, _player: Player, active_units: list, name: str, session: Session):
+        """Show a select menu for multiple active units."""
+        if len(name) > 30:
+            await interaction.response.send_message("Name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)
+            return
+        
+        class UnitSelectView(ui.View):
+            def __init__(self, parent_instance, _player, active_units, name, session):
+                super().__init__(timeout=60)
+                self.parent_instance = parent_instance
+                self._player = _player
+                self.active_units = active_units
+                self.name = name
+                self.session = session
+                
+                # Create select options
+                options = []
+                for unit in active_units:
+                    options.append(SelectOption(
+                        label=unit.name,
+                        description=f"{unit.unit_type} - {unit.status}",
+                        value=str(unit.id)
+                    ))
+                
+                select = ui.Select(options=options, placeholder="Choose a unit to give the special upgrade to")
+                select.callback = self.on_unit_select
+                self.add_item(select)
+            
+            async def on_unit_select(self, interaction: Interaction):
+                selected_unit_id = int(interaction.data['values'][0])
+                _unit = next(unit for unit in self.active_units if unit.id == selected_unit_id)
+                await self.parent_instance._create_special_upgrade(interaction, self._player, _unit, self.name, self.session)
+                self.stop()
+        
+        view = UnitSelectView(self, _player, active_units, name, session)
+        await interaction.response.send_message(f"Select which unit to give '{name}' to:", view=view, ephemeral=self.bot.use_ephemeral)
+        
     @ac.command(name="remove_unit", description="Remove a unit from a player")
     @ac.describe(player="The player to remove the unit from")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
