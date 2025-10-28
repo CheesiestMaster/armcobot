@@ -117,12 +117,9 @@ class Backup(GroupCog):
     
     async def _restore_from_xlsx(self, session: Session, file_data: bytes, interaction: Interaction):
         """Restore database from Excel file using sheet names as table names"""
-        with tempfile.NamedTemporaryFile(suffix='.xlsx') as temp_file:
-            temp_file.write(file_data)
-            temp_file.flush()
-            
+        with io.BytesIO(file_data) as temp_buffer:
             # Read all sheets
-            excel_data = read_excel(temp_file.name, sheet_name=None)
+            excel_data = read_excel(temp_buffer, sheet_name=None)
             
             # Disable foreign key checks
             self._disable_foreign_keys(session)
