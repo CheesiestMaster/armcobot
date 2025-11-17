@@ -387,7 +387,7 @@ class Unit(BaseModel):
     original_type_info: Mapped[Optional[UnitType]] = relationship("UnitType", foreign_keys=[original_type], lazy="joined", back_populates="original_units", passive_deletes=True)
     available_upgrades: Mapped[list[ShopUpgrade]] = relationship(
         "ShopUpgrade",
-        order_by=(ShopUpgrade.sort_key, ShopUpgrade.id),
+        order_by=(ShopUpgrade.sort_key, ShopUpgrade.type, ShopUpgrade.id),
         secondary="shop_upgrade_unit_types",
         primaryjoin="Unit.unit_type==ShopUpgradeUnitTypes.unit_type",
         secondaryjoin="ShopUpgrade.id==ShopUpgradeUnitTypes.shop_upgrade_id",
