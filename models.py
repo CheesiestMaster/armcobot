@@ -1,12 +1,15 @@
 from __future__ import annotations
-from sqlalchemy import Integer, String, Enum, ForeignKey, PickleType, Boolean, BigInteger, select, Index, UniqueConstraint, CheckConstraint, text, DDL, event
+import discord
+from sqlalchemy import ColumnElement, Integer, String, Enum, ForeignKey, PickleType, Boolean, BigInteger, select, Index, UniqueConstraint, CheckConstraint, text, DDL, event
+from sqlalchemy.sql.operators import OperatorType
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import Session, relationship, DeclarativeBase, Mapped, mapped_column, column_property, validates
-from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.ext.hybrid import Comparator, hybrid_property
 from sqlalchemy import MetaData
 from enum import Enum as PyEnum
 import logging
-from typing import Any, Callable, Iterator, MutableMapping, Optional
+from typing import Any, Callable, Iterable, Iterator, MutableMapping, Optional
+from customclient import CustomClient
 
 import utils
 
@@ -51,6 +54,30 @@ class UnitStatusCoercingEnum(TypeDecorator):
 
     def process_result_value(self, value, dialect):
         return value
+
+class DiscordUserComparator(Comparator):
+    @staticmethod
+    def _to_int(other):
+        if isinstance(other, discord.abc.User):
+            return other.id
+        if isinstance(other, int):
+            return other
+        raise TypeError(f"Cannot compare {type(other).__name__}")
+
+    @classmethod
+    def _coerce_other(cls, other):
+        if isinstance(other, Iterable) and not isinstance(other, (str, bytes)):
+            
+            return [cls._to_int(item) for item in other]
+        return cls._to_int(other)
+
+    def operate(self, op: OperatorType, other: Any, **kwargs: Any) -> ColumnElement[Any]:
+        other = self._coerce_other(other)
+        return super().operate(op, other, **kwargs)
+
+    def reverse_operate(self, op: OperatorType, other: Any, **kwargs: Any) -> ColumnElement[Any]:
+        other = self._coerce_other(other)
+        return super().reverse_operate(op, other, **kwargs)
 
 class BaseModel(DeclarativeBase):
     __abstract__ = True
@@ -212,6 +239,22 @@ class Player(BaseModel):
         uselist=True,
         viewonly=True
     )
+
+    @hybrid_property
+    def user(self) -> discord.User:
+        """Returns a concrete discord.User object.
+        
+        Note: The property always returns discord.User (concrete type), while the
+        comparator accepts discord.abc.User (which includes User, ClientUser, and Member).
+        This allows queries to work with any user-like object while the property
+        always returns a consistent concrete type.
+        """
+        client = CustomClient()
+        return client.get_user(self.discord_id)
+
+    @user.comparator()
+    def user(cls) -> DiscordUserComparator:
+        return DiscordUserComparator(cls.discord_id)
 
 class PlayerUpgrade(BaseModel):
     __tablename__ = "player_upgrades"
