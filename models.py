@@ -9,7 +9,7 @@ from sqlalchemy import MetaData
 from enum import Enum as PyEnum
 import logging
 from typing import Any, Callable, Iterable, Iterator, MutableMapping, Optional
-from customclient import CustomClient
+
 
 import utils
 
@@ -73,11 +73,11 @@ class DiscordUserComparator(Comparator):
 
     def operate(self, op: OperatorType, other: Any, **kwargs: Any) -> ColumnElement[Any]:
         other = self._coerce_other(other)
-        return super().operate(op, other, **kwargs)
+        return op(self.__clause_element__(), other, **kwargs)
 
     def reverse_operate(self, op: OperatorType, other: Any, **kwargs: Any) -> ColumnElement[Any]:
         other = self._coerce_other(other)
-        return super().reverse_operate(op, other, **kwargs)
+        return op(other, self.__clause_element__(), **kwargs)
 
 class BaseModel(DeclarativeBase):
     __abstract__ = True
@@ -249,10 +249,11 @@ class Player(BaseModel):
         This allows queries to work with any user-like object while the property
         always returns a consistent concrete type.
         """
+        from customclient import CustomClient
         client = CustomClient()
-        return client.get_user(self.discord_id)
+        return client.get_user(int(self.discord_id))
 
-    @user.comparator()
+    @user.comparator
     def user(cls) -> DiscordUserComparator:
         return DiscordUserComparator(cls.discord_id)
 
@@ -423,9 +424,9 @@ class Unit(BaseModel):
     unit_req: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", index=True)
     
     # relationships
-    player: Mapped[Player] = relationship("Player", back_populates="units", overlaps="live_players,players", passive_deletes=True)
+    player: Mapped[Player] = relationship("Player", back_populates="units", overlaps="live_players,players", passive_deletes=True, lazy="joined")
     upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", back_populates="unit", cascade="delete, delete-orphan", lazy="select", passive_deletes=True)
-    campaign: Mapped[Optional[Campaign]] = relationship("Campaign", back_populates="units", overlaps="live_players,players", passive_deletes=True)
+    campaign: Mapped[Optional[Campaign]] = relationship("Campaign", back_populates="units", overlaps="live_players,players", passive_deletes=True, lazy="joined")
     type_info: Mapped[UnitType] = relationship("UnitType", foreign_keys=[unit_type], lazy="joined", back_populates="units", cascade="save-update", passive_deletes=True)
     original_type_info: Mapped[Optional[UnitType]] = relationship("UnitType", foreign_keys=[original_type], lazy="joined", back_populates="original_units", passive_deletes=True)
     available_upgrades: Mapped[list[ShopUpgrade]] = relationship(

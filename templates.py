@@ -31,10 +31,6 @@ Units:
 Statistics_Unit = """### {unit.name} {callsign} ({unit.unit_type}) {unit.status.name} {campaign_name}
 {upgrades}"""
 
-Statistics_Unit_Active = """### {unit.name} ({unit.unit_type}) {unit.status.name}
-{upgrades}
-{stats}"""
-
 faq_response = """**Question:** {selected.question}
 
 **Answer:** {selected.answer}"""
@@ -247,7 +243,7 @@ fk_check_complete = "External Foreign Key check complete"
 # RP/Roleplay related
 rp_template = """---- RP POST ----
 ```ansi
-[32m{message}
+\x1b[32m{message}
 ```"""
 message_sent = "Message sent"
 
@@ -400,6 +396,11 @@ shop_disabled_status = "Disabled: {status}"
 shop_repeatable_status = "Repeatable: {status}"
 shop_please_select_unit_type = "Please select a unit type"
 shop_please_select_upgrade_type = "Please select an upgrade type"
+
+
+# Search related messages
+search_no_units_found = "No units found"
+search_unit_output = '{unit.name} {callsign} ({unit.unit_type}) {unit.status.name} {campaign_name}'
 
 # Import any other user template overrides
 try:

@@ -1,3 +1,4 @@
+import inspect
 import logging
 import re
 import os
@@ -66,26 +67,48 @@ def uses_db(sessionmaker):
         original_signature = Signature.from_callable(func)
         new_params = [param for name, param in original_signature.parameters.items() if name != "session"]
         new_signature = original_signature.replace(parameters=new_params)
-        @wraps(func)
-        async def wrapper(*args, **kwargs): 
-            with session_scope() as session:
-                try:
-                    logger.debug(f"calling {func.__name__}")
-                    result = await func(*args, session=session, **kwargs)
-                    logger.debug(f"commiting session for {func.__name__}")
-                    session.commit()
-                    logger.debug(f"committed session for {func.__name__}")
-                    return result
-                except RollbackException:
-                    logger.debug(f"rolling back session for {func.__name__}")
-                    session.rollback()
-                    logger.debug(f"rolled back session for {func.__name__}")
-                    return None
-                except Exception as e:
-                    logger.debug(f"rolling back session for {func.__name__} due to unhandled exception")
-                    session.rollback()
-                    logger.debug(f"rolled back session for {func.__name__} due to unhandled exception")
-                    raise e
+        if inspect.iscoroutinefunction(func):
+            @wraps(func)
+            async def wrapper(*args, **kwargs): 
+                with session_scope() as session:
+                    try:
+                        logger.debug(f"calling {func.__name__}")
+                        result = await func(*args, session=session, **kwargs)
+                        logger.debug(f"commiting session for {func.__name__}")
+                        session.commit()
+                        logger.debug(f"committed session for {func.__name__}")
+                        return result
+                    except RollbackException:
+                        logger.debug(f"rolling back session for {func.__name__}")
+                        session.rollback()
+                        logger.debug(f"rolled back session for {func.__name__}")
+                        return None
+                    except Exception as e:
+                        logger.debug(f"rolling back session for {func.__name__} due to unhandled exception")
+                        session.rollback()
+                        logger.debug(f"rolled back session for {func.__name__} due to unhandled exception")
+                        raise e
+        else:
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                with session_scope() as session:
+                    try:
+                        logger.debug(f"calling {func.__name__}")
+                        result = func(*args, session=session, **kwargs)
+                        logger.debug(f"commiting session for {func.__name__}")
+                        session.commit()
+                        logger.debug(f"committed session for {func.__name__}")
+                        return result
+                    except RollbackException:
+                        logger.debug(f"rolling back session for {func.__name__}")
+                        session.rollback()
+                        logger.debug(f"rolled back session for {func.__name__}")
+                        return None
+                    except Exception as e:
+                        logger.debug(f"rolling back session for {func.__name__} due to unhandled exception")
+                        session.rollback()
+                        logger.debug(f"rolled back session for {func.__name__} due to unhandled exception")
+                        raise e
         wrapper.__signature__ = new_signature # type: ignore[attr-defined]
         return wrapper
     return decorator
