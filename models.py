@@ -438,6 +438,7 @@ class Unit(BaseModel):
         overlaps="unit_types,type_info",
         lazy="select",
         viewonly=True)
+    unit_history: Mapped[list[UnitHistory]] = relationship("UnitHistory", back_populates="unit", lazy="select", passive_deletes=True)
 
 class ShopUpgradeUnitTypes(BaseModel):
     __tablename__ = "shop_upgrade_unit_types"
@@ -522,6 +523,20 @@ class UnitTypeTags(BaseModel):
     tag: Mapped[str] = mapped_column(ForeignKey("tags.name", ondelete="CASCADE"), primary_key=True, nullable=False)
     unit_type_info: Mapped[UnitType] = relationship("UnitType", back_populates="unit_type_tags", overlaps="tags,unit_types", lazy="joined", passive_deletes=True)
     tag_info: Mapped[Tags] = relationship("Tags", back_populates="unit_type_tags", overlaps="tags,unit_types", lazy="joined", passive_deletes=True)
+
+class UnitHistory(BaseModel):
+    __tablename__ = "unit_history"
+
+    __table_args__ = (
+        {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4', 'mysql_collate': 'utf8mb4_unicode_ci', 'sqlite_with_rowid': False},
+    )
+
+    unit_id: Mapped[int] = mapped_column(ForeignKey("units.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    campaign_name: Mapped[str] = mapped_column(String(30), nullable=False, primary_key=True)
+    
+    unit: Mapped[Unit] = relationship("Unit", back_populates="unit_history", lazy="joined", passive_deletes=True)
+    # we don't have a relationship to the campaign, because campaigns get deleted when they end
+    # but we populate this table before that happens
 
 create_all = BaseModel.metadata.create_all
 Base = BaseModel # alias just for external tooling convenience

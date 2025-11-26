@@ -2,7 +2,7 @@ from logging import getLogger
 from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, Member, Role, Embed, File, TextStyle
 from discord.ui import Modal, TextInput
-from models import Campaign, UnitStatus, CampaignInvite, Player, Unit
+from models import Campaign, UnitHistory, UnitStatus, CampaignInvite, Player, Unit
 from utils import uses_db, is_dm, check_notify
 from sqlalchemy.orm import Session
 from sqlalchemy import text, not_, func
@@ -150,6 +150,7 @@ class Campaigns(GroupCog):
             unit.callsign = None
             unit.campaign_id = None
             unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
+            unit.unit_history.append(UnitHistory(campaign_name=campaign))
             self.bot.queue.put_nowait((1, unit.player, 0))
         # delete all invites because they are no longer valid
         invites = session.query(CampaignInvite).filter(CampaignInvite.campaign_id == _campaign.id).all()
