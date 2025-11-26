@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 import inspect
 import logging
 import re
@@ -11,7 +12,7 @@ from logging import Logger, getLogger
 import asyncio
 from collections import deque
 from typing import Coroutine, Callable, TypeVar, Iterator
-from discord import Interaction
+from discord import Interaction, abc
 import pandas as pd
 from prometheus_client import Counter
 
@@ -506,3 +507,49 @@ def with_log_level(logger: Logger|str, level: int = logging.DEBUG):
                 logger.setLevel(old_level)
         return wrapper
     return decorator
+
+class RatelimitError(Exception):
+    def __init__(self, message: str = "Ratelimit exceeded"):
+        super().__init__(message)
+
+class DelayedReleaseSemaphore(asyncio.Semaphore):
+    def __init__(self, max_concurrent: int, delay: float):
+        if delay <= 0: raise ValueError("Delay must be greater than 0")
+        if max_concurrent <= 0: raise ValueError("Max concurrent must be greater than 0")
+        self.delay = delay
+        super().__init__(max_concurrent)
+
+    def acquire_nowait(self) -> bool:
+        if self._value == 0: raise RatelimitError()
+        self._value -= 1
+        return True
+
+    def release(self):
+        loop = asyncio.get_running_loop()
+        loop.call_later(self.delay, super().release)
+
+class UserSemaphore(Mapping[abc.User, DelayedReleaseSemaphore]):
+    def __init__(self, max_concurrent: int, delay: float):
+        if delay <= 0: raise ValueError("Delay must be greater than 0")
+        if max_concurrent <= 0: raise ValueError("Max concurrent must be greater than 0")
+        self.max_concurrent = max_concurrent
+        self.delay = delay
+        self._store = dict[int, DelayedReleaseSemaphore]()
+
+    def __setitem__(self, user: abc.User, semaphore: DelayedReleaseSemaphore):
+        raise NotImplementedError("UserSemaphore is read-only")
+
+    def __getitem__(self, user: abc.User) -> DelayedReleaseSemaphore:
+        if not isinstance(user, abc.User): raise TypeError("User must be a discord.User or discord.Member")
+        if user.id not in self._store:
+            self._store[user.id] = DelayedReleaseSemaphore(self.max_concurrent, self.delay)
+        return self._store[user.id]
+
+    def __len__(self) -> int:
+        return len(self._store)
+
+    def __iter__(self) -> Iterator[abc.User]:
+        return iter(self._store)
+
+    def __contains__(self, user: abc.User) -> bool:
+        return user.id in self._store

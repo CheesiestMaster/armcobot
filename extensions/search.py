@@ -37,25 +37,27 @@ class Search(GroupCog):
         logger.info("Search caches cleared")
 
     @staticmethod
-    def _fuzzy_autocomplete(column: ColumnElement[str]):
+    def _fuzzy_autocomplete(column: ColumnElement[str], *union_columns: ColumnElement[str]):
         
         lookup = lru_cache(maxsize=100)(
             uses_db(CustomClient().sessionmaker)(
                 lambda current, session: tuple(
                     row[0] for row in (
-                        session.query(column)
+                        session.query(column.label("value"))
+                        .union_all(*(session.query(union_column.label("value")) for union_column in union_columns))
                         .distinct()
                         .limit(25)
                         .all()
                      if not current else
-                        session.query(column)
+                        session.query(column.label("value"))
                         .filter(column.ilike(f"%{current}%"))
+                        .union_all(*(session.query(union_column.label("value")).filter(union_column.ilike(f"%{current}%")) for union_column in union_columns))
                         .distinct()
                         .limit(25)
                         .all()))))
         
         async def autocomplete(interaction: Interaction, current: str):
-            return [ac.Choice(name=item, value=item) for item in lookup(current)]
+            return [ac.Choice(name=item, value=item) for item in lookup(current.strip().lower())]
         
         caches.append(lookup)
         return autocomplete

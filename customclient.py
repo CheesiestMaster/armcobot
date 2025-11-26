@@ -16,7 +16,7 @@ Modules:
     - `logging`: Logging utilities for debugging and information.
 """
 
-from discord import Interaction, Intents, Status, Activity, ActivityType, Member
+from discord import Interaction, Intents, Status, Activity, ActivityType, Member, app_commands
 from discord.ext.commands import Bot
 from discord.ext import tasks
 from os import getenv, unlink
@@ -30,7 +30,7 @@ import asyncio
 import templates as tmpl
 import logging
 import os
-from utils import uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator
+from utils import RatelimitError, UserSemaphore, uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator
 from prometheus_client import Counter
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
@@ -41,6 +41,9 @@ logging.getLogger("discord").setLevel(logging.WARNING)
 # Create interaction counter metric
 interaction_counter = Counter("interactions_total", "Total number of interactions", labelnames=["guild_name"])
 error_counter = Counter("errors_total", "Total number of errors", labelnames=["guild_name", "error"])
+ratelimited_counter = Counter("ratelimited_total", "Total number of commands dropped due to ratelimits", labelnames=["guild_name"])
+
+_ACQUIRED = object()
 
 @Singleton
 class CustomClient(Bot): # need to inherit from Bot to use Cogs
@@ -122,6 +125,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self.medal_emotes:dict = _Medal_Emotes.value  # type: ignore
         self.use_ephemeral = use_ephemeral
         self.tree.interaction_check = self.no_commands if os.path.exists("maintenance.flag") else self.check_banned_interaction # type: ignore
+        self.user_semaphore = UserSemaphore(int(getenv("RATELIMIT_MAX", "5")), float(getenv("RATELIMIT_DELAY", "0.1")))
 
     async def no_commands(self, interaction: Interaction):
         if not await is_management_no_notify(interaction, silent=True):
@@ -148,6 +152,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             return False
         logger.debug(f"Interaction check passed for user {interaction.user.global_name}")
         return True
+
 
     async def resync_config(self, session: Session):
         """
