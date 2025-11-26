@@ -22,6 +22,7 @@ from psutil import Process
 from MessageManager import MessageManager
 from discord.ext.tasks import loop
 from io import BytesIO
+from prometheus_client import generate_latest
 logger = getLogger(__name__)
 
 process: Process = None
@@ -558,6 +559,33 @@ class Debug(GroupCog):
             ephemeral=True
         )
         logger.debug(f"Log file sent successfully to {interaction.user.id}")
+
+    @ac.command(name="prom", description="Get Prometheus metrics as a file")
+    async def prom(self, interaction: Interaction):
+        """Get the latest Prometheus metrics in Prometheus text format."""
+        logger.debug(f"Prom command invoked by {interaction.user.id} ({interaction.user.global_name})")
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Generate the latest Prometheus metrics
+            metrics_data = generate_latest()
+            
+            # Create a BytesIO object from the metrics data
+            metrics_bytes = BytesIO(metrics_data)
+            
+            # Create a Discord file
+            discord_file = File(metrics_bytes, filename=f"prometheus_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+            
+            logger.debug(f"Sending Prometheus metrics to user: {discord_file.filename}")
+            await interaction.followup.send(
+                "Prometheus metrics:",
+                file=discord_file,
+                ephemeral=True
+            )
+            logger.debug(f"Prometheus metrics sent successfully to {interaction.user.id}")
+        except Exception as e:
+            logger.error(f"Error generating Prometheus metrics: {e}")
+            await interaction.followup.send(f"Error generating metrics: {e}", ephemeral=True)
 
     has_run = True # False
     @loop(hours=3)

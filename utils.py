@@ -8,11 +8,12 @@ from inspect import Signature
 import traceback
 import discord
 from sqlalchemy.orm import scoped_session
+from sqlalchemy import ColumnElement
 from logging import Logger, getLogger
 import asyncio
 from collections import deque
 from typing import Coroutine, Callable, TypeVar, Iterator
-from discord import Interaction, abc
+from discord import Interaction, abc, app_commands as ac
 import pandas as pd
 from prometheus_client import Counter
 
@@ -553,3 +554,45 @@ class UserSemaphore(Mapping[abc.User, DelayedReleaseSemaphore]):
 
     def __contains__(self, user: abc.User) -> bool:
         return user.id in self._store
+
+# Global cache registry for fuzzy autocomplete caches
+fuzzy_autocomplete_caches: list = []  # list of all the caches for the autocompletes. which we only ever add to, never remove from
+
+def fuzzy_autocomplete(column: ColumnElement[str], *union_columns: ColumnElement[str]):
+    """
+    Creates a fuzzy autocomplete function for Discord slash commands.
+    
+    Args:
+        column: The primary SQLAlchemy column to search
+        *union_columns: Additional columns to search and union with the primary column
+    
+    Returns:
+        An async autocomplete function that can be used with Discord's @app_commands.autocomplete decorator
+    """
+    global CustomClient
+    if CustomClient is None:
+        from customclient import CustomClient
+    
+    lookup = lru_cache(maxsize=100)(
+        uses_db(CustomClient().sessionmaker)(
+            lambda current, session: tuple(
+                row[0] for row in (
+                    session.query(column.label("value"))
+                    .union_all(*(session.query(union_column.label("value")) for union_column in union_columns))
+                    .distinct()
+                    .limit(25)
+                    .all()
+                 if not current else
+                    session.query(column.label("value"))
+                    .filter(column.ilike(f"%{current}%"))
+                    .union_all(*(session.query(union_column.label("value")).filter(union_column.ilike(f"%{current}%")) for union_column in union_columns))
+                    .distinct()
+                    .limit(25)
+                    .all()))))
+    
+    async def autocomplete(interaction: Interaction, current: str):
+        return [ac.Choice(name=item, value=item) for item in lookup(current.strip().lower())]
+    
+    # Register the cache in the global registry
+    fuzzy_autocomplete_caches.append(lookup)
+    return autocomplete

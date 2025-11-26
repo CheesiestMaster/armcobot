@@ -129,7 +129,7 @@ class Config(GroupCog):
                 'PROD', 'EPHEMERAL', 'LOG_LEVEL', 'LOG_FILE', 'LOG_FILE_SIZE', 
                 'LOG_FILE_BACKUP_COUNT', 'LOCAL_ENV_FILE', 'SENSITIVE_ENV_FILE',
                 'BANNED_CHARS', 'ALLOWED_DOMAINS', 'BACKPAY_ON_START', 
-                'MAX_ACTIVE_UNITS', 'INITIAL_REQ'
+                'MAX_ACTIVE_UNITS', 'INITIAL_REQ', 'LOOP_ACTIVE' # loop_active is the flag that indicates we are under start.sh or start.bat
             ]
             
             for var in env_vars:

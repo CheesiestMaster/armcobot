@@ -30,7 +30,7 @@ import asyncio
 import templates as tmpl
 import logging
 import os
-from utils import RatelimitError, UserSemaphore, uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator
+from utils import RatelimitError, UserSemaphore, uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator, fuzzy_autocomplete_caches
 from prometheus_client import Counter
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
@@ -590,6 +590,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             pass  # File doesn't exist, which is fine
         #await self.set_bot_nick("S.A.M.")
         asyncio.create_task(self.queue_consumer())  # type: ignore
+        self.clear_autocomplete_caches.start()
         await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign", type=ActivityType.playing))
         if (getenv("STARTUP_ANIMATION", "false").lower() == "true"):
             try:
@@ -641,6 +642,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         logger.debug("24 hour notification loop finished")
         self.notify_on_24_hours.cancel()
     
+    @tasks.loop(hours=1)
+    async def clear_autocomplete_caches(self):
+        """Clears all fuzzy autocomplete caches to prevent stale data"""
+        logger.info("Clearing autocomplete caches")
+        for cache in fuzzy_autocomplete_caches:
+            cache.cache_clear()  # clear each cache one by one, so they don't go stale
+        logger.info("Autocomplete caches cleared")
+    
     async def close(self, session: Session):
         """
         Closes the bot and performs necessary cleanup.
@@ -651,6 +660,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         import prometheus
         prometheus.poll_metrics_fast.stop()
         prometheus.poll_metrics_slow.stop()
+        self.clear_autocomplete_caches.cancel()
         await self.queue.put((4, None))
         await self.resync_config(session=session)
         await self.change_presence(status=Status.offline, activity=None)

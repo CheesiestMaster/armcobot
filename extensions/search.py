@@ -1,19 +1,14 @@
-from functools import lru_cache
 from logging import getLogger
-from typing import Optional, Type
-from discord.ext import tasks
+from typing import Optional
 from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, Member, app_commands as ac, ui, ButtonStyle, SelectOption
-from sqlalchemy import ColumnElement
+from discord import Interaction, Member, app_commands as ac
 from sqlalchemy.orm import Session
 from models import Campaign, Player, PlayerUpgrade, Unit, UnitType, ShopUpgrade
 from customclient import CustomClient
-from utils import error_reporting, uses_db
+from utils import error_reporting, uses_db, fuzzy_autocomplete
 import templates as tmpl
 
 logger = getLogger(__name__)
-
-caches = list() # list of all the caches for the autocompletes. which we only ever add to, never remove from
 
 class Search(GroupCog):
     def __init__(self, bot: Bot):
@@ -24,43 +19,6 @@ class Search(GroupCog):
                     bot (Bot): The bot instance the cog will be added to.
                 """
         self.bot = bot
-        self.clear_caches.start()
-
-    def cog_unload(self):
-        self.clear_caches.cancel()
-
-    @tasks.loop(hours=1)
-    async def clear_caches(self):
-        logger.info("Clearing search caches")
-        for cache in caches:
-            cache.cache_clear() # clear each cache one by one, so they don't go stale
-        logger.info("Search caches cleared")
-
-    @staticmethod
-    def _fuzzy_autocomplete(column: ColumnElement[str], *union_columns: ColumnElement[str]):
-        
-        lookup = lru_cache(maxsize=100)(
-            uses_db(CustomClient().sessionmaker)(
-                lambda current, session: tuple(
-                    row[0] for row in (
-                        session.query(column.label("value"))
-                        .union_all(*(session.query(union_column.label("value")) for union_column in union_columns))
-                        .distinct()
-                        .limit(25)
-                        .all()
-                     if not current else
-                        session.query(column.label("value"))
-                        .filter(column.ilike(f"%{current}%"))
-                        .union_all(*(session.query(union_column.label("value")).filter(union_column.ilike(f"%{current}%")) for union_column in union_columns))
-                        .distinct()
-                        .limit(25)
-                        .all()))))
-        
-        async def autocomplete(interaction: Interaction, current: str):
-            return [ac.Choice(name=item, value=item) for item in lookup(current.strip().lower())]
-        
-        caches.append(lookup)
-        return autocomplete
 
 
 
@@ -71,11 +29,11 @@ class Search(GroupCog):
     @ac.describe(unit_type="The type of the unit to search for (This must be the exact name, use the autocomplete)")
     @ac.describe(upgrade="The upgrade to search for")
     @ac.describe(campaign="The campaign to search for (This must be the exact name, use the autocomplete)")
-    @ac.autocomplete(name=_fuzzy_autocomplete(Unit.name), 
-                     callsign=_fuzzy_autocomplete(Unit.callsign), 
-                     unit_type=_fuzzy_autocomplete(UnitType.unit_type), 
-                     upgrade=_fuzzy_autocomplete(ShopUpgrade.name),
-                     campaign=_fuzzy_autocomplete(Campaign.name)) # we don't need to autocomplete Player, because Member gets client side autocomplete anyway
+    @ac.autocomplete(name=fuzzy_autocomplete(Unit.name), 
+                     callsign=fuzzy_autocomplete(Unit.callsign), 
+                     unit_type=fuzzy_autocomplete(UnitType.unit_type), 
+                     upgrade=fuzzy_autocomplete(ShopUpgrade.name),
+                     campaign=fuzzy_autocomplete(Campaign.name)) # we don't need to autocomplete Player, because Member gets client side autocomplete anyway
     @uses_db(sessionmaker=CustomClient().sessionmaker)
     @error_reporting(False)
     async def unit(self, interaction: Interaction, session: Session, name: Optional[str] = None, player: Optional[Member] = None, callsign: Optional[str] = None, unit_type: Optional[str] = None, upgrade: Optional[str] = None, campaign: Optional[str] = None) -> None:
