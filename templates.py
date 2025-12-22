@@ -396,11 +396,15 @@ shop_disabled_status = "Disabled: {status}"
 shop_repeatable_status = "Repeatable: {status}"
 shop_please_select_unit_type = "Please select a unit type"
 shop_please_select_upgrade_type = "Please select an upgrade type"
-
+shop_unit_type_or_upgrade_type_not_found = "Unit type or upgrade type not found, please use the autocomplete"
+shop_unit_type_given_all_upgrades_of_type = "Unit type {unit_type} given all upgrades of type {upgrade_type}"
 
 # Search related messages
 search_no_units_found = "No units found"
 search_unit_output = '{unit.name} {callsign} ({unit.unit_type}) {unit.status.name} {campaign_name}'
+
+# Campaign related messages
+notify_no_players = "No players found"
 
 # Import any other user template overrides
 try:

@@ -4,15 +4,17 @@ import logging
 import re
 import os
 from functools import lru_cache, wraps
-from inspect import Signature
+from inspect import Parameter, Signature
 import traceback
+from types import FunctionType
 import discord
 from sqlalchemy.orm import scoped_session
 from sqlalchemy import ColumnElement
+from sqlalchemy.exc import OperationalError
 from logging import Logger, getLogger
 import asyncio
 from collections import deque
-from typing import Coroutine, Callable, TypeVar, Iterator
+from typing import Any, Coroutine, Callable, Generator, Iterable, ParamSpec, TypeVar, Iterator, cast
 from discord import Interaction, abc, app_commands as ac
 import pandas as pd
 from prometheus_client import Counter
@@ -62,6 +64,21 @@ def has_invalid_url(text: str) -> bool:
 class RollbackException(Exception):
     pass
 
+async def _notify_owner_mysql_error_4031():
+    """Helper function to notify the bot owner about MySQL error 4031"""
+    try:
+        global CustomClient
+        if CustomClient is None:
+            from customclient import CustomClient
+        bot = CustomClient()
+        owner_id = int(os.getenv("BOT_OWNER_ID"))
+        owner = await bot.fetch_user(owner_id)
+        if owner:
+            await owner.send("⚠️ **MySQL Error 4031 Detected**\n\nThe bot encountered MySQL error 4031 (client disconnected by server). Please restart the bot.")
+            logger.info(f"Notified owner {owner_id} about MySQL error 4031")
+    except Exception as notify_error:
+        logger.error(f"Failed to notify owner about MySQL error 4031: {notify_error}")
+
 def uses_db(sessionmaker):
     session_scope = scoped_session(sessionmaker)
     def decorator(func):
@@ -85,6 +102,27 @@ def uses_db(sessionmaker):
                         session.rollback()
                         logger.debug(f"rolled back session for {func.__name__}")
                         return None
+                    except OperationalError as e:
+                        # Check for MySQL error 4031 (client disconnected by server)
+                        error_code = None
+                        if hasattr(e, 'orig'):
+                            # Try errno first (PyMySQL)
+                            if hasattr(e.orig, 'errno'):
+                                error_code = e.orig.errno
+                            # Fall back to args[0] if errno not available
+                            elif hasattr(e.orig, 'args') and len(e.orig.args) > 0:
+                                error_code = e.orig.args[0]
+                        
+                        if error_code == 4031:
+                            logger.error(f"MySQL OperationalError 4031 detected in {func.__name__}, notifying owner")
+                            try:
+                                await _notify_owner_mysql_error_4031()
+                            except Exception as notify_error:
+                                logger.error(f"Failed to notify owner about MySQL error 4031: {notify_error}")
+                        logger.debug(f"rolling back session for {func.__name__} due to OperationalError")
+                        session.rollback()
+                        logger.debug(f"rolled back session for {func.__name__} due to OperationalError")
+                        raise e
                     except Exception as e:
                         logger.debug(f"rolling back session for {func.__name__} due to unhandled exception")
                         session.rollback()
@@ -106,6 +144,36 @@ def uses_db(sessionmaker):
                         session.rollback()
                         logger.debug(f"rolled back session for {func.__name__}")
                         return None
+                    except OperationalError as e:
+                        # Check for MySQL error 4031 (client disconnected by server)
+                        error_code = None
+                        if hasattr(e, 'orig'):
+                            # Try errno first (PyMySQL)
+                            if hasattr(e.orig, 'errno'):
+                                error_code = e.orig.errno
+                            # Fall back to args[0] if errno not available
+                            elif hasattr(e.orig, 'args') and len(e.orig.args) > 0:
+                                error_code = e.orig.args[0]
+                        
+                        if error_code == 4031:
+                            logger.error(f"MySQL OperationalError 4031 detected in {func.__name__}, notifying owner")
+                            try:
+                                # For sync functions, create a task to notify asynchronously
+                                try:
+                                    loop = asyncio.get_running_loop()
+                                    asyncio.create_task(_notify_owner_mysql_error_4031())
+                                except RuntimeError:
+                                    # No running loop, create a new one
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                    loop.run_until_complete(_notify_owner_mysql_error_4031())
+                                    loop.close()
+                            except Exception as notify_error:
+                                logger.error(f"Failed to notify owner about MySQL error 4031: {notify_error}")
+                        logger.debug(f"rolling back session for {func.__name__} due to OperationalError")
+                        session.rollback()
+                        logger.debug(f"rolled back session for {func.__name__} due to OperationalError")
+                        raise e
                     except Exception as e:
                         logger.debug(f"rolling back session for {func.__name__} due to unhandled exception")
                         session.rollback()
@@ -596,3 +664,169 @@ def fuzzy_autocomplete(column: ColumnElement[str], *union_columns: ColumnElement
     # Register the cache in the global registry
     fuzzy_autocomplete_caches.append(lookup)
     return autocomplete
+
+class EnvironHelpers:
+    """
+    A class for getting environment variables with defaults and type coercion.
+
+    This class is not instantiable, and is used as a namespace for the static methods.
+    """
+    def __new__(cls):
+        raise TypeError(f"{cls.__name__} is static and cannot be instantiated")
+
+    @staticmethod
+    def get_bool(key: str, default: bool = False) -> bool:
+        return os.getenv(key).lower() in ["true", "1", "yes", "y"] if os.getenv(key) else default
+
+    @staticmethod
+    def get_int(key: str, default: int = 0) -> int:
+        return int(os.getenv(key)) if os.getenv(key) else default
+
+    @staticmethod
+    def get_float(key: str, default: float = 0.0) -> float:
+        return float(os.getenv(key)) if os.getenv(key) else default
+
+    @staticmethod
+    def get_str(key: str, default: str = "") -> str:
+        return os.getenv(key, default) # getenv is already str, so we just return it directly
+
+    @staticmethod
+    def get_log_level(key: str, default: str = "INFO") -> int:
+        value = os.getenv(key, default).upper()
+        return logging.getLevelNamesMapping().get(value, logging.INFO) # default to INFO if the value is not a valid log level
+
+P = ParamSpec("P")
+R = TypeVar("R")
+F = Callable[P, R]
+
+def maybe_decorate(condition: bool, decorator: Callable[[F], F]) -> Callable[[F], F]:
+    def _apply(func: F) -> F:
+        if not condition:
+            if inspect.iscoroutinefunction(func):
+                @wraps(func)
+                async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                    return await func(*args, **kwargs)
+                return cast(F, wrapper) if isinstance(func, FunctionType) else func
+            else:
+                @wraps(func)
+                def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                    return func(*args, **kwargs)
+                return cast(F, wrapper) if isinstance(func, FunctionType) else func
+
+        decorated = decorator(func)
+
+        # If decorator returns a non-FunctionType (e.g., Command from ac.command()),
+        # return it directly so GroupCog can scan for it
+        if not isinstance(decorated, FunctionType):
+            return decorated
+
+        if inspect.iscoroutinefunction(decorated):
+            if getattr(decorated, "__wrapped__", None) is None:
+                @wraps(func)
+                async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                    return await decorated(*args, **kwargs)
+                return cast(F, wrapper)
+            else:
+                @wraps(decorated)
+                async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                    return await decorated(*args, **kwargs)
+                return cast(F, wrapper)
+        else:
+            if getattr(decorated, "__wrapped__", None) is None:
+                @wraps(func)
+                def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                    return decorated(*args, **kwargs)
+                return cast(F, wrapper)
+            else:
+                @wraps(decorated)
+                def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                    return decorated(*args, **kwargs)
+                return cast(F, wrapper)
+
+    return _apply
+
+def hide_arg(arg_name: str, default: Any) -> Callable[[F], F]:
+    """
+    Remove `arg_name` from the function's *visible* signature (via __signature__)
+    so frameworks like discord.app_commands do not see it. At call time, inject
+    `arg_name=default`. We do not accept callers passing this arg explicitly.
+    """
+    def _decorator(func: F) -> F:
+        sig = Signature.from_callable(func)
+        if arg_name not in sig.parameters:
+            raise ValueError(f"{func.__name__} has no parameter named {arg_name!r}")
+
+        param = sig.parameters[arg_name]
+        if param.kind is Parameter.POSITIONAL_ONLY:
+            raise ValueError(
+                f"Cannot hide positional-only parameter {arg_name!r}; "
+                "make it keyword-capable (pos-or-kw or kw-only)."
+            )
+        if param.kind in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
+            raise ValueError(
+                f"Cannot hide variadic parameter {arg_name!r} (*args/**kwargs)."
+            )
+
+        # Build the visible signature without the hidden parameter
+        new_params = [p for n, p in sig.parameters.items() if n != arg_name]
+        new_sig = sig.replace(parameters=new_params)
+
+        # Optional: trim annotations for nicer help()
+        new_annotations = dict(getattr(func, "__annotations__", {}))
+        new_annotations.pop(arg_name, None)
+
+        if inspect.iscoroutinefunction(func):
+            @wraps(func)
+            async def wrapper(*args, **kwargs):
+                # Validate/normalize incoming args against the visible signature
+                bound_visible = new_sig.bind_partial(*args, **kwargs)
+                bound_visible.apply_defaults()
+
+                # Reconstruct full call mapping for the original function
+                call_map = dict(bound_visible.arguments)
+                call_map[arg_name] = default
+
+                # Bind to the real signature to respect kinds/order/defaults
+                bound_full = sig.bind_partial(**call_map)
+                bound_full.apply_defaults()
+
+                return await func(*bound_full.args, **bound_full.kwargs)
+        else:
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                # Validate/normalize incoming args against the visible signature
+                bound_visible = new_sig.bind_partial(*args, **kwargs)
+                bound_visible.apply_defaults()
+
+                # Reconstruct full call mapping for the original function
+                call_map = dict(bound_visible.arguments)
+                call_map[arg_name] = default
+
+                # Bind to the real signature to respect kinds/order/defaults
+                bound_full = sig.bind_partial(**call_map)
+                bound_full.apply_defaults()
+
+                return func(*bound_full.args, **bound_full.kwargs)
+
+        # Make introspection show the hidden-arg-free signature
+        wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
+        wrapper.__annotations__ = new_annotations  # type: ignore[attr-defined]
+        return cast(F, wrapper)
+    return _decorator
+
+def chunked_join(items: Iterable[str], chunk_size: int = 2000, separator: str = " ") -> Generator[str, None, None]:
+    if chunk_size <= 0:
+        raise ValueError("Chunk size must be greater than 0")
+    current_chunk = ""
+    current_length = 0
+    for item in items:
+        if len(item) + len(separator) > chunk_size:
+            raise ValueError(f"Item {item} is too long to fit in a chunk of size {chunk_size}")
+        if current_length + len(item) + len(separator) > chunk_size:
+            yield current_chunk
+            current_chunk = ""
+            current_length = 0
+        current_chunk += item + separator
+        current_length += len(item) + len(separator)
+    if current_chunk:
+        yield current_chunk

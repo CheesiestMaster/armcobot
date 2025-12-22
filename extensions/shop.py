@@ -4,7 +4,7 @@ from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, TextStyle, app_commands as ac, ui, SelectOption, ButtonStyle, Embed
 from models import Player, Unit, UnitStatus, ShopUpgrade, ShopUpgradeUnitTypes, PlayerUpgrade, UnitType, UpgradeType
 from customclient import CustomClient
-from utils import inject, uses_db, Paginator, error_reporting
+from utils import fuzzy_autocomplete, inject, uses_db, Paginator, error_reporting
 from sqlalchemy.orm import Session
 from MessageManager import MessageManager
 import templates as tmpl
@@ -2076,6 +2076,26 @@ class Shop(GroupCog):
         await interaction.response.defer(thinking=False, ephemeral=True)
         await message_manager.update_message(content=tmpl.shop_please_select_unit_type, view=view)
     
+    @ac.command(name="mass_manage", description="give a unit type all upgrades of a specific type")
+    @ac.autocomplete(unit_type=fuzzy_autocomplete(UnitType.unit_type), upgrade_type=fuzzy_autocomplete(UpgradeType.name))
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def mass_manage(self, interaction: Interaction, session: Session, unit_type: str, upgrade_type: str):
+        """
+        Command to give a unit type all upgrades of a specific type
+        """
+        logger.info(f"Mass manage command invoked by {interaction.user.id} ({interaction.user.name})")
+        unit_type_ = session.query(UnitType).filter(UnitType.unit_type == unit_type).first()
+        upgrade_type_ = session.query(UpgradeType).filter(UpgradeType.name == upgrade_type).first()
+        if not unit_type_ or not upgrade_type_:
+            await interaction.response.send_message(tmpl.shop_unit_type_or_upgrade_type_not_found, ephemeral=True)
+            return
+        for upgrade in upgrade_type_.shop_upgrades:
+            unit_type_.compatible_upgrades.append(upgrade)
+        session.commit()
+        await interaction.response.send_message(tmpl.shop_unit_type_given_all_upgrades_of_type.format(unit_type=unit_type, upgrade_type=upgrade_type), ephemeral=True)
+
+
 bot: Bot = None
 async def setup(_bot: Bot):
     global bot

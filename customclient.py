@@ -16,7 +16,7 @@ Modules:
     - `logging`: Logging utilities for debugging and information.
 """
 
-from discord import Interaction, Intents, Status, Activity, ActivityType, Member, app_commands
+from discord import Interaction, Intents, Status, Activity, ActivityType, Member, app_commands, NotFound
 from discord.ext.commands import Bot
 from discord.ext import tasks
 from os import getenv, unlink
@@ -408,13 +408,21 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 channel = self.get_channel(self.config["dossier_channel_id"])
                 if channel:
                     logger.debug("channel found, fetching message")
-                    message = await channel.fetch_message(dossier.message_id) # type: ignore
-                    logger.debug("message found, fetching user")
-                    mention = await self.fetch_user(int(player.discord_id))
-                    mention = mention.mention if mention else ""
-                    logger.debug("user found, editing message")
-                    await message.edit(content=tmpl.Dossier.format(mention=mention, player=player, medals=""))
-                    logger.debug(f"Updated dossier for player {player.id} with message ID {dossier.message_id}")
+                    try:
+                        message = await channel.fetch_message(dossier.message_id) # type: ignore
+                        logger.debug("message found, fetching user")
+                        mention = await self.fetch_user(int(player.discord_id))
+                        mention = mention.mention if mention else ""
+                        logger.debug("user found, editing message")
+                        await message.edit(content=tmpl.Dossier.format(mention=mention, player=player, medals=""))
+                        logger.debug(f"Updated dossier for player {player.id} with message ID {dossier.message_id}")
+                    except NotFound:
+                        logger.warning(f"Failed to fetch dossier message {dossier.message_id} for player {player.id}: message not found, sending new message")
+                        mention = await self.fetch_user(int(player.discord_id))
+                        mention = mention.mention if mention else ""
+                        new_message = await channel.send(tmpl.Dossier.format(mention=mention, player=player, medals=""))
+                        dossier.message_id = new_message.id
+                        logger.debug(f"Created new dossier message for player {player.id} with message ID {new_message.id}")
             else:
                 logger.debug("no dossier found, pushing create task")
                 self.queue.put_nowait((0, player, 0))
@@ -426,15 +434,27 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             if statistics:
                 channel = self.get_channel(self.config["statistics_channel_id"])
                 if channel:
-                    message = await channel.fetch_message(statistics.message_id) # type: ignore
-                    discord_id = player.discord_id
-                    unit_message = await self.generate_unit_message(player)  # type: ignore
-                    _player = session.merge(player)
-                    _statistics = session.merge(statistics)
-                    mention = await self.fetch_user(int(discord_id))
-                    mention = mention.mention if mention else ""
-                    await message.edit(content=tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
-                    logger.debug(f"Updated statistics for player {_player.id} with message ID {_statistics.message_id}")
+                    try:
+                        message = await channel.fetch_message(statistics.message_id) # type: ignore
+                        discord_id = player.discord_id
+                        unit_message = await self.generate_unit_message(player)  # type: ignore
+                        _player = session.merge(player)
+                        _statistics = session.merge(statistics)
+                        mention = await self.fetch_user(int(discord_id))
+                        mention = mention.mention if mention else ""
+                        await message.edit(content=tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
+                        logger.debug(f"Updated statistics for player {_player.id} with message ID {_statistics.message_id}")
+                    except NotFound:
+                        logger.warning(f"Failed to fetch statistics message {statistics.message_id} for player {player.id}: message not found, sending new message")
+                        discord_id = player.discord_id
+                        unit_message = await self.generate_unit_message(player)  # type: ignore
+                        _player = session.merge(player)
+                        _statistics = session.merge(statistics)
+                        mention = await self.fetch_user(int(discord_id))
+                        mention = mention.mention if mention else ""
+                        new_message = await channel.send(tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
+                        _statistics.message_id = new_message.id
+                        logger.debug(f"Created new statistics message for player {_player.id} with message ID {new_message.id}")
                 else:
                     # there should be a message, but the discord side was probably deleted by a mod
                     logger.error(f"No channel found for statistics message of player {player.id}, skipping")

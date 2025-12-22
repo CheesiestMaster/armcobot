@@ -23,6 +23,7 @@ if exist terminate.flag (
 
 if exist pending.flag (
     set /a count+=1
+    echo Restart count: %count%
     if %count% gtr 5 (
         echo Too many restarts without a successful init, terminating...
         goto end
@@ -34,6 +35,7 @@ del pending.flag 2>nul
 
 if exist update.flag (
     echo Updating...
+    del update.flag
     git fetch
     git diff start.bat >nul 2>&1
     if not errorlevel 1 (

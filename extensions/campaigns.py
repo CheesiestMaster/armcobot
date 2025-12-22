@@ -3,14 +3,14 @@ from discord.ext.commands import GroupCog
 from discord import Interaction, app_commands as ac, Member, Role, Embed, File, TextStyle
 from discord.ui import Modal, TextInput
 from models import Campaign, UnitHistory, UnitStatus, CampaignInvite, Player, Unit
-from utils import uses_db, is_dm, check_notify, fuzzy_autocomplete
+from utils import EnvironHelpers, maybe_decorate, uses_db, is_dm, check_notify, fuzzy_autocomplete, chunked_join
 from sqlalchemy.orm import Session
 from sqlalchemy import text, not_, func
 from customclient import CustomClient
 import random
 from io import BytesIO
 from asyncio import gather
-from templates import Statistics_Unit
+from templates import Statistics_Unit, notify_no_players
 from typing import Optional, List
 logger = getLogger(__name__)
 class Campaigns(GroupCog):
@@ -598,12 +598,47 @@ class Campaigns(GroupCog):
             logger.error(f"{interaction.user.name} does not have permission to notify players in campaign {campaign}")
             await interaction.response.send_message("You don't have permission to notify players in this campaign", ephemeral=True)
             return
-        players = _campaign.players
-        messages = []
-        for player in players:
-            messages.append(f"<@{player.discord_id}>")
-        await interaction.response.send_message("\n".join(messages), ephemeral=False)
-        logger.info(f"Notified players in campaign {campaign}")
+        chunks = chunked_join(
+            (m for (m,) in session.query(Player.mention).join(Unit).filter(Unit.campaign_id == _campaign.id).distinct().yield_per(100)),
+            separator=" " # we want to space them, not newline them, so it takes up less discord ui space
+        )
+        first = next(chunks, None)
+        if first:
+            await interaction.response.send_message(first, ephemeral=False)
+            for chunk in chunks:
+                await interaction.followup.send(chunk)
+            logger.info(f"Notified players in campaign {campaign}")
+        else:
+            logger.info(f"No players found in campaign {campaign}")
+            await interaction.response.send_message(notify_no_players, ephemeral=True)
+
+    @maybe_decorate(EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND"), ac.command(name="notify_group", description="Notify a group of players witin a campaign"))
+    @maybe_decorate(EnvironHelpers.get_bool("RESTRICT_NOTIFY_GROUP_COMMAND"), ac.check(is_gm))
+    @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name), group=fuzzy_autocomplete(Unit.battle_group))
+    @ac.describe(campaign="The campaign that the group is in", group="The group to notify")
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def notify_group(self, interaction: Interaction, session: Session, campaign: str, group: str):
+        # do checks, then notify the group of players in the campaign
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if not _campaign:
+            logger.error(f"Campaign {campaign} not found")
+            await interaction.response.send_message("Campaign not found", ephemeral=True)
+            return
+        # no need for permission checks, because we have the check decorator, and it's either public or any GM
+        # this is almost identical to the notify command, but with an additional filter on Unit.group
+        chunks = chunked_join(
+            (m for (m,) in session.query(Player.mention).join(Unit).filter(Unit.battle_group == group, Unit.campaign_id == _campaign.id).distinct().yield_per(100)),
+            separator=" " # we want to space them, not newline them, so it takes up less discord ui space
+        )
+        first = next(chunks, None)
+        if first:
+            await interaction.response.send_message(first, ephemeral=False)
+            for chunk in chunks:
+                await interaction.followup.send(chunk)
+            logger.info(f"Notified group {group} in campaign {campaign}")
+        else:
+            logger.info(f"No players found in group {group} in campaign {campaign}")
+            await interaction.response.send_message(notify_no_players, ephemeral=True)
 
 async def setup(_bot: CustomClient):
     global bot

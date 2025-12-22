@@ -1,6 +1,6 @@
 from __future__ import annotations
 import discord
-from sqlalchemy import ColumnElement, Integer, String, Enum, ForeignKey, PickleType, Boolean, BigInteger, select, Index, UniqueConstraint, CheckConstraint, text, DDL, event
+from sqlalchemy import ColumnElement, Integer, String, Enum, ForeignKey, PickleType, Boolean, BigInteger, func, literal, select, Index, UniqueConstraint, CheckConstraint, text, DDL, event
 from sqlalchemy.sql.operators import OperatorType
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import Session, relationship, DeclarativeBase, Mapped, mapped_column, column_property, validates
@@ -215,7 +215,7 @@ class Player(BaseModel):
     
     # columns
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    discord_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    discord_id: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     lore: Mapped[str] = mapped_column(String(1000), nullable=True, server_default="")
     rec_points: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", index=True)
@@ -256,6 +256,14 @@ class Player(BaseModel):
     @user.comparator
     def user(cls) -> DiscordUserComparator:
         return DiscordUserComparator(cls.discord_id)
+
+    @hybrid_property
+    def mention(self) -> str:
+        return f"<@{self.discord_id}>"
+
+    @mention.expression
+    def mention(cls) -> ColumnElement[str]:
+        return literal("<@") + cls.discord_id + literal(">")
 
 class PlayerUpgrade(BaseModel):
     __tablename__ = "player_upgrades"
@@ -419,7 +427,7 @@ class Unit(BaseModel):
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", index=True)
     campaign_id: Mapped[Optional[int]] = mapped_column(ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True, index=True)
     callsign: Mapped[str] = mapped_column(String(15), unique=True, nullable=True, index=True)
-    area_operation: Mapped[str] = mapped_column(String(30), nullable=False, server_default=text("'ARMCO'"), index=True)
+    battle_group: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, index=True)
     original_type: Mapped[Optional[str]] = mapped_column(ForeignKey("unit_types.unit_type", ondelete="SET NULL"), nullable=True, index=True)
     unit_req: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", index=True)
     

@@ -81,7 +81,8 @@ class Company(GroupCog):
     @ac.command(name="show", description="Displays a Players Meta Campaign company")
     @ac.describe(member="The players Meta Campaign company to show")
     @uses_db(CustomClient().sessionmaker)
-    async def show(self, interaction: Interaction, session: Session, member: Member|User):
+    async def show(self, interaction: Interaction, session: Session, member: Member|User|None=None):
+        member = member or interaction.user
         player = session.query(Player).filter(Player.discord_id == member.id).first()
         if not player:
             await interaction.response.send_message(tmpl.member_no_company.format(member=member), ephemeral=CustomClient().use_ephemeral)
