@@ -7,7 +7,7 @@ from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOpti
 from discord.ui import View
 from models import Player, Unit as Unit_model, UnitStatus, Campaign, CampaignInvite, UnitType
 from customclient import CustomClient
-from utils import uses_db, is_management, error_reporting, with_log_level
+from utils import EnvironHelpers, fuzzy_autocomplete, hide_arg, maybe_decorate, uses_db, is_management, error_reporting, with_log_level
 from sqlalchemy.orm import Session
 from sqlalchemy import exists
 from typing import Tuple
@@ -51,7 +51,7 @@ class Unit(GroupCog):
         unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
         unit.callsign = None
         unit.campaign_id = None
-        
+        unit.battle_group = None
         session.commit()
         logger.debug(f"Successfully deactivated unit: id={unit.id}, name={unit.name}, original_callsign={original_callsign}")
         
@@ -172,8 +172,17 @@ class Unit(GroupCog):
 
     @ac.command(name="activate", description="Activate a unit")
     @ac.describe(callsign="The callsign of the unit to activate, must be globally unique")
+    @maybe_decorate(
+        (not EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND", False)),
+        hide_arg("group", None))
+    @maybe_decorate(
+        (EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND", False)),
+        ac.describe(group="The group to activate the unit in"))
+    @maybe_decorate(
+        (EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND", False)),
+        ac.autocomplete(group=fuzzy_autocomplete(Unit_model.battle_group, not_null=True)))
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def activateunit(self, interaction: Interaction, callsign: str, session: Session):
+    async def activateunit(self, interaction: Interaction, callsign: str, group: str,session: Session):
         """Activate a unit with the given callsign in the specified campaign"""
         logger.triage(f"Activate unit command initiated by {interaction.user.global_name} with callsign {callsign}")
         if len(callsign) > 7:
@@ -305,6 +314,7 @@ class Unit(GroupCog):
                 unit.active = True
                 unit.campaign_id = campaign_id
                 unit.callsign = callsign
+                unit.battle_group = group
                 logger.triage("Committing unit activation changes")
                 session.commit()
                 logger.info(f"Unit {unit.name} selected for campaign {campaign_name} by {interaction.user.global_name}")

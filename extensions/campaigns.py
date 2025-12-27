@@ -153,6 +153,7 @@ class Campaigns(GroupCog):
             unit.callsign = None
             unit.campaign_id = None
             unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
+            unit.battle_group = None
             unit.unit_history.append(UnitHistory(campaign_name=campaign))
             self.bot.queue.put_nowait((1, unit.player, 0))
         # delete all invites because they are no longer valid
@@ -267,6 +268,7 @@ class Campaigns(GroupCog):
             unit.callsign = None
             unit.campaign_id = None
             unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
+            unit.battle_group = None
         logger.info(f"Player {player.name} deactivated from {campaign}")
         await interaction.response.send_message(f"Player {player.mention} deactivated from {campaign}", ephemeral=True)
         self.bot.queue.put_nowait((1, _player, 0))
