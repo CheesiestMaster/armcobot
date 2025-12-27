@@ -9,7 +9,7 @@ import traceback
 from types import FunctionType
 import discord
 from sqlalchemy.orm import scoped_session
-from sqlalchemy import ColumnElement
+from sqlalchemy import ColumnElement, true
 from sqlalchemy.exc import OperationalError
 from logging import Logger, getLogger
 import asyncio
@@ -626,13 +626,14 @@ class UserSemaphore(Mapping[abc.User, DelayedReleaseSemaphore]):
 # Global cache registry for fuzzy autocomplete caches
 fuzzy_autocomplete_caches: list = []  # list of all the caches for the autocompletes. which we only ever add to, never remove from
 
-def fuzzy_autocomplete(column: ColumnElement[str], *union_columns: ColumnElement[str]):
+def fuzzy_autocomplete(column: ColumnElement[str], *union_columns: ColumnElement[str], not_null: bool = False):
     """
     Creates a fuzzy autocomplete function for Discord slash commands.
     
     Args:
         column: The primary SQLAlchemy column to search
         *union_columns: Additional columns to search and union with the primary column
+        not_null: Whether to filter out null values from the results
     
     Returns:
         An async autocomplete function that can be used with Discord's @app_commands.autocomplete decorator
@@ -646,14 +647,15 @@ def fuzzy_autocomplete(column: ColumnElement[str], *union_columns: ColumnElement
             lambda current, session: tuple(
                 row[0] for row in (
                     session.query(column.label("value"))
+                    .filter((column.isnot(None)) if not_null else true())
                     .union_all(*(session.query(union_column.label("value")) for union_column in union_columns))
                     .distinct()
                     .limit(25)
                     .all()
                  if not current else
                     session.query(column.label("value"))
-                    .filter(column.ilike(f"%{current}%"))
-                    .union_all(*(session.query(union_column.label("value")).filter(union_column.ilike(f"%{current}%")) for union_column in union_columns))
+                    .filter(column.ilike(f"%{current}%"), (column.isnot(None)) if not_null else true())
+                    .union_all(*(session.query(union_column.label("value")).filter(union_column.ilike(f"%{current}%"), (union_column.isnot(None)) if not_null else true()) for union_column in union_columns))
                     .distinct()
                     .limit(25)
                     .all()))))

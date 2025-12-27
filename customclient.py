@@ -16,6 +16,7 @@ Modules:
     - `logging`: Logging utilities for debugging and information.
 """
 
+import traceback
 from discord import Interaction, Intents, Status, Activity, ActivityType, Member, app_commands, NotFound
 from discord.ext.commands import Bot
 from discord.ext import tasks
@@ -176,6 +177,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             - **1**: Update tasks.
             - **2**: Deletion tasks.
             - **4**: Graceful termination of the queue consumer.
+            - **5**: Keep-alive task (executes SELECT 1 to maintain database connection).
 
         This method runs indefinitely, processing tasks from the queue and managing associated database
         operations, while updating channels as necessary.
@@ -252,25 +254,36 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     continue
                 task = (task[0], session.merge(task[1]), 0)
             elif len(task) == 1:
-                if not task[0] == 4:
-                    logger.error("Task is a tuple of length 1, but the first element is not 4, skipping")
+                if task[0] not in (4, 5):
+                    logger.error(f"Task is a tuple of length 1, but the first element is not 4 or 5, skipping: {task[0]}")
                     nosleep = True
                     continue
             else:
                 logger.error(f"Task is a tuple of length {len(task)}, skipping")
                 nosleep = True
                 continue
-            ratelimit.set(str(task[1]))  # type: ignore
-            if ratelimit.get(str(task[1])) >=5: # window is 30s, which is 6 tasks, this requires at least 50% different tasks  # type: ignore
-                logger.warning(f"Ratelimit hit for {task[1]}")  # type: ignore
-                nosleep = True
-                continue # just discard the task
+            # Skip ratelimit check for task types that don't have a player object (4, 5)
+            if task[0] not in (4, 5):
+                ratelimit.set(str(task[1]))  # type: ignore
+                if ratelimit.get(str(task[1])) >=5: # window is 30s, which is 6 tasks, this requires at least 50% different tasks  # type: ignore
+                    logger.warning(f"Ratelimit hit for {task[1]}")  # type: ignore
+                    nosleep = True
+                    continue # just discard the task
             #logger.debug(f"Processing task: {task}")
             # Initialize fail count
             fail_count = task[2] if len(task) > 2 else 0
             if fail_count > 5:
                 logger.error(f"Task {task} failed too many times, skipping")
                 nosleep = True
+                continue
+
+            # Handle keep-alive task directly using queue consumer's session
+            if task[0] == 5:
+                try:
+                    await self._handle_keep_alive_task(task, session)
+                except Exception as e:
+                    logger.error(f"Error processing keep-alive task: {e}")
+                self.queue.task_done()
                 continue
 
             try:
@@ -522,6 +535,15 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     async def _handle_terminate_task(self, task): 
         logger.debug("Queue consumer terminating")
         return True # this is the only function that returns a value, as that's how we'll know to terminate, is if a value or raise is returned
+    
+    async def _handle_keep_alive_task(self, task, session: Session):
+        """Handle keep-alive task to maintain database connection"""
+        try:
+            session.execute(text("SELECT 1"))
+            session.commit()
+            logger.debug("Keep-alive query executed successfully")
+        except Exception as e:
+            logger.error(f"Error keeping alive: {e}")
 
     async def generate_unit_message(self, player: Player, session: Session):
         """
@@ -565,11 +587,11 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         failed = []
         for ext, res in zip(extensions, results):
             if isinstance(res, Exception):
-                failed.append(f"{ext}: {res}")
+                failed.append(f"{ext}: {traceback.format_exception(res)}")
             else:
                 success.append(ext)
         if failed:
-            logger.error(f"Failed to load extensions: {', '.join(failed)}")
+            logger.error(f"Failed to load extensions: {'\n'.join(failed)}")
         if success:
             logger.debug(f"Loaded extensions: {', '.join(success)}")
 
@@ -686,6 +708,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         await self.change_presence(status=Status.offline, activity=None)
         await super().close()
 
+    @tasks.loop(hours=1)
+    async def keep_alive(self):
+        # emit a keep-alive task into the queue for the consumer to handle
+        self.queue.put_nowait((5,))
+        logger.debug("Keep-alive task queued")
+
     async def setup_hook(self):
         """
         Sets up the bot's event listeners and syncs slash commands.
@@ -779,9 +807,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self._handle_create_task = decorator(self._handle_create_task)
         self._handle_update_task = decorator(self._handle_update_task)
         self._handle_delete_task = decorator(self._handle_delete_task)
+        # Note: _handle_keep_alive_task is NOT wrapped with uses_db - it uses queue_consumer's session directly
         self.generate_unit_message = decorator(self.generate_unit_message)  # type: ignore
         self.close = decorator(self.close)
         self.tree.on_error = on_error_decorator(error_counter)(self.tree.on_error)  # type: ignore
+
+        if self.sessionmaker().get_bind().dialect.name == "mysql":
+            self.keep_alive.start()
+            logger.debug("Keep alive task started automatically for MySQL")
         
     async def start(self, *args, **kwargs):
         """
