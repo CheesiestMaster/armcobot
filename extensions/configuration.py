@@ -3,7 +3,7 @@ from discord.ext.commands import GroupCog, Bot
 from discord import Interaction, app_commands as ac, ChannelType
 from models import Config as Config_model, Dossier, Player, Statistic
 from customclient import CustomClient
-from utils import uses_db
+from utils import EnvironHelpers, uses_db
 from sqlalchemy.orm import Session
 import templates as tmpl
 import os
@@ -133,7 +133,7 @@ class Config(GroupCog):
             ]
             
             for var in env_vars:
-                current_val = os.getenv(var, 'Not set')
+                current_val = EnvironHelpers.get_str(var, 'Not set')
                 global_val = dotenv_values("global.env").get(var, 'Not set')
                 local_val = 'Not set'
                 if local_env_file and os.path.exists(local_env_file):

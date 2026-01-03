@@ -6,7 +6,7 @@ from discord.ui import Modal, TextInput
 from models import Player, Unit, UnitStatus, PlayerUpgrade, Medals
 from customclient import CustomClient
 import os
-from utils import has_invalid_url, uses_db, filter_df, is_management
+from utils import EnvironHelpers, has_invalid_url, uses_db, filter_df, is_management
 from sqlalchemy.orm import Session
 import pandas as pd
 from datetime import datetime, timedelta
@@ -30,7 +30,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         """
         super().__init__()
         self.bot = bot
-        if os.getenv("PROD", False):
+        if EnvironHelpers.get_bool("PROD"):
             self.interaction_check = is_management
 
         self._setup_context_menus()
@@ -38,11 +38,12 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     
     # after the bot is ready, we want to start the backpay task
     async def on_ready(self):
-        self.align_backpay.start()
-        if os.getenv("BACKPAY_ON_START", "false").lower() == "true":
-            self.single_backpay = True
-            self.attempt_backpay.start()
-        self.single_backpay = False # this line must be left uncommented even when single backpay is disabled, or backpays will crash
+        if EnvironHelpers.get_bool("RUN_BACKPAY"):
+            self.align_backpay.start()
+            if EnvironHelpers.get_bool("BACKPAY_ON_START"):
+                self.single_backpay = True
+                self.attempt_backpay.start()
+            self.single_backpay = False # this line must be left uncommented even when single backpay is disabled, or backpays will crash
         
     
     def _setup_context_menus(self):
@@ -532,7 +533,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             @uses_db(sessionmaker=CustomClient().sessionmaker)
             async def on_submit(self, interaction: Interaction, session: Session):
                 self.player = session.merge(self.player)
-                if any(char in child.value for child in self.children for char in os.getenv("BANNED_CHARS", "")):
+                if any(char in child.value for child in self.children for char in EnvironHelpers.get_str("BANNED_CHARS", "")):
                     await interaction.response.send_message("Invalid input: values cannot contain discord tags or headers", ephemeral=CustomClient().use_ephemeral)
                     return
                 if 0 < len(self.children[0].value) > 32:

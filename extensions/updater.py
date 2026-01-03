@@ -6,6 +6,7 @@ import asyncio
 import os
 import datetime
 import templates as tmpl
+from utils import EnvironHelpers
 logger = getLogger(__name__)
 
 class Updater(GroupCog):
@@ -21,7 +22,7 @@ class Updater(GroupCog):
             logger.error(f"Error fetching updates: {stderr.decode() if stderr else 'Unknown error'}")
             return
         if stdout.strip() != b"":
-            owner = await self.bot.fetch_user(int(os.getenv("BOT_OWNER_ID")))
+            owner = await self.bot.fetch_user(EnvironHelpers.required_int("BOT_OWNER_ID"))
             await owner.send("An Update is available")
 
 bot: Bot = None

@@ -120,7 +120,7 @@ class Unit(GroupCog):
                     logger.triage(f"Unit name is too long ({len(unit_name)} chars)")
                     await interaction.response.send_message(tmpl.unit_name_too_long, ephemeral=CustomClient().use_ephemeral)
                     return
-                if any(char in unit_name for char in os.getenv("BANNED_CHARS", "")+":"):
+                if any(char in unit_name for char in EnvironHelpers.get_str("BANNED_CHARS", "")+":"):
                     logger.triage("Unit name contains banned characters")
                     await interaction.response.send_message(tmpl.unit_name_invalid, ephemeral=CustomClient().use_ephemeral)
                     return
@@ -189,7 +189,7 @@ class Unit(GroupCog):
             logger.warning(f"Callsign {callsign} from {interaction.user.global_name} is too long")
             await interaction.response.send_message(tmpl.callsign_too_long, ephemeral=CustomClient().use_ephemeral)
             return
-        if any(char in callsign for char in os.getenv("BANNED_CHARS", "")):
+        if any(char in callsign for char in EnvironHelpers.get_str("BANNED_CHARS", "")):
             logger.warning(f"Callsign {callsign} from {interaction.user.global_name} contains banned characters")
             await interaction.response.send_message(tmpl.callsign_invalid, ephemeral=CustomClient().use_ephemeral)
             return
@@ -292,7 +292,7 @@ class Unit(GroupCog):
                     return
 
                 logger.triage(f"Checking if player {_player.name} has any active units")
-                max_active_units = int(os.getenv("MAX_ACTIVE_UNITS", "1"))
+                max_active_units = EnvironHelpers.required_int("MAX_ACTIVE_UNITS")
                 if len(_player.active_units) >= max_active_units:
                     logger.warning(f"{interaction.user.global_name} already has {len(_player.active_units)} active unit(s) (max: {max_active_units})")
                     await interaction.response.send_message(tmpl.unit_already_active_count.format(active_count=len(_player.active_units), max_active=max_active_units), ephemeral=True)
@@ -523,7 +523,7 @@ class Unit(GroupCog):
                         logger.error("Unit name is too long for rename command")
                         await interaction.response.send_message(tmpl.unit_name_too_long, ephemeral=CustomClient().use_ephemeral)
                         return
-                    if any(char in new_name for char in os.getenv("BANNED_CHARS", "")+":"): # : is banned to disable urls
+                    if any(char in new_name for char in EnvironHelpers.get_str("BANNED_CHARS", "")+":"): # : is banned to disable urls
                         logger.error("Unit name contains banned characters for rename command")
                         await interaction.response.send_message(tmpl.unit_name_invalid, ephemeral=CustomClient().use_ephemeral)
                         return

@@ -7,6 +7,7 @@ import sys
 import os
 import stat
 import re
+from utils import EnvironHelpers
 
 # Environ setup
 if not os.path.exists("global.env"):
@@ -52,59 +53,15 @@ if not os.getenv("DATABASE_URL") or os.getenv("DATABASE_URL") == "URL":
     raise EnvironmentError("DATABASE_URL is not set")
 
 
-def human_size_to_bytes(size_str):
-    """
-    Convert a human-readable file size string into bytes.
-
-    This function takes a string representing a file size with units such as 
-    'KB', 'MB', 'GB', etc., and converts it into an integer representing the 
-    size in bytes. It supports both decimal (e.g., 'KB') and binary (e.g., 'KiB') 
-    prefixes.
-
-    Parameters:
-    size_str (str): A string representing the file size, e.g., '10 MB', '5.5 GiB'.
-
-    Returns:
-    int: The size in bytes.
-
-    Raises:
-    ValueError: If the input string is not a valid size format.
-
-    Example:
-    >>> human_size_to_bytes('10 MB')
-    10000000
-    >>> human_size_to_bytes('5.5 GiB')
-    5905580032
-    """
-    sizes = {
-        "b": 1,
-        "kb": 1000, "kib": 1024,
-        "mb": 1000**2, "mib": 1024**2,
-        "gb": 1000**3, "gib": 1024**3,
-        "tb": 1000**4, "tib": 1024**4,
-        "pb": 1000**5, "pib": 1024**5,
-        "eb": 1000**6, "eib": 1024**6,
-        "zb": 1000**7, "zib": 1024**7,
-        "yb": 1000**8, "yib": 1024**8,
-    }
-    pattern = r"^(\d+(\.\d+)?)\s*([kmgtpezy]?i?b)?$"
-    size_str = size_str.strip().replace(" ", "").replace("_", "").replace(",", "").lower()
-    match = re.match(pattern, size_str)
-    if not match:
-        raise ValueError(f"Invalid size string: {size_str}")
-    value, _, unit = match.groups()
-    unit = unit or "b" # default to bytes if no unit is provided
-    value = float(value)
-    return int(value * sizes[unit])
 
 # add a file handler to the root logger
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(ColoredFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-file_handler = RotatingFileHandler(str(os.getenv("LOG_FILE")), 
-                                   maxBytes=human_size_to_bytes(os.getenv("LOG_FILE_SIZE")), 
-                                   backupCount=int(os.getenv("LOG_FILE_BACKUP_COUNT", 5)))
+file_handler = RotatingFileHandler(EnvironHelpers.get_str("LOG_FILE"), 
+                                   maxBytes=EnvironHelpers.get_size("LOG_FILE_SIZE"), 
+                                   backupCount=EnvironHelpers.get_int("LOG_FILE_BACKUP_COUNT", 5))
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-logging.basicConfig(level=logging.getLevelName(os.getenv("LOG_LEVEL", "INFO")),
+logging.basicConfig(level=EnvironHelpers.get_log_level("LOG_LEVEL", "INFO"),
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     handlers=[
                         file_handler,

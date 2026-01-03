@@ -13,7 +13,7 @@ from asyncio import QueueEmpty
 import random
 from customclient import CustomClient
 from coloredformatter import stats
-from utils import error_reporting, uses_db, toggle_command_ban, is_server
+from utils import EnvironHelpers, error_reporting, uses_db, toggle_command_ban, is_server
 from sqlalchemy.orm import Session
 from sqlalchemy import exists
 import templates as tmpl
@@ -50,13 +50,13 @@ class Debug(GroupCog):
             logger.debug(f"Checking if {interaction.user.global_name} is a mod")
             
             # Try to use MAIN_GUILD_ID from environment first
-            main_guild_id = os.getenv("MAIN_GUILD_ID")
+            main_guild_id = EnvironHelpers.required_int("MAIN_GUILD_ID")
             if main_guild_id:
-                casting_guild = self.bot.get_guild(int(main_guild_id))
+                casting_guild = self.bot.get_guild(main_guild_id)
                 logger.debug(f"Using MAIN_GUILD_ID: {main_guild_id}")
             else:
                 # Fall back to interaction guild if environment variable is not set
-                casting_guild = interaction.guild
+                casting_guild = interaction.guild if interaction.guild else None
                 logger.debug("Using interaction guild as fallback")
             
             if casting_guild is None:
@@ -95,11 +95,11 @@ class Debug(GroupCog):
     async def stop(self, interaction: Interaction):
         logger.info("Stop command invoked")
         await interaction.response.send_message(tmpl.stopping_bot)
-        if os.getenv("LOOP_ACTIVE"):
+        if EnvironHelpers.get_bool("LOOP_ACTIVE"):
             open("terminate.flag", "w").close()
         await self.bot.close()
 
-    if os.getenv("LOOP_ACTIVE"):
+    if EnvironHelpers.get_bool("LOOP_ACTIVE"):
         @ac.command(name="restart", description="Restart the bot")
         async def restart(self, interaction: Interaction):
             logger.info("Restart command invoked") 
@@ -508,7 +508,7 @@ class Debug(GroupCog):
 
     @ac.command(name="tail", description="Get the last ~2000 characters of the log file")
     async def tail(self, interaction: Interaction, offset: int = 0):
-        with open(os.getenv("LOG_FILE"), "r") as f:
+        with open(EnvironHelpers.required_str("LOG_FILE"), "r") as f:
             f.seek(0, os.SEEK_END)
             f.seek(max(0, f.tell() - 2500))
             lines = f.readlines()
@@ -540,7 +540,7 @@ class Debug(GroupCog):
         await interaction.response.defer(ephemeral=True)
         
         # Get the log file path from environment
-        log_file_path = os.getenv("LOG_FILE")
+        log_file_path = EnvironHelpers.required_str("LOG_FILE")
         logger.debug(f"Log file path from environment: {log_file_path}")
         
         if not log_file_path or not os.path.exists(log_file_path):

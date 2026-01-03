@@ -633,16 +633,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             pass  # File doesn't exist, which is fine
         #await self.set_bot_nick("S.A.M.")
         asyncio.create_task(self.queue_consumer())  # type: ignore
-        self.clear_autocomplete_caches.start()
         await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign", type=ActivityType.playing))
         if (getenv("STARTUP_ANIMATION", "false").lower() == "true"):
             try:
                 self.startup_animation.start()
             except Exception as e:
                 logger.error(f"Error starting startup animation: {e}")
-        if not self.shutdown_hook_running:
-            self.shutdown_hook_running = True
-            asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if getenv("PROD", "false").lower() == "false" else "127.0.0.1:12346"))  # type: ignore
 
     async def shutdown_callback(self):
         try:
@@ -816,6 +812,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         if self.sessionmaker().get_bind().dialect.name == "mysql":
             self.keep_alive.start()
             logger.debug("Keep alive task started automatically for MySQL")
+        
+        # Start autocomplete cache clearing task
+        self.clear_autocomplete_caches.start()
+        
+        # Start shutdown listener
+        if not self.shutdown_hook_running:
+            self.shutdown_hook_running = True
+            asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if getenv("PROD", "false").lower() == "false" else "127.0.0.1:12346"))  # type: ignore
         
     async def start(self, *args, **kwargs):
         """

@@ -9,7 +9,7 @@ from FileRoller import FileRoller
 import asyncio
 import os
 from customclient import CustomClient
-from utils import uses_db, error_reporting
+from utils import EnvironHelpers, uses_db, error_reporting
 from sqlalchemy.orm import Session
 import io
 import tempfile
@@ -72,7 +72,7 @@ class Backup(GroupCog):
             self.sql_roller.roll() 
             # we will use the async subprocess to redirect the output to the handle, so we need to leave it open
             command = ["mysqldump", "-h", "localhost", "-u", "armco", "armco"]
-            process = await asyncio.create_subprocess_exec(*command, stdout=self.sql_roller.current_handle, stderr=asyncio.subprocess.PIPE, env={"MYSQL_PWD": os.getenv("MYSQL_PASSWORD")})
+            process = await asyncio.create_subprocess_exec(*command, stdout=self.sql_roller.current_handle, stderr=asyncio.subprocess.PIPE, env={"MYSQL_PWD": EnvironHelpers.required_str("MYSQL_PASSWORD")})
 
             _, stderr = await process.communicate()
             if stderr or process.returncode != 0:
@@ -87,7 +87,7 @@ class Backup(GroupCog):
         async def create_sql(self, interaction: Interaction):
             await interaction.response.defer(ephemeral=self.use_ephemeral)
             self.sqlite_roller.roll()
-            with open(os.getenv("DATABASE_URL").replace("sqlite:///", ""), "rb") as f:
+            with open(EnvironHelpers.required_str("DATABASE_URL").replace("sqlite:///", ""), "rb") as f:
                 with open(self.sqlite_roller.current_handle.name, "wb") as f2:
                     f2.write(f.read())
             self.sqlite_roller.close()

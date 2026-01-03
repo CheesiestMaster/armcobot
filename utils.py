@@ -17,7 +17,7 @@ from collections import deque
 from typing import Any, Coroutine, Callable, Generator, Iterable, ParamSpec, TypeVar, Iterator, cast
 from discord import Interaction, abc, app_commands as ac
 import pandas as pd
-from prometheus_client import Counter
+from prometheus_client import Counter, Gauge
 
 CustomClient = None
 
@@ -33,7 +33,7 @@ def get_url_pattern() -> re.Pattern:
         re.Pattern: Compiled regex pattern for detecting invalid URLs.
     """
     # Get the allowed domains from the environment variable
-    allowed_domains = os.getenv("ALLOWED_DOMAINS", "")
+    allowed_domains = EnvironHelpers.get_str("ALLOWED_DOMAINS", "")
     allowed_domains_list = [domain.strip() for domain in allowed_domains.split(",") if domain.strip()]
     allowed_domains_regex = "|".join(re.escape(domain) for domain in allowed_domains_list)
 
@@ -71,13 +71,20 @@ async def _notify_owner_mysql_error_4031():
         if CustomClient is None:
             from customclient import CustomClient
         bot = CustomClient()
-        owner_id = int(os.getenv("BOT_OWNER_ID"))
+        owner_id = EnvironHelpers.required_int("BOT_OWNER_ID")
         owner = await bot.fetch_user(owner_id)
         if owner:
             await owner.send("⚠️ **MySQL Error 4031 Detected**\n\nThe bot encountered MySQL error 4031 (client disconnected by server). Please restart the bot.")
             logger.info(f"Notified owner {owner_id} about MySQL error 4031")
     except Exception as notify_error:
         logger.error(f"Failed to notify owner about MySQL error 4031: {notify_error}")
+
+created_sessions = Counter("created_sessions", "Number of sessions created", labelnames=["scope"])
+inflight_sessions = Gauge("inflight_sessions", "Number of sessions currently in use", labelnames=["scope"])
+
+def fqn(func: Callable) -> str:
+    return f"{func.__module__}.{func.__qualname__}"
+
 
 def uses_db(sessionmaker):
     session_scope = scoped_session(sessionmaker)
@@ -91,16 +98,20 @@ def uses_db(sessionmaker):
             async def wrapper(*args, **kwargs): 
                 with session_scope() as session:
                     try:
-                        logger.debug(f"calling {func.__name__}")
+                        logger.debug(f"calling {fqn(func)}")
+                        created_sessions.labels(scope="total").inc()
+                        inflight_sessions.labels(scope="total").inc()
+                        created_sessions.labels(scope=fqn(func)).inc()
+                        inflight_sessions.labels(scope=fqn(func)).inc()
                         result = await func(*args, session=session, **kwargs)
-                        logger.debug(f"commiting session for {func.__name__}")
+                        logger.debug(f"commiting session for {fqn(func)}")
                         session.commit()
-                        logger.debug(f"committed session for {func.__name__}")
+                        logger.debug(f"committed session for {fqn(func)}")
                         return result
                     except RollbackException:
-                        logger.debug(f"rolling back session for {func.__name__}")
+                        logger.debug(f"rolling back session for {fqn(func)}")
                         session.rollback()
-                        logger.debug(f"rolled back session for {func.__name__}")
+                        logger.debug(f"rolled back session for {fqn(func)}")
                         return None
                     except OperationalError as e:
                         # Check for MySQL error 4031 (client disconnected by server)
@@ -114,35 +125,42 @@ def uses_db(sessionmaker):
                                 error_code = e.orig.args[0]
                         
                         if error_code == 4031:
-                            logger.error(f"MySQL OperationalError 4031 detected in {func.__name__}, notifying owner")
+                            logger.error(f"MySQL OperationalError 4031 detected in {fqn(func)}, notifying owner")
                             try:
                                 await _notify_owner_mysql_error_4031()
                             except Exception as notify_error:
                                 logger.error(f"Failed to notify owner about MySQL error 4031: {notify_error}")
-                        logger.debug(f"rolling back session for {func.__name__} due to OperationalError")
+                        logger.debug(f"rolling back session for {fqn(func)} due to OperationalError")
                         session.rollback()
-                        logger.debug(f"rolled back session for {func.__name__} due to OperationalError")
+                        logger.debug(f"rolled back session for {fqn(func)} due to OperationalError")
                         raise e
                     except Exception as e:
-                        logger.debug(f"rolling back session for {func.__name__} due to unhandled exception")
+                        logger.debug(f"rolling back session for {fqn(func)} due to unhandled exception")
                         session.rollback()
-                        logger.debug(f"rolled back session for {func.__name__} due to unhandled exception")
+                        logger.debug(f"rolled back session for {fqn(func)} due to unhandled exception")
                         raise e
+                    finally:
+                        inflight_sessions.labels(scope=fqn(func)).dec()
+                        inflight_sessions.labels(scope="total").dec()
         else:
             @wraps(func)
             def wrapper(*args, **kwargs):
                 with session_scope() as session:
                     try:
-                        logger.debug(f"calling {func.__name__}")
+                        logger.debug(f"calling {fqn(func)}")
+                        created_sessions.labels(scope="total").inc()
+                        inflight_sessions.labels(scope="total").inc()
+                        created_sessions.labels(scope=fqn(func)).inc()
+                        inflight_sessions.labels(scope=fqn(func)).inc()
                         result = func(*args, session=session, **kwargs)
-                        logger.debug(f"commiting session for {func.__name__}")
+                        logger.debug(f"commiting session for {fqn(func)}")
                         session.commit()
-                        logger.debug(f"committed session for {func.__name__}")
+                        logger.debug(f"committed session for {fqn(func)}")
                         return result
                     except RollbackException:
-                        logger.debug(f"rolling back session for {func.__name__}")
+                        logger.debug(f"rolling back session for {fqn(func)}")
                         session.rollback()
-                        logger.debug(f"rolled back session for {func.__name__}")
+                        logger.debug(f"rolled back session for {fqn(func)}")
                         return None
                     except OperationalError as e:
                         # Check for MySQL error 4031 (client disconnected by server)
@@ -156,7 +174,7 @@ def uses_db(sessionmaker):
                                 error_code = e.orig.args[0]
                         
                         if error_code == 4031:
-                            logger.error(f"MySQL OperationalError 4031 detected in {func.__name__}, notifying owner")
+                            logger.error(f"MySQL OperationalError 4031 detected in {fqn(func)}, notifying owner")
                             try:
                                 # For sync functions, create a task to notify asynchronously
                                 try:
@@ -170,15 +188,18 @@ def uses_db(sessionmaker):
                                     loop.close()
                             except Exception as notify_error:
                                 logger.error(f"Failed to notify owner about MySQL error 4031: {notify_error}")
-                        logger.debug(f"rolling back session for {func.__name__} due to OperationalError")
+                        logger.debug(f"rolling back session for {fqn(func)} due to OperationalError")
                         session.rollback()
-                        logger.debug(f"rolled back session for {func.__name__} due to OperationalError")
+                        logger.debug(f"rolled back session for {fqn(func)} due to OperationalError")
                         raise e
                     except Exception as e:
-                        logger.debug(f"rolling back session for {func.__name__} due to unhandled exception")
+                        logger.debug(f"rolling back session for {fqn(func)} due to unhandled exception")
                         session.rollback()
-                        logger.debug(f"rolled back session for {func.__name__} due to unhandled exception")
+                        logger.debug(f"rolled back session for {fqn(func)} due to unhandled exception")
                         raise e
+                    finally:
+                        inflight_sessions.labels(scope=fqn(func)).dec()
+                        inflight_sessions.labels(scope="total").dec()
         wrapper.__signature__ = new_signature # type: ignore[attr-defined]
         return wrapper
     return decorator
@@ -483,16 +504,16 @@ async def toggle_command_ban(desired_state: bool, initiator: str):
             pass  # Ignore other failures
     
     if not desired_state:
-        comm_net_id = os.getenv("COMM_NET_CHANNEL_ID")
+        comm_net_id = EnvironHelpers.required_int("COMM_NET_CHANNEL_ID")
         if comm_net_id:
-            comm_net = CustomClient().get_channel(int(comm_net_id))
+            comm_net = CustomClient().get_channel(comm_net_id)
             if comm_net:
                 await comm_net.send(f"# Command ban has been enabled by {initiator}")
         logger.info(f"Command ban enabled by {initiator}")
     else:
-        comm_net_id = os.getenv("COMM_NET_CHANNEL_ID")
+        comm_net_id = EnvironHelpers.required_int("COMM_NET_CHANNEL_ID")
         if comm_net_id:
-            comm_net = CustomClient().get_channel(int(comm_net_id))
+            comm_net = CustomClient().get_channel(comm_net_id)
             if comm_net:
                 await comm_net.send(f"# Command ban has been disabled by {initiator}")
         logger.info(f"Command ban disabled by {initiator}")
@@ -677,16 +698,75 @@ class EnvironHelpers:
         raise TypeError(f"{cls.__name__} is static and cannot be instantiated")
 
     @staticmethod
+    def _bool(value: str) -> bool:
+        return value.lower() in ["true", "1", "yes", "y"]
+
+    @staticmethod
+    def _parse_size_bytes(size_str: str) -> int:
+        """
+        Convert a human-readable file size string into bytes.
+
+        This function takes a string representing a file size with units such as 
+        'KB', 'MB', 'GB', etc., and converts it into an integer representing the 
+        size in bytes. It supports both decimal (e.g., 'KB') and binary (e.g., 'KiB') 
+        prefixes.
+
+        Parameters:
+        size_str (str): A string representing the file size, e.g., '10 MB', '5.5 GiB'.
+
+        Returns:
+        int: The size in bytes.
+
+        Raises:
+        ValueError: If the input string is not a valid size format.
+
+        Example:
+        >>> EnvironHelpers._parse_size_bytes('10 MB')
+        10000000
+        >>> EnvironHelpers._parse_size_bytes('5.5 GiB')
+        5905580032
+        """
+        sizes = {
+            "b": 1,
+            "kb": 1000, "kib": 1024,
+            "mb": 1000**2, "mib": 1024**2,
+            "gb": 1000**3, "gib": 1024**3,
+            "tb": 1000**4, "tib": 1024**4,
+            "pb": 1000**5, "pib": 1024**5,
+            "eb": 1000**6, "eib": 1024**6,
+            "zb": 1000**7, "zib": 1024**7,
+            "yb": 1000**8, "yib": 1024**8,
+        }
+        pattern = r"^(\d+(\.\d+)?)\s*([kmgtpezy]?i?b)?$"
+        size_str = size_str.strip().replace(" ", "").replace("_", "").replace(",", "").lower()
+        match = re.match(pattern, size_str)
+        if not match:
+            raise ValueError(f"Invalid size string: {size_str}")
+        value, _, unit = match.groups()
+        unit = unit or "b" # default to bytes if no unit is provided
+        value = float(value)
+        return int(value * sizes[unit])
+
+    @staticmethod
     def get_bool(key: str, default: bool = False) -> bool:
-        return os.getenv(key).lower() in ["true", "1", "yes", "y"] if os.getenv(key) else default
+        v = os.getenv(key)
+        return EnvironHelpers._bool(v) if v else default
 
     @staticmethod
     def get_int(key: str, default: int = 0) -> int:
-        return int(os.getenv(key)) if os.getenv(key) else default
+        try:
+            v = os.getenv(key)
+            return int(v) if v else default
+        except ValueError:
+            return default
 
     @staticmethod
     def get_float(key: str, default: float = 0.0) -> float:
-        return float(os.getenv(key)) if os.getenv(key) else default
+        try:
+            v = os.getenv(key)
+            return float(v) if v else default
+        except ValueError:
+            return default
 
     @staticmethod
     def get_str(key: str, default: str = "") -> str:
@@ -694,8 +774,104 @@ class EnvironHelpers:
 
     @staticmethod
     def get_log_level(key: str, default: str = "INFO") -> int:
-        value = os.getenv(key, default).upper()
-        return logging.getLevelNamesMapping().get(value, logging.INFO) # default to INFO if the value is not a valid log level
+        v = os.getenv(key, default).upper()
+        return logging.getLevelNamesMapping().get(v, logging.INFO) # default to INFO if the value is not a valid log level
+
+    @staticmethod
+    def get_size(key: str, default: str = "0") -> int:
+        """
+        Get a file size from an environment variable and convert it to bytes.
+
+        This method retrieves a human-readable file size string from an environment variable
+        (e.g., '10 MB', '5.5 GiB') and converts it into an integer representing the size in bytes.
+        It supports both decimal (e.g., 'KB') and binary (e.g., 'KiB') prefixes.
+
+        Parameters:
+        key (str): The environment variable key to retrieve.
+        default (str): Default value if the environment variable is not set. Defaults to "0".
+
+        Returns:
+        int: The size in bytes.
+
+        Raises:
+        ValueError: If the input string is not a valid size format.
+
+        Example:
+        >>> EnvironHelpers.get_size('LOG_FILE_SIZE', '10 MB')
+        10000000
+        """
+        size_str = os.getenv(key, default)
+        return EnvironHelpers._parse_size_bytes(size_str)
+
+    @staticmethod
+    def required_str(key: str) -> str:
+        v = os.getenv(key)
+        if v is None:
+            raise EnvironmentError(f"{key} is not set")
+        return v
+
+    @staticmethod
+    def required_int(key: str) -> int:
+        v = os.getenv(key)
+        if v is None:
+            raise EnvironmentError(f"{key} is not set")
+        return int(v)
+
+    @staticmethod
+    def required_float(key: str) -> float:
+        v = os.getenv(key)
+        if v is None:
+            raise EnvironmentError(f"{key} is not set")
+        return float(v)
+
+    @staticmethod
+    def required_bool(key: str) -> bool:
+        v = os.getenv(key)
+        if v is None:
+            raise EnvironmentError(f"{key} is not set")
+        return EnvironHelpers._bool(v)
+
+    @staticmethod
+    def required_size(key: str) -> int:
+        v = os.getenv(key)
+        if v is None:
+            raise EnvironmentError(f"{key} is not set")
+        return EnvironHelpers._parse_size_bytes(v)
+
+    @staticmethod
+    def get_str_list(key: str, default: list[str] = [], separator: str = ";") -> list[str]:
+        v = os.getenv(key, default)
+        if v is None:
+            raise EnvironmentError(f"{key} is not set")
+        return v.split(separator)
+
+    @staticmethod
+    def get_int_list(key: str, default: list[int] = [], separator: str = ";") -> list[int]:
+        v = os.getenv(key, default)
+        if v is None:
+            raise EnvironmentError(f"{key} is not set")
+        return [int(item) for item in v.split(separator)]
+
+    @staticmethod
+    def get_float_list(key: str, default: list[float] = [], separator: str = ";") -> list[float]:
+        v = os.getenv(key, default)
+        if v is None:
+            raise EnvironmentError(f"{key} is not set")
+        return [float(item) for item in v.split(separator)]
+
+    @staticmethod
+    def get_bool_list(key: str, default: list[bool] = [], separator: str = ";") -> list[bool]:
+        v = os.getenv(key, default)
+        if v is None:
+            raise EnvironmentError(f"{key} is not set")
+        return [EnvironHelpers._bool(item) for item in v.split(separator)]
+
+    @staticmethod
+    def get_size_list(key: str, default: list[int] = [], separator: str = ";") -> list[int]:
+        v = os.getenv(key, default)
+        if v is None:
+            raise EnvironmentError(f"{key} is not set")
+        return [EnvironHelpers._parse_size_bytes(item) for item in v.split(separator)]
 
 P = ParamSpec("P")
 R = TypeVar("R")

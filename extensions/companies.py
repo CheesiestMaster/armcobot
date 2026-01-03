@@ -25,7 +25,7 @@ class Company(GroupCog):
             return
         
         # create a new Player in the database
-        player = Player(discord_id=interaction.user.id, name=interaction.user.name, rec_points=os.getenv("INITIAL_REQ"))
+        player = Player(discord_id=interaction.user.id, name=interaction.user.name, rec_points=EnvironHelpers.required_int("INITIAL_REQ"))
         session.add(player)
         session.commit() # flush to get the player id
         await asyncio.sleep(0.1) # we need an awaitable here so the consumer can act on the new player
@@ -48,7 +48,7 @@ class Company(GroupCog):
 
             @uses_db(CustomClient().sessionmaker)
             async def on_submit(self, interaction: Interaction, session: Session):
-                if any(char in child.value for child in self.children for char in os.getenv("BANNED_CHARS", "")):
+                if any(char in child.value for child in self.children for char in EnvironHelpers.get_str("BANNED_CHARS", "")):
                     # Handle the case where a value contains '<' or '>'
                     await interaction.response.send_message(tmpl.invalid_input, ephemeral=CustomClient().use_ephemeral)
                     return
