@@ -410,18 +410,32 @@ async def callback_listener(callback: Coroutine, bind:str):
     async def listener(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         try:
             await callback()
-            writer.write(b"200 OK") # just send a 200 ok response, not with any proper headers, since nc doesn't care about them
+            response = (
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/plain; charset=utf-8\r\n"
+                "Content-Length: 0\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+            ).encode("utf-8")
+            writer.write(response)
             await writer.drain()
         except Exception as e:
             logger.error(f"Error in callback_listener: {e}")
-            writer.write(b"500 Internal Server Error")
+            response = (
+                "HTTP/1.1 500 Internal Server Error\r\n"
+                "Content-Type: text/plain; charset=utf-8\r\n"
+                "Content-Length: 0\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+            ).encode("utf-8")
+            writer.write(response)
             await writer.drain()
         finally:
             writer.close()
 
 
     try:
-        server = await asyncio.start_server(listener, address, port)
+        server = await asyncio.start_server(listener, address, int(port))
         await server.serve_forever()
     except Exception as e:
         logger.error(f"Error in callback_listener: {e}") # we don't want to crash the bot if the callback happens twice, which would OSE 98
@@ -775,7 +789,7 @@ class EnvironHelpers:
     @staticmethod
     def get_log_level(key: str, default: str = "INFO") -> int:
         v = os.getenv(key, default).upper()
-        return logging.getLevelNamesMapping().get(v, logging.INFO) # default to INFO if the value is not a valid log level
+        return logging._nameToLevel.get(v, logging.INFO) # default to INFO if the value is not a valid log level
 
     @staticmethod
     def get_size(key: str, default: str = "0") -> int:
@@ -839,28 +853,28 @@ class EnvironHelpers:
         return EnvironHelpers._parse_size_bytes(v)
 
     @staticmethod
-    def get_str_list(key: str, default: list[str] = [], separator: str = ";") -> list[str]:
+    def get_str_list(key: str, default: list[str] = None, separator: str = ";") -> list[str]:
         v = os.getenv(key, default)
         if v is None:
             raise EnvironmentError(f"{key} is not set")
-        return v.split(separator)
+        return [item.strip() for item in v.split(separator)]
 
     @staticmethod
-    def get_int_list(key: str, default: list[int] = [], separator: str = ";") -> list[int]:
+    def get_int_list(key: str, default: list[int] = None, separator: str = ";") -> list[int]:
         v = os.getenv(key, default)
         if v is None:
             raise EnvironmentError(f"{key} is not set")
         return [int(item) for item in v.split(separator)]
 
     @staticmethod
-    def get_float_list(key: str, default: list[float] = [], separator: str = ";") -> list[float]:
+    def get_float_list(key: str, default: list[float] = None, separator: str = ";") -> list[float]:
         v = os.getenv(key, default)
         if v is None:
             raise EnvironmentError(f"{key} is not set")
         return [float(item) for item in v.split(separator)]
 
     @staticmethod
-    def get_bool_list(key: str, default: list[bool] = [], separator: str = ";") -> list[bool]:
+    def get_bool_list(key: str, default: list[bool] = None, separator: str = ";") -> list[bool]:
         v = os.getenv(key, default)
         if v is None:
             raise EnvironmentError(f"{key} is not set")

@@ -31,7 +31,7 @@ import asyncio
 import templates as tmpl
 import logging
 import os
-from utils import RatelimitError, UserSemaphore, uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator, fuzzy_autocomplete_caches
+from utils import EnvironHelpers, RatelimitError, UserSemaphore, uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator, fuzzy_autocomplete_caches
 from prometheus_client import Counter
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
@@ -819,7 +819,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         # Start shutdown listener
         if not self.shutdown_hook_running:
             self.shutdown_hook_running = True
-            asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if getenv("PROD", "false").lower() == "false" else "127.0.0.1:12346"))  # type: ignore
+            asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if EnvironHelpers.get_bool("PROD") else "127.0.0.1:12346"))
         
     async def start(self, *args, **kwargs):
         """
