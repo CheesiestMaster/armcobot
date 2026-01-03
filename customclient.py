@@ -681,7 +681,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         logger.debug("24 hour notification loop finished")
         self.notify_on_24_hours.cancel()
     
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=10)
     async def clear_autocomplete_caches(self):
         """Clears all fuzzy autocomplete caches to prevent stale data"""
         logger.info("Clearing autocomplete caches")

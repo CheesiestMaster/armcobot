@@ -13,7 +13,6 @@ from sqlalchemy import ColumnElement, true
 from sqlalchemy.exc import OperationalError
 from logging import Logger, getLogger
 import asyncio
-from collections import deque
 from typing import Any, Coroutine, Callable, Generator, Iterable, ParamSpec, TypeVar, Iterator, cast
 from discord import Interaction, abc, app_commands as ac
 import pandas as pd
@@ -216,39 +215,32 @@ def string_to_list(string: str) -> list[str]:
 class RollingCounter:
     def __init__(self, duration: int):
         """
-        Initializes the RollingCounter with a specified duration and event loop.
+        Initializes the RollingCounter with a specified duration.
 
         :param duration: Duration in seconds to keep each increment active. Must be > 0.
-        :param loop: Optional asyncio event loop to use. Defaults to asyncio.get_event_loop().
         """
         if duration <= 0:
             raise ValueError("Duration must be greater than 0.")
         self.duration = duration
         self.counter = 0
-        self.tasks = deque()
 
-    async def _decrement_after_delay(self):
-        """Waits for the specified duration, then decrements the counter."""
-        await asyncio.sleep(self.duration)
+    def _decrement(self):
+        """Decrements the counter after the delay."""
         self.counter -= 1
-         
-        self.tasks.popleft()  # Remove the completed task from the queue
 
     def set(self):
         """
-        Increments the counter and schedules a task to decrement it after the duration.
+        Increments the counter and schedules a callback to decrement it after the duration.
         """
         self.counter += 1
 
         try:
-            asyncio.get_running_loop()
-            task = asyncio.create_task(self._decrement_after_delay())
+            loop = asyncio.get_running_loop()
+            loop.call_later(self.duration, self._decrement)
         except RuntimeError:
             self.counter -= 1
             print("no loop")
-            return # break early if we're not in an event loop, since we can't make the decrement task
-         
-        self.tasks.append(task)
+            return # break early if we're not in an event loop, since we can't schedule the decrement
 
     def get(self) -> int:
         """
