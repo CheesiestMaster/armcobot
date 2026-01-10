@@ -1,6 +1,7 @@
 from ansicolor import AnsiColor
 from utils import RollingCounter
 import logging
+from prometheus_client import Gauge
 
 COLORS = {
     logging.DEBUG: AnsiColor.CYN_CLR,
@@ -27,6 +28,8 @@ stats = {
     "total_total": 0,
 }
 
+log_counts_metric = Gauge("armcobot_log_counts", "The number of logs", labelnames=["count_type", "log_level"])
+
 class ColoredFormatter(logging.Formatter):
     def __init__(self, *args, **kwargs):
         self.COLORS = COLORS.copy()
@@ -39,6 +42,13 @@ class ColoredFormatter(logging.Formatter):
          
         stats[f"total_{record.levelname}"] += 1
         stats["total_total"] += 1
+        
+        # Update Prometheus metrics
+        log_counts_metric.labels(count_type="today", log_level=record.levelname).set(stats[f"today_{record.levelname}"].get())
+        log_counts_metric.labels(count_type="today", log_level="total").set(stats["today_total"].get())
+        log_counts_metric.labels(count_type="total", log_level=record.levelname).set(stats[f"total_{record.levelname}"])
+        log_counts_metric.labels(count_type="total", log_level="total").set(stats["total_total"])
+        
         record.msg = f"{color.value}{record.msg}{AnsiColor.RESET.value}"
         return super().format(record)
 

@@ -17,7 +17,7 @@ Modules:
 """
 
 import traceback
-from discord import Interaction, Intents, Status, Activity, ActivityType, Member, app_commands, NotFound
+from discord import Interaction, Intents, Status, Activity, ActivityType, Member, TextChannel, app_commands, NotFound
 from discord.ext.commands import Bot
 from discord.ext import tasks
 from os import getenv, unlink
@@ -32,7 +32,7 @@ import templates as tmpl
 import logging
 import os
 from utils import EnvironHelpers, RatelimitError, UserSemaphore, uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator, fuzzy_autocomplete_caches
-from prometheus_client import Counter
+from prometheus_client import Counter, Gauge
 
 use_ephemeral = getenv("EPHEMERAL", "false").lower() == "true"
 
@@ -40,9 +40,10 @@ logger = logging.getLogger(__name__)
 logging.getLogger("discord").setLevel(logging.WARNING)
 
 # Create interaction counter metric
-interaction_counter = Counter("interactions_total", "Total number of interactions", labelnames=["guild_name"])
-error_counter = Counter("errors_total", "Total number of errors", labelnames=["guild_name", "error"])
-ratelimited_counter = Counter("ratelimited_total", "Total number of commands dropped due to ratelimits", labelnames=["guild_name"])
+interaction_counter = Counter("armcobot_interactions_total", "Total number of interactions", labelnames=["guild_name"])
+error_counter = Counter("armcobot_errors_total", "Total number of errors", labelnames=["guild_name", "error"])
+ratelimited_counter = Counter("armcobot_ratelimited_total", "Total number of commands dropped due to ratelimits", labelnames=["guild_name"])
+queue_size_metric = Gauge("armcobot_queue_size", "The size of the queue")
 
 _ACQUIRED = object()
 
@@ -209,6 +210,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             else:
                 await asyncio.sleep(7)  # Maintain pacing to avoid hitting downstream timeouts
             queue_size = self.queue.qsize()
+            queue_size_metric.set(queue_size)
             eta = timedelta(seconds=queue_size * 7)
             logger.debug(f"Queue size: {queue_size}, Empty in {eta}")
             await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign" if queue_size == 0 else f"Updating {queue_size} dossiers, Finished in {eta}", type=ActivityType.playing))
@@ -420,6 +422,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 logger.debug("dossier found, fetching channel")
                 channel = self.get_channel(self.config["dossier_channel_id"])
                 if channel:
+                    if not isinstance(channel, TextChannel):
+                        logger.error(f"Channel {channel} is not a TextChannel, skipping dossier update")
+                        return
                     logger.debug("channel found, fetching message")
                     try:
                         message = await channel.fetch_message(dossier.message_id) # type: ignore
@@ -434,7 +439,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                         mention = await self.fetch_user(int(player.discord_id))
                         mention = mention.mention if mention else ""
                         new_message = await channel.send(tmpl.Dossier.format(mention=mention, player=player, medals=""))
-                        dossier.message_id = new_message.id
+                        dossier.message_id = str(new_message.id)
                         logger.debug(f"Created new dossier message for player {player.id} with message ID {new_message.id}")
             else:
                 logger.debug("no dossier found, pushing create task")
@@ -447,6 +452,9 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             if statistics:
                 channel = self.get_channel(self.config["statistics_channel_id"])
                 if channel:
+                    if not isinstance(channel, TextChannel):
+                        logger.error(f"Channel {channel} is not a TextChannel, skipping statistics update")
+                        return
                     try:
                         message = await channel.fetch_message(statistics.message_id) # type: ignore
                         discord_id = player.discord_id
@@ -466,7 +474,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                         mention = await self.fetch_user(int(discord_id))
                         mention = mention.mention if mention else ""
                         new_message = await channel.send(tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
-                        _statistics.message_id = new_message.id
+                        _statistics.message_id = str(new_message.id)
                         logger.debug(f"Created new statistics message for player {_player.id} with message ID {new_message.id}")
                 else:
                     # there should be a message, but the discord side was probably deleted by a mod
@@ -697,15 +705,14 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         and closes the session.
         """
         import prometheus
-        prometheus.poll_metrics_fast.stop()
         prometheus.poll_metrics_slow.stop()
         self.clear_autocomplete_caches.cancel()
-        await self.queue.put((4, None))
+        await self.queue.put((4,))
         await self.resync_config(session=session)
         await self.change_presence(status=Status.offline, activity=None)
         await super().close()
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=15)
     async def keep_alive(self):
         # emit a keep-alive task into the queue for the consumer to handle
         self.queue.put_nowait((5,))
@@ -820,6 +827,13 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         if not self.shutdown_hook_running:
             self.shutdown_hook_running = True
             asyncio.create_task(callback_listener(self.shutdown_callback, "127.0.0.1:12345" if EnvironHelpers.get_bool("PROD") else "127.0.0.1:12346"))
+        
+        # Start Prometheus metrics server
+        import aioprom
+        prom_host = EnvironHelpers.get_str("PROM_HOST", "127.0.0.1")
+        prom_port = EnvironHelpers.get_int("PROM_PORT", 9098)
+        asyncio.create_task(aioprom.start_server(prom_host, prom_port))
+        logger.debug(f"Prometheus metrics server started on {prom_host}:{prom_port}")
         
     async def start(self, *args, **kwargs):
         """

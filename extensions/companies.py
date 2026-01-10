@@ -5,7 +5,7 @@ from models import Player, Unit, UnitStatus
 from customclient import CustomClient
 import templates as tmpl
 import os
-from utils import has_invalid_url, uses_db, EnvironHelpers
+from utils import has_invalid_url, uses_db, EnvironHelpers, error_reporting
 from sqlalchemy.orm import Session
 import asyncio
 logger = getLogger(__name__)
@@ -15,6 +15,7 @@ class Company(GroupCog):
         self.bot = bot
 
     @ac.command(name="create", description="Create a new Meta Campaign company")
+    @error_reporting()
     @uses_db(CustomClient().sessionmaker)
     async def create(self, interaction: Interaction, session: Session):
         # check if the user already has a company

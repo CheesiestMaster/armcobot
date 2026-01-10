@@ -1,65 +1,47 @@
-from prometheus_client import start_http_server, Gauge
+from prometheus_client import Gauge
 from discord.ext.tasks import loop
 from customclient import CustomClient # just needed so we can get a bunch of the stats, and a sessionmaker for the db stats
-from extensions.faq import total_views
-from coloredformatter import stats
 from datetime import datetime
 from sqlalchemy import func
 from models import Player, Unit, PlayerUpgrade
-from threading import Thread
-from os import getenv
-import psutil  # Add this import
+from utils import EnvironHelpers
+import psutil
+import subprocess
+import asyncio
+from logging import getLogger
+logger = getLogger(__name__)
 
-uptime = Gauge("uptime", "The uptime of the bot")
-start_time = Gauge("start_time", "The start time of the bot")
-queue_size = Gauge("queue_size", "The size of the queue")
-faq_queries = Gauge("faq_queries", "The number of FAQ queries")
-player_count = Gauge("player_count", "The number of users registered with the bot")
-rec_points = Gauge("rec_points", "The total number of unspent requisition points")
-bonus_pay = Gauge("bonus_pay", "The total number of unspent bonus pay")
-units = Gauge("units", "The number of units created")
-purchased_units = Gauge("purchased_units", "The number of units purchased")
-active_units = Gauge("active_units", "The number of active units")
-dead_units = Gauge("dead_units", "The number of dead units")
-upgrades = Gauge("upgrades", "The number of upgrades purchased")
-log_counts = Gauge("log_counts", "The number of logs", labelnames=["count_type", "log_level"])
-up = Gauge("up", "Is the bot up?")
-as_of = Gauge("as_of", "The time the metrics were last updated", labelnames=['loop'])
-units_by_type = Gauge("units_by_type", "The number of units by type", labelnames=['unit_type'])
-purchased_by_type = Gauge("purchased_by_type", "The number of units purchased by type", labelnames=['unit_type'])
-live_by_type = Gauge("live_by_type", "The number of units live by type", labelnames=['unit_type'])
-units_by_type_and_campaign = Gauge("units_by_type_and_campaign", "The number of units by type and campaign", labelnames=['unit_type', 'campaign_id'])
-
-# Add a Gauge for root disk usage
-root_disk_usage = Gauge("root_disk_usage_percent", "Percent of / disk used")
+start_time = Gauge("armcobot_start_time", "The start time of the bot")
+player_count = Gauge("armcobot_player_count", "The number of users registered with the bot")
+rec_points = Gauge("armcobot_rec_points", "The total number of unspent requisition points")
+bonus_pay = Gauge("armcobot_bonus_pay", "The total number of unspent bonus pay")
+units = Gauge("armcobot_units", "The number of units created")
+purchased_units = Gauge("armcobot_purchased_units", "The number of units purchased")
+active_units = Gauge("armcobot_active_units", "The number of active units")
+dead_units = Gauge("armcobot_dead_units", "The number of dead units")
+upgrades = Gauge("armcobot_upgrades", "The number of upgrades purchased")
+as_of = Gauge("armcobot_as_of", "The time the metrics were last updated", labelnames=['loop'])
+units_by_type = Gauge("armcobot_units_by_type", "The number of units by type", labelnames=['unit_type'])
+purchased_by_type = Gauge("armcobot_purchased_by_type", "The number of units purchased by type", labelnames=['unit_type'])
+live_by_type = Gauge("armcobot_live_by_type", "The number of units live by type", labelnames=['unit_type'])
+units_by_type_and_campaign = Gauge("armcobot_units_by_type_and_campaign", "The number of units by type and campaign", labelnames=['unit_type', 'campaign_id'])
+root_disk_usage = Gauge("armcobot_root_disk_usage_percent", "Percent of / disk used")
+info = Gauge("armcobot_info", "Information about the bot", labelnames=['commit', 'ahead', 'behind'])
 
 # Disk alert variables
 DISK_ALERT_THRESHOLD = 90.0
-DISK_ALERT_USER_ID = int(str(getenv("BOT_OWNER_ID")))
+DISK_ALERT_USER_ID = EnvironHelpers.required_int("BOT_OWNER_ID")
 last_disk_alert_time = None
+bot: CustomClient = CustomClient()
+start_time.set(int(bot.start_time.timestamp()))
 
-@loop(seconds=15)
-async def poll_metrics_fast():
-    bot: CustomClient = CustomClient() # type: ignore
-    up.set(True)
-    as_of.labels(loop="fast").set(int(datetime.now().timestamp()))
-    uptime.set((datetime.now() - bot.start_time).total_seconds())
-    start_time.set(int(bot.start_time.timestamp()))
-    queue_size.set(bot.queue.qsize())
-    faq_queries.set(total_views)
-    log_counts.labels(count_type="today", log_level="DEBUG").set(stats["today_DEBUG"].get())
-    log_counts.labels(count_type="today", log_level="INFO").set(stats["today_INFO"].get())
-    log_counts.labels(count_type="today", log_level="WARNING").set(stats["today_WARNING"].get())
-    log_counts.labels(count_type="today", log_level="ERROR").set(stats["today_ERROR"].get())
-    log_counts.labels(count_type="today", log_level="CRITICAL").set(stats["today_CRITICAL"].get())
-    log_counts.labels(count_type="today", log_level="total").set(stats["today_total"].get())
-    log_counts.labels(count_type="total", log_level="DEBUG").set(stats["total_DEBUG"])
-    log_counts.labels(count_type="total", log_level="INFO").set(stats["total_INFO"])
-    log_counts.labels(count_type="total", log_level="WARNING").set(stats["total_WARNING"])
-    log_counts.labels(count_type="total", log_level="ERROR").set(stats["total_ERROR"])
-    log_counts.labels(count_type="total", log_level="CRITICAL").set(stats["total_CRITICAL"])
-    log_counts.labels(count_type="total", log_level="total").set(stats["total_total"])
+# get the commit hash, and current ahead and behind counts
+commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE, text=True).stdout.strip()
+behind = int(subprocess.run(["git", "rev-list", "--count", "HEAD..origin/main"], stdout=subprocess.PIPE, text=True).stdout.strip())
+ahead = int(subprocess.run(["git", "rev-list", "--count", "origin/main..HEAD"], stdout=subprocess.PIPE, text=True).stdout.strip())
+info.labels(commit=commit, ahead=ahead, behind=behind).set(1)
 
+has_version_alerted = False
 @loop(seconds=60)
 async def poll_metrics_slow():
     global last_disk_alert_time
@@ -116,9 +98,34 @@ async def poll_metrics_slow():
         live_by_type.labels(unit_type=unit_type).set(count)
     for unit_type, campaign_id, count in db_stats_dict["units_by_type_and_campaign"]:
         units_by_type_and_campaign.labels(unit_type=unit_type, campaign_id=campaign_id).set(count)
+    
+    global has_version_alerted, behind, ahead
+    if EnvironHelpers.get_bool("GIT_AUTOFETCH"):
+        fetch_proc = await asyncio.create_subprocess_exec("git", "fetch", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        await fetch_proc.communicate()
+        # we don't need to get the commit hash again, because we already have it and it represents what is running
+        behind_proc = await asyncio.create_subprocess_exec("git", "rev-list", "--count", "HEAD..origin/main", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await behind_proc.communicate()
+        if stderr:
+            logger.error(f"Error fetching behind: {stderr.decode().strip()}")
+        behind = int(stdout.decode().strip())
+        ahead_proc = await asyncio.create_subprocess_exec("git", "rev-list", "--count", "origin/main..HEAD", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await ahead_proc.communicate()
+        if stderr:
+            logger.error(f"Error fetching ahead: {stderr.decode().strip()}")
+        ahead = int(stdout.decode().strip())
+        info.labels(commit=commit, ahead=ahead, behind=behind).set(1)
+    if behind > 0 and EnvironHelpers.get_bool("NOTIFY_ON_NEW_VERSION") and not has_version_alerted:
+        user = await bot.fetch_user(DISK_ALERT_USER_ID)
+        latest_proc = await asyncio.create_subprocess_exec("git", "rev-parse", "origin/main", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await latest_proc.communicate()
+        if stderr:
+            logger.error(f"Error fetching latest: {stderr.decode().strip()}")
+        latest = stdout.decode().strip()
+        await user.send(f"🚨 **New Version Available** 🚨\n\nA new version of the bot is available, please update to the latest version.\n\n"
+                        f"You are {behind} commits behind the latest version.\n"
+                        f"Your commit is {commit}, the latest commit is {latest}.\n"
+                        "Please run /debug update_and_restart to update the bot.")
+        has_version_alerted = True
 
-start_wrapper = lambda: start_http_server(9108 if getenv("PROD", "false").lower() == "true" else 9107)
-_thread = Thread(target=start_wrapper)
-_thread.start()
-poll_metrics_fast.start()
 poll_metrics_slow.start()

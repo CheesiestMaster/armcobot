@@ -6,7 +6,7 @@ from discord.ui import Modal, TextInput
 from models import Player, Unit, UnitStatus, PlayerUpgrade, Medals
 from customclient import CustomClient
 import os
-from utils import EnvironHelpers, has_invalid_url, uses_db, filter_df, is_management
+from utils import EnvironHelpers, error_reporting, has_invalid_url, uses_db, filter_df, is_management
 from sqlalchemy.orm import Session
 import pandas as pd
 from datetime import datetime, timedelta
@@ -17,8 +17,8 @@ from prometheus import as_of
 logger = getLogger(__name__)
 
 # create backpay gauges
-players_remaining = Gauge("players_remaining", "The number of players remaining to be backpaid", labelnames=["backpay_type"])
-paid_today = Gauge("paid_today", "The number of players paid today", labelnames=["backpay_type"])
+players_remaining = Gauge("armcobot_players_remaining", "The number of players remaining to be backpaid", labelnames=["backpay_type"])
+paid_today = Gauge("armcobot_paid_today", "The number of players paid today", labelnames=["backpay_type"])
 
 class Admin(GroupCog, group_name="admin", name="Admin"):
     """
@@ -558,6 +558,36 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
 
         modal = EditCompanyModal(player)
         await interaction.response.send_modal(modal)
+
+    @ac.command(name="manage_units", description="Manage units for a player")
+    @ac.describe(player="The player to manage the units for")
+    @error_reporting()
+    @uses_db(CustomClient().sessionmaker)
+    async def manage_units(self, interaction: Interaction, player: Member, session: Session):
+        """
+        Manage units for a player.
+        """
+        player = session.query(Player).filter(Player.discord_id == player.id).first()
+        if not player:
+            await interaction.response.send_message("The player doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            return
+        view = ui.View()
+        select = ui.Select(placeholder="Select the unit you want to manage")
+        [select.add_option(label=unit.name, value=unit.id) for unit in player.units] # side effect comprehension
+        select.callback = self.manage_units_callback
+        view.add_item(select)
+        await interaction.response.send_message("Please select the unit you want to manage", view=view, ephemeral=CustomClient().use_ephemeral)
+
+    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    async def manage_units_callback(self, interaction: Interaction, session: Session):
+        unit = session.query(Unit).filter(Unit.id == interaction.data["values"][0]).first()
+        if not unit:
+            await interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
+            return
+        view = ui.View()
+        
+
+
 
     @tasks.loop(count=1)
     async def align_backpay(self):
