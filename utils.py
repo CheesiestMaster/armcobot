@@ -78,8 +78,8 @@ async def _notify_owner_mysql_error_4031():
     except Exception as notify_error:
         logger.error(f"Failed to notify owner about MySQL error 4031: {notify_error}")
 
-created_sessions = Counter("created_sessions", "Number of sessions created", labelnames=["scope"])
-inflight_sessions = Gauge("inflight_sessions", "Number of sessions currently in use", labelnames=["scope"])
+created_sessions = Counter("armcobot_created_sessions", "Number of sessions created", labelnames=["scope"])
+inflight_sessions = Gauge("armcobot_inflight_sessions", "Number of sessions currently in use", labelnames=["scope"])
 
 def fqn(func: Callable) -> str:
     return f"{func.__module__}.{func.__qualname__}"

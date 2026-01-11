@@ -89,6 +89,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self.dialect = dialect
         self.consumer_running = False
         self.shutdown_hook_running = False
+        self.queue_consumer_started = False
         _Config = session.query(Config).filter(Config.key == "BOT_CONFIG").first()
         if not _Config:
             _Config = Config(key="BOT_CONFIG", value={"EXTENSIONS":[]})
@@ -640,7 +641,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         except FileNotFoundError:
             pass  # File doesn't exist, which is fine
         #await self.set_bot_nick("S.A.M.")
-        asyncio.create_task(self.queue_consumer())  # type: ignore
         await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign", type=ActivityType.playing))
         if (getenv("STARTUP_ANIMATION", "false").lower() == "true"):
             try:
@@ -822,6 +822,12 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         
         # Start autocomplete cache clearing task
         self.clear_autocomplete_caches.start()
+        
+        # Start queue consumer
+        if not self.queue_consumer_started:
+            self.queue_consumer_started = True
+            asyncio.create_task(self.queue_consumer())  # type: ignore
+            logger.debug("Queue consumer task started")
         
         # Start shutdown listener
         if not self.shutdown_hook_running:
