@@ -589,7 +589,7 @@ class Campaigns(GroupCog):
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def notify(self, interaction: Interaction, session: Session, campaign: str):
+    async def notify(self, interaction: Interaction, session: Session, campaign: str, message: str = None):
         # do checks, then do '<@' || discord_id || '>' for each player in the campaign
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
         if not _campaign:
@@ -604,6 +604,8 @@ class Campaigns(GroupCog):
             (m for (m,) in session.query(Player.mention).join(Unit).filter(Unit.campaign_id == _campaign.id).distinct().yield_per(100)),
             separator=" " # we want to space them, not newline them, so it takes up less discord ui space
         )
+        if message:
+            chunks.append(message)
         first = next(chunks, None)
         if first:
             await interaction.response.send_message(first, ephemeral=False)
@@ -619,7 +621,7 @@ class Campaigns(GroupCog):
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name), group=fuzzy_autocomplete(Unit.battle_group))
     @ac.describe(campaign="The campaign that the group is in", group="The group to notify")
     @uses_db(sessionmaker=CustomClient().sessionmaker)
-    async def notify_group(self, interaction: Interaction, session: Session, campaign: str, group: str):
+    async def notify_group(self, interaction: Interaction, session: Session, campaign: str, group: str, message: str = None):
         # do checks, then notify the group of players in the campaign
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
         if not _campaign:
@@ -632,6 +634,8 @@ class Campaigns(GroupCog):
             (m for (m,) in session.query(Player.mention).join(Unit).filter(Unit.battle_group == group, Unit.campaign_id == _campaign.id).distinct().yield_per(100)),
             separator=" " # we want to space them, not newline them, so it takes up less discord ui space
         )
+        if message:
+            chunks.append(message)
         first = next(chunks, None)
         if first:
             await interaction.response.send_message(first, ephemeral=False)

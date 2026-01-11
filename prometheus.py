@@ -41,14 +41,14 @@ behind = int(subprocess.run(["git", "rev-list", "--count", "HEAD..origin/main"],
 ahead = int(subprocess.run(["git", "rev-list", "--count", "origin/main..HEAD"], stdout=subprocess.PIPE, text=True).stdout.strip())
 info.labels(commit=commit, ahead=ahead, behind=behind).set(1)
 
-has_version_alerted = False
+last_alerted_version = None
 @loop(seconds=60)
 async def poll_metrics_slow():
     global last_disk_alert_time
     bot: CustomClient = CustomClient() # type: ignore
     as_of.labels(loop="slow").set(int(datetime.now().timestamp()))
     # Add disk usage metric for /
-    usage = psutil.disk_usage('/')
+    usage = psutil.disk_usage(r'C:\\' if os.name == 'nt' else '/')
     root_disk_usage.set(usage.percent)
     
     # Check disk usage alert
@@ -99,7 +99,7 @@ async def poll_metrics_slow():
     for unit_type, campaign_id, count in db_stats_dict["units_by_type_and_campaign"]:
         units_by_type_and_campaign.labels(unit_type=unit_type, campaign_id=campaign_id).set(count)
     
-    global has_version_alerted, behind, ahead
+    global last_alerted_version, behind, ahead
     if EnvironHelpers.get_bool("GIT_AUTOFETCH"):
         fetch_proc = await asyncio.create_subprocess_exec("git", "fetch", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
         await fetch_proc.communicate()
@@ -115,17 +115,18 @@ async def poll_metrics_slow():
             logger.error(f"Error fetching ahead: {stderr.decode().strip()}")
         ahead = int(stdout.decode().strip())
         info.labels(commit=commit, ahead=ahead, behind=behind).set(1)
-    if behind > 0 and EnvironHelpers.get_bool("NOTIFY_ON_NEW_VERSION") and not has_version_alerted:
-        user = await bot.fetch_user(DISK_ALERT_USER_ID)
-        latest_proc = await asyncio.create_subprocess_exec("git", "rev-parse", "origin/main", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    if behind > 0 and EnvironHelpers.get_bool("NOTIFY_ON_NEW_VERSION"):
+        latest_proc = await asyncio.create_subprocess_exec("git", "rev-parse", "--short", "origin/main", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await latest_proc.communicate()
         if stderr:
             logger.error(f"Error fetching latest: {stderr.decode().strip()}")
         latest = stdout.decode().strip()
-        await user.send(f"🚨 **New Version Available** 🚨\n\nA new version of the bot is available, please update to the latest version.\n\n"
-                        f"You are {behind} commits behind the latest version.\n"
-                        f"Your commit is {commit}, the latest commit is {latest}.\n"
-                        "Please run /debug update_and_restart to update the bot.")
-        has_version_alerted = True
+        if latest != last_alerted_version:
+            user = await bot.fetch_user(DISK_ALERT_USER_ID)
+            await user.send(f"🚨 **New Version Available** 🚨\n\nA new version of the bot is available, please update to the latest version.\n\n"
+                            f"You are {behind} commits behind the latest version.\n"
+                            f"Your commit is {commit}, the latest commit is {latest}.\n"
+                            "Please run /debug update_and_restart to update the bot.")
+            last_alerted_version = latest
 
 poll_metrics_slow.start()
