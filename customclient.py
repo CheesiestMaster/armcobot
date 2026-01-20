@@ -44,6 +44,8 @@ interaction_counter = Counter("armcobot_interactions_total", "Total number of in
 error_counter = Counter("armcobot_errors_total", "Total number of errors", labelnames=["guild_name", "error"])
 ratelimited_counter = Counter("armcobot_ratelimited_total", "Total number of commands dropped due to ratelimits", labelnames=["guild_name"])
 queue_size_metric = Gauge("armcobot_queue_size", "The size of the queue")
+discord_latency = Gauge("armcobot_discord_latency_seconds", "The latency of the bot to Discord")
+discord_connection_status = Gauge("armcobot_discord_connection_status", "The connection status of the bot to Discord")
 
 _ACQUIRED = object()
 
@@ -211,7 +213,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             else:
                 await asyncio.sleep(7)  # Maintain pacing to avoid hitting downstream timeouts
             queue_size = self.queue.qsize()
-            queue_size_metric.set(queue_size)
             eta = timedelta(seconds=queue_size * 7)
             logger.debug(f"Queue size: {queue_size}, Empty in {eta}")
             await self.change_presence(status=Status.online, activity=Activity(name="Meta Campaign" if queue_size == 0 else f"Updating {queue_size} dossiers, Finished in {eta}", type=ActivityType.playing))
@@ -815,6 +816,11 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         self.generate_unit_message = decorator(self.generate_unit_message)  # type: ignore
         self.close = decorator(self.close)
         self.tree.on_error = on_error_decorator(error_counter)(self.tree.on_error)  # type: ignore
+
+        # Set up queue_size_metric to use a callback function instead of manual updates
+        queue_size_metric.set_function(self.queue.qsize)
+        discord_latency.set_function(lambda: (self.latency if self.is_ready() else float("nan")))
+        discord_connection_status.set_function(lambda: bool(self.is_ready()))
 
         if self.sessionmaker().get_bind().dialect.name == "mysql":
             self.keep_alive.start()

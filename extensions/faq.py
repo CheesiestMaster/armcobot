@@ -12,7 +12,9 @@ from os import getenv
 from prometheus_client import Gauge
 logger = getLogger(__name__)
 
+total_views = 0
 faq_queries_metric = Gauge("armcobot_faq_queries", "The number of FAQ queries")
+faq_queries_metric.set_function(lambda: total_views)
 
 async def is_answerer(interaction: Interaction):
         """
@@ -43,7 +45,6 @@ async def is_answerer(interaction: Interaction):
         return False
 
 counters = RollingCounterDict(24*60*60)
-total_views = 0
 class Faq(GroupCog):
     def __init__(self, bot: Bot):
         self.bot = bot
@@ -79,7 +80,6 @@ class Faq(GroupCog):
                 selected_question = session.query(Faq_model).filter(Faq_model.id == int(self.values[0])).first()
                 counters[selected_question.question] += 1
                 total_views += 1
-                faq_queries_metric.set(total_views)
                 await interaction.response.send_message(tmpl.faq_response.format(selected=selected_question), ephemeral=True)
         faq_dropdowns = [FaqDropdown(placeholder="Select a question", options=chunk) for chunk in faq_chunks]
         view = ui.View()

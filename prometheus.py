@@ -1,3 +1,4 @@
+import os
 from prometheus_client import Gauge
 from discord.ext.tasks import loop
 from customclient import CustomClient # just needed so we can get a bunch of the stats, and a sessionmaker for the db stats
@@ -114,6 +115,7 @@ async def poll_metrics_slow():
         if stderr:
             logger.error(f"Error fetching ahead: {stderr.decode().strip()}")
         ahead = int(stdout.decode().strip())
+        info.clear() # clean up the old labels to prevent duplicates
         info.labels(commit=commit, ahead=ahead, behind=behind).set(1)
     if behind > 0 and EnvironHelpers.get_bool("NOTIFY_ON_NEW_VERSION"):
         latest_proc = await asyncio.create_subprocess_exec("git", "rev-parse", "--short", "origin/main", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
