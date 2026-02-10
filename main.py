@@ -3,31 +3,31 @@ from coloredformatter import ColoredFormatter
 from dotenv import load_dotenv
 from logging.handlers import RotatingFileHandler
 import logging
-import sys
 import os
-import stat
 import re
+import stat
+import sys
 from utils import EnvironHelpers
 
 # Environ setup
 if not os.path.exists("global.env"):
     raise FileNotFoundError("global.env not found")
 load_dotenv("global.env")
-LOCAL_ENV_FILE = os.getenv("LOCAL_ENV_FILE")
+LOCAL_ENV_FILE = EnvironHelpers.get_str("LOCAL_ENV_FILE", "local.env")
 if not os.path.exists(str(LOCAL_ENV_FILE)):
     # touch the file
     open(str(LOCAL_ENV_FILE), "w").close()
 load_dotenv(LOCAL_ENV_FILE, override=True)
 
 # check that secrets aren't set prematurely
-if os.getenv("BOT_TOKEN"):
+if EnvironHelpers.get_str("BOT_TOKEN"):
     raise EnvironmentError("BOT_TOKEN set in global or local environment file, please move it to the sensitive environment file")
-if os.getenv("DATABASE_URL"):
+if EnvironHelpers.get_str("DATABASE_URL"):
     raise EnvironmentError("DATABASE_URL set in global or local environment file, please move it to the sensitive environment file")
-if os.getenv("MYSQL_PASSWORD"):
+if EnvironHelpers.get_str("MYSQL_PASSWORD"):
     raise EnvironmentError("MYSQL_PASSWORD set in global or local environment file, please move it to the sensitive environment file")
 
-SENSITIVE_ENV_FILE = os.getenv("SENSITIVE_ENV_FILE")
+SENSITIVE_ENV_FILE = EnvironHelpers.get_str("SENSITIVE_ENV_FILE", "sensitive.env")
 if not os.path.exists(str(SENSITIVE_ENV_FILE)):
     # create the file with the required variables
     with os.fdopen(os.open(str(SENSITIVE_ENV_FILE), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_EXCL, 0o600), "w") as f:
@@ -47,18 +47,16 @@ if os.name != 'nt':  # Skip on Windows
         raise EnvironmentError(f"SENSITIVE_ENV_FILE is a directory, please remove it")
 
 load_dotenv(SENSITIVE_ENV_FILE, override=True)
-if not os.getenv("BOT_TOKEN") or os.getenv("BOT_TOKEN") == "TOKEN":
+if not EnvironHelpers.get_str("BOT_TOKEN") or EnvironHelpers.get_str("BOT_TOKEN") == "TOKEN":
     raise EnvironmentError("BOT_TOKEN is not set")
-if not os.getenv("DATABASE_URL") or os.getenv("DATABASE_URL") == "URL":
+if not EnvironHelpers.get_str("DATABASE_URL") or EnvironHelpers.get_str("DATABASE_URL") == "URL":
     raise EnvironmentError("DATABASE_URL is not set")
-
-
 
 # add a file handler to the root logger
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(ColoredFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-file_handler = RotatingFileHandler(EnvironHelpers.get_str("LOG_FILE"), 
-                                   maxBytes=EnvironHelpers.get_size("LOG_FILE_SIZE"), 
+file_handler = RotatingFileHandler(EnvironHelpers.get_str("LOG_FILE"),
+                                   maxBytes=EnvironHelpers.get_size("LOG_FILE_SIZE"),
                                    backupCount=EnvironHelpers.get_int("LOG_FILE_BACKUP_COUNT", 5))
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logging.basicConfig(level=EnvironHelpers.get_log_level("LOG_LEVEL", "INFO"),
@@ -68,34 +66,42 @@ logging.basicConfig(level=EnvironHelpers.get_log_level("LOG_LEVEL", "INFO"),
                         stream_handler
                     ],
                     force=True) # needed to delete the default stderr handler
-# rest of the imports   
+# rest of the imports
+import asyncio
+from customclient import CustomClient
+from models import BaseModel
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from models import BaseModel
-from customclient import CustomClient
-import asyncio
+
 loop = asyncio.get_event_loop()
 asyncio.set_event_loop(loop)
 
 logging.addLevelName(9, "TRIAGE")
 
+
 def triage(self, message, *args, **kwargs):
+    """
+    Log a message at TRIAGE level (custom level 9). Patched onto logging.Logger.
+    Only logs if the logger is enabled for level 9.
+    """
+
     if self.isEnabledFor(9):
         self._log(9, message, args, **kwargs)
+
+
 logging.Logger.triage = triage  # type: ignore
 
 logger = logging.getLogger(__name__)
 
-
-
 # create a DB engine
+database_url = EnvironHelpers.required_str("DATABASE_URL")
 engine = create_engine(
-    url = str(os.getenv("DATABASE_URL")),
-    pool_pre_ping= True,
+    url=database_url,
+    pool_pre_ping=True,
     pool_size=10,
     max_overflow=20)
 
-logger.debug("Database engine created with URL: %s", os.getenv("DATABASE_URL"))
+logger.debug("Database engine created with URL: %s", database_url)
 
 # logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG)
 # logging.getLogger("sqlalchemy.pool").setLevel(logging.DEBUG)

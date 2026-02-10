@@ -1,18 +1,25 @@
 import asyncio
-from logging import getLogger
-import discord
-from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac
-from typing import Optional, Dict, Any
-from discord import Message, User, Attachment, Embed, Reaction
 import json
+from logging import getLogger
+from typing import Any, Dict, Optional
+
+import discord
+from discord import Interaction, app_commands as ac, Message, User, Attachment, Embed, Reaction
+from discord.ext.commands import GroupCog
+
+from customclient import CustomClient
 from utils import is_management_no_notify
 
 logger = getLogger(__name__)
 
 
 
-class Archival(GroupCog):
+class Archival(GroupCog, description="Archive a channel or thread to JSON. Management only."):
+    """
+    Cog for the archive slash command: archive a channel or thread to JSON.
+    Restricted to management. Writes messages to archives/ as JSON.
+    """
+
     @ac.command(name="archive", description="Archive a channel")
     @ac.check(is_management_no_notify)
     async def archive(self, interaction: Interaction, channel: discord.TextChannel|discord.Thread):
@@ -244,11 +251,9 @@ class MessageSerializer:
             "fail_if_not_exists": reference.fail_if_not_exists if hasattr(reference, 'fail_if_not_exists') else None,
         }
 
-bot: Bot = None
-async def setup(_bot: Bot):
-    global bot
-    bot = _bot
-    await bot.add_cog(Archival(bot))
+async def setup(_bot: CustomClient):
+    await _bot.add_cog(Archival(_bot))
 
-async def teardown():
-    bot.remove_cog(Archival.__name__) # remove_cog takes a string, not a class
+
+async def teardown(_bot: CustomClient):
+    _bot.remove_cog(Archival.__name__)  # remove_cog takes a string, not a class

@@ -1,16 +1,27 @@
 from logging import getLogger
-from discord.ext.commands import GroupCog, Bot
+
 from discord import Interaction, app_commands as ac
+from discord.ext.commands import GroupCog
 from discord.ui import Select, View
-from utils import uses_db
+from sqlalchemy.orm import Session
+
 from customclient import CustomClient
 from MessageManager import MessageManager
-from sqlalchemy.orm import Session
 from models import Player, Unit, PlayerUpgrade
+from utils import uses_db
+
 logger = getLogger(__name__)
-bot: Bot = None
-class Stockpile(GroupCog):
-    def __init__(self, bot: Bot):
+
+
+class Stockpile(GroupCog, description="Store and retrieve upgrades in your stockpile."):
+    """
+    Cog for the stockpile slash command: store and retrieve upgrades in
+    a player's stockpile (inactive units). Uses MessageManager for views.
+    """
+
+    def __init__(self, bot: CustomClient):
+        """Store a reference to the bot instance."""
+
         self.bot = bot
 
     @ac.command(name="store", description="Store an upgrade in your stockpile")
@@ -31,7 +42,7 @@ class Stockpile(GroupCog):
         if len(unit_select.options) == 0:
             await message_manager.send_message(view=view, content="You don't have any units to store upgrades in", ephemeral=self.bot.use_ephemeral)
             return
-        
+
         view.add_item(unit_select)
         await message_manager.send_message(view=view, ephemeral=self.bot.use_ephemeral)
         @uses_db(CustomClient().sessionmaker) # we need a second session to get the upgrades, because the first session has already left scope
@@ -51,7 +62,7 @@ class Stockpile(GroupCog):
                 await message_manager.update_message(content="You can only store upgrades in your stockpile when your unit is inactive")
                 await interaction.response.defer(thinking=False)
                 return
-            if unit.unit_type == "STOCKPILE": 
+            if unit.unit_type == "STOCKPILE":
                 await message_manager.update_message(content="To move upgrades from your stockpile, use the `/stockpile retrieve` command")
                 await interaction.response.defer(thinking=False)
                 return
@@ -194,14 +205,15 @@ class Stockpile(GroupCog):
                 await message_manager.update_message(content="Upgrade retrieved")
                 await interaction.response.defer(thinking=False)
                 self.bot.queue.put_nowait((1, _player, 0))
-                
+
             upgrade_select.callback = upgrade_select_callback
 
         unit_select.callback = unit_select_callback
-async def setup(_bot: Bot):
-    global bot
-    bot = _bot
-    await bot.add_cog(Stockpile(bot))
 
-async def teardown():
-    bot.remove_cog(Stockpile.__name__) # remove_cog takes a string, not a class
+
+async def setup(_bot: CustomClient):
+    await _bot.add_cog(Stockpile(_bot))
+
+
+async def teardown(_bot: CustomClient):
+    _bot.remove_cog(Stockpile.__name__)  # remove_cog takes a string, not a class

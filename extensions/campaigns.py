@@ -1,22 +1,34 @@
+from io import BytesIO
 from logging import getLogger
-from discord.ext.commands import GroupCog
+from typing import List, Optional
+from asyncio import gather
+import random
+
 from discord import Interaction, app_commands as ac, Member, Role, Embed, File, TextStyle
+from discord.ext.commands import GroupCog
 from discord.ui import Modal, TextInput
+from sqlalchemy import text, not_, func
+from sqlalchemy.orm import Session
+from templates import Statistics_Unit, notify_no_players
+
+from customclient import CustomClient
 from models import Campaign, UnitHistory, UnitStatus, CampaignInvite, Player, Unit
 from utils import EnvironHelpers, maybe_decorate, uses_db, is_dm, check_notify, fuzzy_autocomplete, chunked_join
-from sqlalchemy.orm import Session
-from sqlalchemy import text, not_, func
-from customclient import CustomClient
-import random
-from io import BytesIO
-from asyncio import gather
-from templates import Statistics_Unit, notify_no_players
-from typing import Optional, List
+
 logger = getLogger(__name__)
-class Campaigns(GroupCog):
+
+
+class Campaigns(GroupCog, description="Campaign commands: list, join, leave, view. GM and management checks apply."):
+    """
+    Cog for campaign-related slash commands: list campaigns, join, leave,
+    and view campaign details. GM and management checks apply where needed.
+    """
+
     def __init__(self, bot: CustomClient):
+        """Store a reference to the bot instance."""
+
         self.bot = bot
-    
+
     @staticmethod
     async def is_management(interaction: Interaction):
         logger.debug(f"Checking if {interaction.user.name} is management")
@@ -25,7 +37,7 @@ class Campaigns(GroupCog):
         valid = any(role in interaction.user.roles for role in [interaction.guild.get_role(role_id) for role_id in CustomClient().mod_roles])
         logger.info(f"{interaction.user.name} is management: {valid}")
         return valid
-    
+
     @staticmethod
     @check_notify(message="You are not a Game Master, and cannot run this command")
     async def is_gm(interaction: Interaction):
@@ -42,8 +54,8 @@ class Campaigns(GroupCog):
         return valid
 
     @ac.command(name="create", description="Create a campaign")
-    @ac.check(is_gm)  
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @ac.check(is_gm)
+    @uses_db(CustomClient().sessionmaker)
     async def create(self, interaction: Interaction, name: str, session: Session, gm: Member|None = None, ):
         if gm is None:
             gm = interaction.user
@@ -77,11 +89,11 @@ class Campaigns(GroupCog):
         session.add(campaign)
         logger.info(f"Campaign {name} created by {gm.name}")
         await interaction.response.send_message(f"Campaign {name} created", ephemeral=True)
-        
+
     @ac.command(name="open", description="Open a campaign for signups")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def open(self, interaction: Interaction, campaign: str, session: Session, role: Role|None = None, limit: int|None = None):
         # do checks, then set open to true, and if specified set the role and limit
         # check if the campaign exists
@@ -111,7 +123,7 @@ class Campaigns(GroupCog):
     @ac.command(name="close", description="Close a campaign for signups")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def close(self, interaction: Interaction, campaign: str, session: Session):
         # do checks, then set open to false and clear the role and limit fields
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
@@ -133,7 +145,7 @@ class Campaigns(GroupCog):
     @ac.command(name="remove", description="Remove a campaign")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def remove(self, interaction: Interaction, campaign: str, session: Session):
         # do checks, deactivate all players, delete the campaign
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
@@ -170,7 +182,7 @@ class Campaigns(GroupCog):
     @ac.command(name="payout", description="Payout a campaign")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def payout(self, interaction: Interaction, campaign: str, session: Session, base_req: int=0, survivor_req: int=0, base_bp: int=0, survivor_bp: int=0):
         # do checks, then payout all players in the campaign
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
@@ -184,40 +196,40 @@ class Campaigns(GroupCog):
             await interaction.response.send_message("You don't have permission to payout this campaign", ephemeral=True)
             return
         logger.info(f"Paying out campaign {campaign} with base_req={base_req}, survivor_req={survivor_req}, base_bp={base_bp}, survivor_bp={survivor_bp}")
-        
+
         # Get all players and live players using the new relationships
         all_players = _campaign.players
         live_players = _campaign.live_players
         dead_players = all_players - live_players  # Set algebra to get players with no active units
-        
+
         logger.debug(f"Campaign {campaign}: {len(all_players)} total players, {len(live_players)} live players, {len(dead_players)} dead players")
-        
+
         # Payout base rewards to all players in the campaign
         for player in all_players:
             logger.debug(f"Paying out base rewards to {player.name} for {campaign}")
             player.rec_points += base_req
             player.bonus_pay += base_bp
-        
+
         # Payout survivor rewards only to players with active units
         for player in live_players:
             logger.debug(f"Paying out survivor rewards to {player.name} for {campaign}")
             player.rec_points += survivor_req
             player.bonus_pay += survivor_bp
-        
+
         session.commit()
         await interaction.response.defer(ephemeral=True)
-        
+
         # Queue updates for all affected players
         for player in all_players:
             logger.debug(f"Putting {player.name} in update queue for {campaign}")
             self.bot.queue.put_nowait((1, player, 0))
-        
+
         await interaction.followup.send(f"Campaign {campaign} payout complete", ephemeral=True)
 
     @ac.command(name="invite", description="Invite a player to a campaign")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def invite(self, interaction: Interaction, campaign: str, session: Session, player: Member):
         # do checks, then add an invite to the campaign for the player
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
@@ -242,7 +254,7 @@ class Campaigns(GroupCog):
     @ac.command(name="deactivate", description="Remove a player from a campaign")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def deactivate(self, interaction: Interaction, campaign: str, session: Session, player: Member):
         # do checks, then deactivate the unit just like how payout does
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
@@ -274,7 +286,7 @@ class Campaigns(GroupCog):
         self.bot.queue.put_nowait((1, _player, 0))
 
     @ac.command(name="list", description="List all campaigns")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def list(self, interaction: Interaction, session: Session):
         # no checks, return the list of all campaigns, their status, and the mention of the GM
         campaigns = session.query(Campaign).all()
@@ -299,7 +311,7 @@ class Campaigns(GroupCog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @ac.command(name="kill", description="Kill a unit")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def kill(self, interaction: Interaction, session: Session, callsign: str, is_mia: bool = False):
         # do gm checks, then kill the unit, if is_mia is true, set the status to MIA, otherwise set the status to KIA
         _unit = session.query(Unit).filter(Unit.callsign == callsign).first()
@@ -325,7 +337,7 @@ class Campaigns(GroupCog):
     @ac.command(name="raffle", description="Bring the unit count down through random selection")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def raffle(self, interaction: Interaction, session: Session, campaign: str, count: int):
         # do gm checks, then bring the unit count down through random selection
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
@@ -387,9 +399,9 @@ class Campaigns(GroupCog):
     @ac.command(name="list_players", description="List all players in a campaign")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def list_players(self, interaction: Interaction, session: Session, campaign: str):
-        
+
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
         if not _campaign:
             logger.error(f"Campaign {campaign} not found")
@@ -412,12 +424,12 @@ class Campaigns(GroupCog):
         logger.debug(f"Text generated")
         file = BytesIO(text.encode())
         attachment = File(file, filename="players.txt")
-        await interaction.followup.send("Here are the players in the campaign", ephemeral=True, file=attachment)  
+        await interaction.followup.send("Here are the players in the campaign", ephemeral=True, file=attachment)
 
     @ac.command(name="counts_by_unit_type", description="List the number of units by unit type")
     #@ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def counts_by_unit_type(self, interaction: Interaction, session: Session, campaign: str):
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
         if not _campaign:
@@ -425,9 +437,9 @@ class Campaigns(GroupCog):
             await interaction.response.send_message("Campaign not found", ephemeral=True)
             return
         query = text("""
-        SELECT 
-            u.unit_type, 
-            COUNT(*) AS unit_count, 
+        SELECT
+            u.unit_type,
+            COUNT(*) AS unit_count,
             COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () AS percentage
         FROM units u
         JOIN campaigns c ON u.campaign_id = c.id
@@ -445,7 +457,7 @@ class Campaigns(GroupCog):
     @ac.command(name="limit_types", description="Limit the types of units that can be used in a campaign")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def limit_types(self, interaction: Interaction, session: Session, campaign: str):
         # do checks, then give a modal to take the list of unit types as a NSV string
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
@@ -502,7 +514,7 @@ class Campaigns(GroupCog):
     @ac.command(name="merge", description="Merge two campaigns")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name), other_campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def merge(self, interaction: Interaction, session: Session, campaign: str, other_campaign: str):
         # do checks, then merge the two campaigns
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
@@ -534,7 +546,7 @@ class Campaigns(GroupCog):
         await interaction.response.send_message(f"Merged campaigns {campaign} and {other_campaign}", ephemeral=True)
 
     @ac.command(name="unit_lookup", description="Lookup a unit by callsign")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def unit_lookup(self, interaction: Interaction, session: Session, callsign: Optional[str] = None):
         # if the callsign is None, send a modal to take an NSV of callsigns
         if callsign is None:
@@ -588,7 +600,7 @@ class Campaigns(GroupCog):
     @ac.command(name="notify", description="Notify all players in a campaign")
     @ac.check(is_gm)
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name))
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def notify(self, interaction: Interaction, session: Session, campaign: str, message: str = None):
         # do checks, then do '<@' || discord_id || '>' for each player in the campaign
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
@@ -616,11 +628,11 @@ class Campaigns(GroupCog):
             logger.info(f"No players found in campaign {campaign}")
             await interaction.response.send_message(notify_no_players, ephemeral=True)
 
-    @maybe_decorate(EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND"), ac.command(name="notify_group", description="Notify a group of players witin a campaign"))
+    @maybe_decorate(EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND"), ac.command(name="notify_group", description="Notify a group of players within a campaign"))
     @maybe_decorate(EnvironHelpers.get_bool("RESTRICT_NOTIFY_GROUP_COMMAND"), ac.check(is_gm))
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name), group=fuzzy_autocomplete(Unit.battle_group))
     @ac.describe(campaign="The campaign that the group is in", group="The group to notify")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def notify_group(self, interaction: Interaction, session: Session, campaign: str, group: str, message: str = None):
         # do checks, then notify the group of players in the campaign
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
@@ -647,9 +659,8 @@ class Campaigns(GroupCog):
             await interaction.response.send_message(notify_no_players, ephemeral=True)
 
 async def setup(_bot: CustomClient):
-    global bot
-    bot = _bot
-    await bot.add_cog(Campaigns(bot))
+    await _bot.add_cog(Campaigns(_bot))
 
-async def teardown():
-    bot.remove_cog(Campaigns.__name__) # remove_cog takes a string, not a class
+
+async def teardown(_bot: CustomClient):
+    _bot.remove_cog(Campaigns.__name__)  # remove_cog takes a string, not a class

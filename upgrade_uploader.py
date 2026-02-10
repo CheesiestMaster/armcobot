@@ -37,9 +37,9 @@ df_required_types = new_df
 
 del new_df
 
+from models import ShopUpgrade, ShopUpgradeUnitTypes
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import ShopUpgrade, ShopUpgradeUnitTypes
 
 url = input("Enter the database URL: ")
 engine = create_engine(url)
@@ -69,7 +69,7 @@ for _, row in df_required_types.iterrows():
     # we need to create the shop_upgrade_unit_types, it should just be query the upgrade.id and write (id, [1]) to the database
     try:
         target_upgrade_id = session.query(ShopUpgrade.id).filter(ShopUpgrade.name == row.values[0]).first()
-        
+
         # Ensure target_upgrade_id is not None before proceeding
         if target_upgrade_id is not None:
             Unittype = ShopUpgradeUnitTypes(shop_upgrade_id=target_upgrade_id[0], unit_type=row.values[1])

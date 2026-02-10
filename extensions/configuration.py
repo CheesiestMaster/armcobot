@@ -1,19 +1,29 @@
+import os
 from logging import getLogger
-from discord.ext.commands import GroupCog, Bot
+
 from discord import Interaction, app_commands as ac, ChannelType
-from models import Config as Config_model, Dossier, Player, Statistic
-from customclient import CustomClient
-from utils import EnvironHelpers, uses_db
+from discord.ext.commands import GroupCog
+from dotenv import dotenv_values
 from sqlalchemy.orm import Session
 import templates as tmpl
-import os
-from dotenv import dotenv_values
+
+from customclient import CustomClient
+from models import Config as Config_model, Dossier, Player, Statistic
+from utils import EnvironHelpers, uses_db
+
 logger = getLogger(__name__)
 
-class Config(GroupCog):
-    def __init__(self, bot: Bot):
+class Config(GroupCog, description="Configuration: set nickname, channels, list configs."):
+    """
+    Cog for configuration slash commands: list configs and show environment.
+    Restricted to moderators.
+    """
+
+    def __init__(self, bot: CustomClient):
+        """Store a reference to the bot and set interaction check to is_mod."""
+
         self.bot = bot
- 
+
         self.interaction_check = self.is_mod
 
     async def is_mod(self, interaction: Interaction):
@@ -24,12 +34,12 @@ class Config(GroupCog):
         if not valid:
             logger.warning(f"{interaction.user.name} tried to use admin commands")
         return valid
-    
+
     async def is_owner(self, interaction: Interaction):
         valid = interaction.user.id in self.bot.owner_ids
         # this is_owner is used for the setnick, and called on all uses of it, but it's only used for scoping, not for permission, so no logging
         return valid
-    
+
     @ac.command(name="setnick", description="Set the bot's nickname")
     async def setnick(self, interaction: Interaction, nick: str):
         if self.is_owner(interaction):
@@ -88,16 +98,20 @@ class Config(GroupCog):
 
     @ac.command(name="show_environment", description="Display current environment configuration")
     async def show_environment(self, interaction: Interaction):
-        """Display the current environment configuration including users, roles, and channels."""
+        """
+        Display the current environment configuration: users, roles, and
+        channels referenced by env vars (e.g. BOT_OWNER_ID, MOD_ROLE_1).
+        """
+
         await interaction.response.defer(ephemeral=True)
-        
+
         # Load environment variables from both global.env and LOCAL_ENV_FILE
         env_values = dotenv_values("global.env")
         local_env_file = env_values.get("LOCAL_ENV_FILE")
         if local_env_file and os.path.exists(local_env_file):
             local_env_values = dotenv_values(local_env_file)
             env_values.update(local_env_values)
-        
+
         main_guild = self.bot.get_guild(int(env_values.get("MAIN_GUILD_ID")))
         if main_guild:
             # get all the users and roles in the environment, and send f"{key}: {value.mention}" for each
@@ -126,19 +140,19 @@ class Config(GroupCog):
             message += f"Dossier: {dossier.mention if dossier else 'Unknown'}\n"
             message += "\nEnvironment Variables (Current | Global | Local):\n"
             env_vars = [
-                'PROD', 'EPHEMERAL', 'LOG_LEVEL', 'LOG_FILE', 'LOG_FILE_SIZE', 
+                'PROD', 'EPHEMERAL', 'LOG_LEVEL', 'LOG_FILE', 'LOG_FILE_SIZE',
                 'LOG_FILE_BACKUP_COUNT', 'LOCAL_ENV_FILE', 'SENSITIVE_ENV_FILE',
-                'BANNED_CHARS', 'ALLOWED_DOMAINS', 'BACKPAY_ON_START', 
+                'BANNED_CHARS', 'ALLOWED_DOMAINS', 'BACKPAY_ON_START',
                 'MAX_ACTIVE_UNITS', 'INITIAL_REQ', 'LOOP_ACTIVE', 'ALLOW_NOTIFY_GROUP_COMMAND', 'RESTRICT_NOTIFY_GROUP_COMMAND' # loop_active is the flag that indicates we are under start.sh or start.bat
             ]
-            
+
             for var in env_vars:
                 current_val = EnvironHelpers.get_str(var, 'Not set')
                 global_val = dotenv_values("global.env").get(var, 'Not set')
                 local_val = 'Not set'
                 if local_env_file and os.path.exists(local_env_file):
                     local_val = dotenv_values(local_env_file).get(var, 'Not set')
-                
+
                 message += f"{var}:\n"
                 message += f"  Current: {current_val}\n"
                 message += f"  Global:  {global_val}\n"
@@ -147,13 +161,11 @@ class Config(GroupCog):
         else:
             await interaction.followup.send("Main guild not found")
 
-bot: Bot = None
-async def setup(_bot: Bot):
-    global bot
-    bot = _bot
+async def setup(_bot: CustomClient):
     logger.info("Setting up Configuration cog")
-    await bot.add_cog(Config(bot))
+    await _bot.add_cog(Config(_bot))
 
-async def teardown():
+
+async def teardown(_bot: CustomClient):
     logger.info("Tearing down Configuration cog")
-    bot.remove_cog(Config.__name__) # remove_cog takes a string, not a class
+    _bot.remove_cog(Config.__name__)  # remove_cog takes a string, not a class

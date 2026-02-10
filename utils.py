@@ -1,24 +1,34 @@
-from collections.abc import Mapping
-import inspect
-import logging
-import re
-import os
+import asyncio
+from collections.abc import Mapping, Sequence
 from functools import lru_cache, wraps
+import inspect
 from inspect import Parameter, Signature
+import logging
+from logging import Logger, getLogger
+import os
+import re
 import traceback
 from types import FunctionType
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generator, Iterable, Iterator, ParamSpec, TypeVar, cast
+
 import discord
-from sqlalchemy.orm import scoped_session
-from sqlalchemy import ColumnElement, true
-from sqlalchemy.exc import OperationalError
-from logging import Logger, getLogger
-import asyncio
-from typing import Any, Coroutine, Callable, Generator, Iterable, ParamSpec, TypeVar, Iterator, cast
 from discord import Interaction, abc, app_commands as ac
 import pandas as pd
 from prometheus_client import Counter, Gauge
+from sqlalchemy import ColumnElement, true
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import scoped_session
 
-CustomClient = None
+if TYPE_CHECKING:
+    from customclient import CustomClient
+else:
+    CustomClient = None
+
+P = TypeVar("P")
+T = TypeVar("T", bound=Sequence[Any])
+Ps = ParamSpec("Ps")
+R = TypeVar("R")
+F = Callable[Ps, R]
 
 logger = getLogger(__name__)
 
@@ -31,6 +41,7 @@ def get_url_pattern() -> re.Pattern:
     Returns:
         re.Pattern: Compiled regex pattern for detecting invalid URLs.
     """
+
     # Get the allowed domains from the environment variable
     allowed_domains = EnvironHelpers.get_str("ALLOWED_DOMAINS", "")
     allowed_domains_list = [domain.strip() for domain in allowed_domains.split(",") if domain.strip()]
@@ -39,7 +50,7 @@ def get_url_pattern() -> re.Pattern:
     if not allowed_domains:
         return re.compile("(?=a)b") # dummy pattern that matches nothing, just to prevent any errors
 
-    # Compile and returwn the regex pattern
+    # Compile and return the regex pattern
     logger.info(rf"domains: https?:\/\/(?!{allowed_domains_regex})(?:[\w.-]+\.\w+)(?:\/\S*)?")
     return re.compile(
         rf"https?:\/\/(?!{allowed_domains_regex})(?:[\w.-]+\.\w+)(?:\/\S*)?"
@@ -61,10 +72,20 @@ def has_invalid_url(text: str) -> bool:
     return bool(result)
 
 class RollbackException(Exception):
+    """
+    Exception raised to signal that the current database transaction should be
+    rolled back without re-raising. Used with uses_db-decorated functions;
+    when raised, the session is rolled back and the function returns None.
+    """
+
     pass
 
 async def _notify_owner_mysql_error_4031():
-    """Helper function to notify the bot owner about MySQL error 4031"""
+    """
+    Notify the bot owner when MySQL error 4031 (client disconnected by server)
+    is detected. Sends a Discord message asking them to restart the bot.
+    """
+
     try:
         global CustomClient
         if CustomClient is None:
@@ -78,14 +99,39 @@ async def _notify_owner_mysql_error_4031():
     except Exception as notify_error:
         logger.error(f"Failed to notify owner about MySQL error 4031: {notify_error}")
 
-created_sessions = Counter("armcobot_created_sessions", "Number of sessions created", labelnames=["scope"])
+created_sessions = Counter("armcobot_created_sessions_total", "Total number of sessions created", labelnames=["scope"])
 inflight_sessions = Gauge("armcobot_inflight_sessions", "Number of sessions currently in use", labelnames=["scope"])
 
 def fqn(func: Callable) -> str:
-    return f"{func.__module__}.{func.__qualname__}"
+    """
+    Return the fully qualified name of a callable (module path and name).
 
+    Args:
+        func: Any callable (function, method, etc.).
+
+    Returns:
+        A string like "module.submodule.function_name", with local and
+        lambda placeholders normalized.
+    """
+
+    return f"{func.__module__}.{func.__qualname__}".replace(".<locals>.", ".").replace("<lambda>", "lambda")
 
 def uses_db(sessionmaker):
+    """
+    Decorator that injects a SQLAlchemy scoped session as the `session` keyword
+    argument to the wrapped function. Commits on success, rolls back on
+    RollbackException or other exceptions. Handles MySQL error 4031 by
+    notifying the bot owner.
+
+    Args:
+        sessionmaker: A callable that returns a Session (e.g. sessionmaker()
+            from SQLAlchemy).
+
+    Returns:
+        A decorator that wraps sync or async functions and provides a
+        session. The wrapped function must accept a `session` keyword argument.
+    """
+
     session_scope = scoped_session(sessionmaker)
     def decorator(func):
         logger.debug(f"decorating {func.__name__}")
@@ -94,12 +140,10 @@ def uses_db(sessionmaker):
         new_signature = original_signature.replace(parameters=new_params)
         if inspect.iscoroutinefunction(func):
             @wraps(func)
-            async def wrapper(*args, **kwargs): 
+            async def wrapper(*args, **kwargs):
                 with session_scope() as session:
                     try:
                         logger.debug(f"calling {fqn(func)}")
-                        created_sessions.labels(scope="total").inc()
-                        inflight_sessions.labels(scope="total").inc()
                         created_sessions.labels(scope=fqn(func)).inc()
                         inflight_sessions.labels(scope=fqn(func)).inc()
                         result = await func(*args, session=session, **kwargs)
@@ -122,7 +166,7 @@ def uses_db(sessionmaker):
                             # Fall back to args[0] if errno not available
                             elif hasattr(e.orig, 'args') and len(e.orig.args) > 0:
                                 error_code = e.orig.args[0]
-                        
+
                         if error_code == 4031:
                             logger.error(f"MySQL OperationalError 4031 detected in {fqn(func)}, notifying owner")
                             try:
@@ -140,15 +184,12 @@ def uses_db(sessionmaker):
                         raise e
                     finally:
                         inflight_sessions.labels(scope=fqn(func)).dec()
-                        inflight_sessions.labels(scope="total").dec()
         else:
             @wraps(func)
             def wrapper(*args, **kwargs):
                 with session_scope() as session:
                     try:
                         logger.debug(f"calling {fqn(func)}")
-                        created_sessions.labels(scope="total").inc()
-                        inflight_sessions.labels(scope="total").inc()
                         created_sessions.labels(scope=fqn(func)).inc()
                         inflight_sessions.labels(scope=fqn(func)).inc()
                         result = func(*args, session=session, **kwargs)
@@ -171,7 +212,7 @@ def uses_db(sessionmaker):
                             # Fall back to args[0] if errno not available
                             elif hasattr(e.orig, 'args') and len(e.orig.args) > 0:
                                 error_code = e.orig.args[0]
-                        
+
                         if error_code == 4031:
                             logger.error(f"MySQL OperationalError 4031 detected in {fqn(func)}, notifying owner")
                             try:
@@ -198,13 +239,23 @@ def uses_db(sessionmaker):
                         raise e
                     finally:
                         inflight_sessions.labels(scope=fqn(func)).dec()
-                        inflight_sessions.labels(scope="total").dec()
         wrapper.__signature__ = new_signature # type: ignore[attr-defined]
         return wrapper
     return decorator
 
 
 def string_to_list(string: str) -> list[str]:
+    """
+    Parse a comma- or newline-separated string into a list of stripped
+    non-empty items. Used for parsing user input (e.g. unit names).
+
+    Args:
+        string: Input string (comma- or newline-separated).
+
+    Returns:
+        List of stripped strings (duplicates removed via set).
+    """
+
     if "\n" in string[:40]:
         string = set(string.split("\n")) # type: ignore
     else:
@@ -219,19 +270,25 @@ class RollingCounter:
 
         :param duration: Duration in seconds to keep each increment active. Must be > 0.
         """
+
         if duration <= 0:
             raise ValueError("Duration must be greater than 0.")
         self.duration = duration
         self.counter = 0
 
     def _decrement(self):
-        """Decrements the counter after the delay."""
+        """
+        Decrement the counter after the scheduled delay. Used internally
+        by the event loop after set() is called.
+        """
+
         self.counter -= 1
 
     def set(self):
         """
         Increments the counter and schedules a callback to decrement it after the duration.
         """
+
         self.counter += 1
 
         try:
@@ -254,14 +311,15 @@ class RollingCounter:
 
         :return: Average value (counter / duration)
         """
+
         return self.counter / self.duration
 
     def __str__(self):
         return str(self.counter) # make it easy to use in templates
-    
+
     def __repr__(self):
         return f"RollingCounter(duration={self.duration}, counter={self.counter})"
-    
+
     def __iadd__(self, _):
         """
         Increment the counter by 1, regardless of the value of the argument, and return the counter
@@ -269,7 +327,14 @@ class RollingCounter:
         self.set()
         return self
 
+
 class RollingCounterDict:
+    """
+    A dict of RollingCounters keyed by string. Each key has its own
+    auto-decrementing counter with the same duration. Used for per-key
+    rate limiting or counts.
+    """
+
     def __init__(self, duration: int):
         """
         Initializes a RollingCounterDict with a specified duration for each counter.
@@ -277,6 +342,7 @@ class RollingCounterDict:
         :param duration: Duration in seconds for each RollingCounter. Must be > 0.
         :param loop: Optional asyncio event loop to use. Defaults to asyncio.get_event_loop().
         """
+
         if duration <= 0:
             raise ValueError("Duration must be greater than 0.")
         self.duration = duration
@@ -299,6 +365,7 @@ class RollingCounterDict:
         :param key: The key for the counter.
         :return: The current value of the counter or 0.0.
         """
+
         if key in self.counters:
             return self.counters[key].get()
         return float(0)
@@ -318,6 +385,7 @@ class RollingCounterDict:
         :param key: The key for the counter.
         :return: The current value of the counter or 0.0.
         """
+
         return self.get(key)
 
     def __str__(self):
@@ -325,41 +393,67 @@ class RollingCounterDict:
         Returns a newline-separated string of the keys and their counts
         """
         return "\n".join([f"{key}: {self.get(key)}" for key in self.counters])
-    
+
     def values(self) -> list[int|float]:
         """
         Returns a list of the values of the counters
         """
+
         return [self.get(key) for key in self.counters]
-    
-def chunk_list(lst: list, chunk_size: int) -> list[list]:
-    """Splits a list into chunks of specified size."""
+
+def chunk_list(lst: T, chunk_size: int) -> list[T]:
+    """
+    Split a sequence into contiguous chunks of a given size.
+
+    Args:
+        lst: The sequence to chunk (e.g. list or str).
+        chunk_size: Maximum size of each chunk. Must be positive.
+
+    Returns:
+        A list of subsequences; the last may be shorter if len(lst)
+        is not divisible by chunk_size.
+
+    Raises:
+        ValueError: If chunk_size is less than or equal to zero.
+    """
+
     if chunk_size <= 0:
         raise ValueError("Chunk size must be greater than 0")
-    
+
     # Create chunks for all but the last chunk
     chunks = [lst[i:i + chunk_size] for i in range(0, len(lst) - len(lst) % chunk_size, chunk_size)]
-    
+
     # Handle the last chunk if there are remaining elements
     if len(lst) % chunk_size != 0:
         chunks.append(lst[-(len(lst) % chunk_size):])
-    
+
     return chunks
 
-P = TypeVar("P")
 
 class Paginator:
-    # a bidirectional iterator over a list of items, with a constrained view size
+    """
+    Bidirectional paginator over a list, exposing fixed-size "pages" (slices).
+    Used for Discord embeds or UIs that show a limited number of items per view.
+    """
+
     def __init__(self, items: list[P], view_size: int):
+        """
+        Build a paginator over `items`, with each page having up to `view_size` items.
+
+        Args:
+            items: The full list to paginate.
+            view_size: Maximum number of items per page.
+        """
+
         self.items = chunk_list(items, view_size)
         self.index = 0
 
     def __iter__(self) -> Iterator[list[P]]:
         return self
-    
+
     def next(self, is_iter: bool = False) -> list[P]:
         logger.debug(f"Paginator.next() called: current_index={self.index}, total_items={len(self.items)}, is_iter={is_iter}")
-        
+
         old_index = self.index
         self.index += 1
         if self.index >= len(self.items):
@@ -371,32 +465,42 @@ class Paginator:
                 logger.debug(f"Non-iterator mode: setting index to {len(self.items) - 1} and returning last item")
                 self.index = len(self.items) - 1
                 return self.items[self.index] # bump off the end and return the same item
-        
+
         logger.debug(f"Index incremented: {old_index} -> {self.index}, returning item at new index")
         return self.items[self.index]
-    
+
     def previous(self) -> list[P]:
         if self.index == 0:
             return self.items[self.index]
         self.index -= 1
         return self.items[self.index]
-    
+
     def __next__(self) -> list[P]:
         return self.next(True)
-    
+
     def current(self) -> list[P]:
         return self.items[self.index]
-    
+
     def has_next(self) -> bool:
         return self.index < len(self.items) - 1 if len(self.items) > 1 else False
-    
+
     def has_previous(self) -> bool:
         return self.index > 0 if len(self.items) > 1 else False
-    
+
     def __len__(self) -> int:
         return len(self.items)
-    
-async def callback_listener(callback: Coroutine, bind:str):
+
+async def callback_listener(callback: Coroutine, bind: str):
+    """
+    Run an HTTP server on `bind` (e.g. "127.0.0.1:12345") that invokes
+    `callback` on each request and responds with 200 OK. Used for shutdown
+    or health-check endpoints. Runs until the server is closed.
+
+    Args:
+        callback: A coroutine to run on each request (e.g. bot shutdown).
+        bind: "address:port" string for the server.
+    """
+
     address, port = bind.split(":")
 
     async def listener(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -434,7 +538,19 @@ async def callback_listener(callback: Coroutine, bind:str):
         return
 
 def check_notify(message: str = "You are not allowed to run this command"):
-    message = message.strip() 
+    """
+    Decorator that sends an ephemeral message when the wrapped async check
+    returns False. Used for permission checks on slash commands.
+
+    Args:
+        message: Message to send when the check fails. Defaults to a generic
+            permission-denied message.
+
+    Returns:
+        A decorator that wraps an async function (Interaction, ...) -> bool.
+    """
+
+    message = message.strip()
     def decorator(func: Callable[[Interaction], bool]):
         @wraps(func)
         async def wrapper(interaction: Interaction, *args, **kwargs):
@@ -449,7 +565,18 @@ def check_notify(message: str = "You are not allowed to run this command"):
 
 @check_notify(message="You don't have permission to run this command")
 async def is_management(interaction: Interaction, silent: bool = False) -> bool:
-    """Check if a user has management permissions"""
+    """
+    Check whether the interaction user has a management role. If not silent,
+    sends a permission-denied message on failure.
+
+    Args:
+        interaction: The Discord interaction (used for user and guild).
+        silent: If True, do not send a message when the check fails.
+
+    Returns:
+        True if the user has a management role, False otherwise.
+    """
+
     global CustomClient
     if CustomClient is None:
         from customclient import CustomClient
@@ -459,7 +586,18 @@ async def is_management(interaction: Interaction, silent: bool = False) -> bool:
     return valid
 
 async def is_management_no_notify(interaction: Interaction, silent: bool = False) -> bool:
-    """Check if a user has management permissions"""
+    """
+    Check whether the interaction user has a management role, without sending
+    any message on failure. Used when the caller will handle the response.
+
+    Args:
+        interaction: The Discord interaction (used for user and guild).
+        silent: If True, avoid logging the result.
+
+    Returns:
+        True if the user has a management role, False otherwise.
+    """
+
     global CustomClient
     if CustomClient is None:
         from customclient import CustomClient
@@ -469,7 +607,18 @@ async def is_management_no_notify(interaction: Interaction, silent: bool = False
     return valid
 
 async def is_gm(interaction: Interaction, silent: bool = False) -> bool:
-    """Check if a user has GM permissions"""
+    """
+    Check whether the interaction user is a GM (game master) or has management
+    permissions. Sends a permission-denied message on failure unless silent.
+
+    Args:
+        interaction: The Discord interaction (used for user and guild).
+        silent: If True, do not send a message when the check fails.
+
+    Returns:
+        True if the user has the GM role or a management role, False otherwise.
+    """
+
     is_management_result = await is_management(interaction, silent)
     is_gm_role = interaction.guild.get_role(CustomClient().gm_role) in interaction.user.roles
     if not silent:
@@ -485,6 +634,19 @@ def filter_df(df: pd.DataFrame, col_name: str, filter: set[str]) -> tuple[pd.Dat
     return df[mask], df[~mask]
 
 async def toggle_command_ban(desired_state: bool, initiator: str):
+    """
+    Enable or disable the global command ban (maintenance mode). When enabled,
+    only management can run commands. Updates interaction_check and
+    maintenance.flag; optionally notifies the comm channel.
+
+    Args:
+        desired_state: True to enable command ban, False to disable.
+        initiator: String identifying who triggered the change (for logging).
+
+    Returns:
+        The previous command-ban state (bool).
+    """
+
     global CustomClient
     if CustomClient is None:
         from customclient import CustomClient
@@ -492,7 +654,7 @@ async def toggle_command_ban(desired_state: bool, initiator: str):
     if current_state == desired_state:
         return current_state
     CustomClient().tree.interaction_check = CustomClient().check_banned_interaction if desired_state else CustomClient().no_commands
-    
+
     # Create/remove maintenance.flag file based on command ban state
     if not desired_state:
         # Command ban is active - create maintenance flag
@@ -508,7 +670,7 @@ async def toggle_command_ban(desired_state: bool, initiator: str):
             pass  # Ignore if file doesn't exist
         except Exception:
             pass  # Ignore other failures
-    
+
     if not desired_state:
         comm_net_id = EnvironHelpers.required_int("COMM_NET_CHANNEL_ID")
         if comm_net_id:
@@ -526,15 +688,33 @@ async def toggle_command_ban(desired_state: bool, initiator: str):
     return desired_state
 
 async def is_server(interaction: Interaction) -> bool:
-    """Check if a command is being run in a server"""
+    """
+    Check whether the interaction occurred in a guild (server) channel.
+
+    Args:
+        interaction: The Discord interaction.
+
+    Returns:
+        True if the interaction has a guild, False for DMs.
+    """
+
     return interaction.guild is not None
 
 async def is_dm(interaction: Interaction) -> bool:
-    """Check if a command is being run in a DM"""
+    """
+    Check whether the interaction occurred in a direct message (no guild).
+
+    Args:
+        interaction: The Discord interaction.
+
+    Returns:
+        True if the interaction is in a DM, False if in a guild.
+    """
+
     return interaction.guild is None
 
 def error_reporting(verbose: None | bool = None):
-    
+
     logger.debug(f"Applying @error_reporting with verbose={verbose}")
 
     format_error = (
@@ -550,14 +730,14 @@ def error_reporting(verbose: None | bool = None):
                 return await func(*args, **kwargs)
             except Exception as e:
                 error_msg = format_error(e)
-                
+
                 # Find the Interaction object in the arguments
                 interaction = None
                 for arg in args:
                     if isinstance(arg, discord.Interaction):
                         interaction = arg
                         break
-                
+
                 if interaction:
                     if interaction.response.is_done():
                         await interaction.followup.send(error_msg, ephemeral=True)
@@ -571,16 +751,38 @@ def error_reporting(verbose: None | bool = None):
     return decorator
 
 def on_error_decorator(counter: Counter):
+    """
+    Decorator that increments a Prometheus counter by guild and error type
+    before calling the wrapped error handler.
+
+    Args:
+        counter: A Prometheus Counter with labelnames including "guild_name"
+            and "error".
+
+    Returns:
+        A decorator for async (interaction, error) handlers.
+    """
+
     def decorator(func: Callable[[Interaction, Exception], Coroutine]):
         @wraps(func)
         async def wrapper(interaction: Interaction, error: Exception):
-            counter.labels(guild_name="total", error=type(error).__name__).inc()
             counter.labels(guild_name=interaction.guild.name if interaction.guild else "DMs", error=type(error).__name__).inc()
             return await func(interaction, error)
         return wrapper
     return decorator
 
 def inject(**_kwargs):
+    """
+    Decorator that injects fixed keyword arguments into every call to the
+    wrapped function. Caller-provided kwargs override injected ones.
+
+    Args:
+        **kwargs: Keyword arguments to inject (e.g. session=None for tests).
+
+    Returns:
+        A decorator that adds the given kwargs to the function's call.
+    """
+
     def decorator(func: Callable):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -605,6 +807,11 @@ def with_log_level(logger: Logger|str, level: int = logging.DEBUG):
     return decorator
 
 class RatelimitError(Exception):
+    """
+    Raised when a rate limit is exceeded (e.g. too many requests per user).
+    Used by rate-limiting logic to abort the current operation.
+    """
+
     def __init__(self, message: str = "Ratelimit exceeded"):
         super().__init__(message)
 
@@ -656,40 +863,42 @@ fuzzy_autocomplete_caches: list = []  # list of all the caches for the autocompl
 def fuzzy_autocomplete(column: ColumnElement[str], *union_columns: ColumnElement[str], not_null: bool = False):
     """
     Creates a fuzzy autocomplete function for Discord slash commands.
-    
+
     Args:
         column: The primary SQLAlchemy column to search
         *union_columns: Additional columns to search and union with the primary column
         not_null: Whether to filter out null values from the results
-    
+
     Returns:
         An async autocomplete function that can be used with Discord's @app_commands.autocomplete decorator
     """
+
     global CustomClient
     if CustomClient is None:
         from customclient import CustomClient
-    
+
     lookup = lru_cache(maxsize=100)(
         uses_db(CustomClient().sessionmaker)(
             lambda current, session: tuple(
                 row[0] for row in (
                     session.query(column.label("value"))
                     .filter((column.isnot(None)) if not_null else true())
-                    .union_all(*(session.query(union_column.label("value")) for union_column in union_columns))
+                    .filter(column.ilike(f"%{current}%") if current else true())
+                    .union_all(*(session.query(union_column.label("value"))
+                     .filter((union_column.isnot(None)) if not_null else true())
+                     .filter(union_column.ilike(f"%{current}%") if current else true())
+                     for union_column in union_columns))
                     .distinct()
                     .limit(25)
                     .all()
-                 if not current else
-                    session.query(column.label("value"))
-                    .filter(column.ilike(f"%{current}%"), (column.isnot(None)) if not_null else true())
-                    .union_all(*(session.query(union_column.label("value")).filter(union_column.ilike(f"%{current}%"), (union_column.isnot(None)) if not_null else true()) for union_column in union_columns))
-                    .distinct()
-                    .limit(25)
-                    .all()))))
-    
+                )
+            )
+        )
+    )
+
     async def autocomplete(interaction: Interaction, current: str):
         return [ac.Choice(name=item, value=item) for item in lookup(current.strip().lower())]
-    
+
     # Register the cache in the global registry
     fuzzy_autocomplete_caches.append(lookup)
     return autocomplete
@@ -700,6 +909,7 @@ class EnvironHelpers:
 
     This class is not instantiable, and is used as a namespace for the static methods.
     """
+
     def __new__(cls):
         raise TypeError(f"{cls.__name__} is static and cannot be instantiated")
 
@@ -712,9 +922,9 @@ class EnvironHelpers:
         """
         Convert a human-readable file size string into bytes.
 
-        This function takes a string representing a file size with units such as 
-        'KB', 'MB', 'GB', etc., and converts it into an integer representing the 
-        size in bytes. It supports both decimal (e.g., 'KB') and binary (e.g., 'KiB') 
+        This function takes a string representing a file size with units such as
+        'KB', 'MB', 'GB', etc., and converts it into an integer representing the
+        size in bytes. It supports both decimal (e.g., 'KB') and binary (e.g., 'KiB')
         prefixes.
 
         Parameters:
@@ -732,6 +942,7 @@ class EnvironHelpers:
         >>> EnvironHelpers._parse_size_bytes('5.5 GiB')
         5905580032
         """
+
         sizes = {
             "b": 1,
             "kb": 1000, "kib": 1024,
@@ -879,21 +1090,18 @@ class EnvironHelpers:
             raise EnvironmentError(f"{key} is not set")
         return [EnvironHelpers._parse_size_bytes(item) for item in v.split(separator)]
 
-P = ParamSpec("P")
-R = TypeVar("R")
-F = Callable[P, R]
 
 def maybe_decorate(condition: bool, decorator: Callable[[F], F]) -> Callable[[F], F]:
     def _apply(func: F) -> F:
         if not condition:
             if inspect.iscoroutinefunction(func):
                 @wraps(func)
-                async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                async def wrapper(*args: Ps.args, **kwargs: Ps.kwargs) -> R:
                     return await func(*args, **kwargs)
                 return cast(F, wrapper) if isinstance(func, FunctionType) else func
             else:
                 @wraps(func)
-                def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                def wrapper(*args: Ps.args, **kwargs: Ps.kwargs) -> R:
                     return func(*args, **kwargs)
                 return cast(F, wrapper) if isinstance(func, FunctionType) else func
 
@@ -907,23 +1115,23 @@ def maybe_decorate(condition: bool, decorator: Callable[[F], F]) -> Callable[[F]
         if inspect.iscoroutinefunction(decorated):
             if getattr(decorated, "__wrapped__", None) is None:
                 @wraps(func)
-                async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                async def wrapper(*args: Ps.args, **kwargs: Ps.kwargs) -> R:
                     return await decorated(*args, **kwargs)
                 return cast(F, wrapper)
             else:
                 @wraps(decorated)
-                async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                async def wrapper(*args: Ps.args, **kwargs: Ps.kwargs) -> R:
                     return await decorated(*args, **kwargs)
                 return cast(F, wrapper)
         else:
             if getattr(decorated, "__wrapped__", None) is None:
                 @wraps(func)
-                def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                def wrapper(*args: Ps.args, **kwargs: Ps.kwargs) -> R:
                     return decorated(*args, **kwargs)
                 return cast(F, wrapper)
             else:
                 @wraps(decorated)
-                def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                def wrapper(*args: Ps.args, **kwargs: Ps.kwargs) -> R:
                     return decorated(*args, **kwargs)
                 return cast(F, wrapper)
 
@@ -935,6 +1143,7 @@ def hide_arg(arg_name: str, default: Any) -> Callable[[F], F]:
     so frameworks like discord.app_commands do not see it. At call time, inject
     `arg_name=default`. We do not accept callers passing this arg explicitly.
     """
+
     def _decorator(func: F) -> F:
         sig = Signature.from_callable(func)
         if arg_name not in sig.parameters:
@@ -999,6 +1208,23 @@ def hide_arg(arg_name: str, default: Any) -> Callable[[F], F]:
     return _decorator
 
 def chunked_join(items: Iterable[str], chunk_size: int = 2000, separator: str = " ") -> Generator[str, None, None]:
+    """
+    Join strings into chunks that do not exceed chunk_size (e.g. Discord
+    message limit). Yields one chunk per iteration. Useful for splitting
+    long messages into multiple sends.
+
+    Args:
+        items: Strings to join (e.g. list of lines).
+        chunk_size: Maximum length of each chunk. Must be positive.
+        separator: String to insert between items (default space).
+
+    Yields:
+        Chunks of joined strings, each at most chunk_size characters.
+
+    Raises:
+        ValueError: If chunk_size is less than or equal to zero.
+    """
+
     if chunk_size <= 0:
         raise ValueError("Chunk size must be greater than 0")
     current_chunk = ""
@@ -1014,3 +1240,38 @@ def chunked_join(items: Iterable[str], chunk_size: int = 2000, separator: str = 
         current_length += len(item) + len(separator)
     if current_chunk:
         yield current_chunk
+
+
+async def chunked_send(
+    interaction: Interaction,
+    text: str,
+    ephemeral: bool,
+    chunk_size: int = 2000,
+) -> None:
+    """
+    Send text to a Discord interaction in chunks that do not exceed chunk_size,
+    using chunk_list (strings are iterables, so text is chunked by character).
+
+    Args:
+        interaction: The Discord interaction (response or followup used as needed).
+        text: The full text to send.
+        ephemeral: Whether messages are ephemeral.
+        chunk_size: Maximum characters per chunk (default 2000).
+    """
+    if not text:
+        if interaction.response.is_done():
+            await interaction.followup.send("", ephemeral=ephemeral)
+        else:
+            await interaction.response.send_message("", ephemeral=ephemeral)
+        return
+    if len(text) <= chunk_size:
+        if interaction.response.is_done():
+            await interaction.followup.send(text, ephemeral=ephemeral)
+        else:
+            await interaction.response.send_message(text, ephemeral=ephemeral)
+        return
+    chunks = chunk_list(text, chunk_size)
+    send_first = interaction.followup.send if interaction.response.is_done() else interaction.response.send_message
+    await send_first(chunks[0], ephemeral=ephemeral)
+    for chunk in chunks[1:]:
+        await interaction.followup.send(chunk, ephemeral=ephemeral)

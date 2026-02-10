@@ -1,55 +1,65 @@
-from logging import getLogger
-from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, ui, SelectOption, TextStyle
 from io import BytesIO
+from logging import getLogger
+
 import discord
-from models import Faq as Faq_model
-import templates as tmpl
-from utils import uses_db, chunk_list, RollingCounterDict
-from customclient import CustomClient
+from discord import Interaction, app_commands as ac, ui, SelectOption, TextStyle
+from discord.ext.commands import GroupCog
+from prometheus_client import Counter
 from sqlalchemy.orm import Session
-from os import getenv
-from prometheus_client import Gauge
+import templates as tmpl
+
+from customclient import CustomClient
+from models import Faq as Faq_model
+from utils import EnvironHelpers, maybe_decorate, uses_db, chunk_list, RollingCounterDict
+
 logger = getLogger(__name__)
 
-total_views = 0
-faq_queries_metric = Gauge("armcobot_faq_queries", "The number of FAQ queries")
-faq_queries_metric.set_function(lambda: total_views)
+_register_full_faq = not EnvironHelpers.get_bool("SIMPLE_FAQ", False)
+
+faq_queries_metric = Counter("armcobot_faq_queries_total", "Total number of FAQ queries")
 
 async def is_answerer(interaction: Interaction):
         """
         Checks if the user is an answerer
         """
+
         # Check if user is one of the authorized users
         authorized_users = {
-            int(getenv("BOT_OWNER_ID")), 
-            int(getenv("BOT_OWNER_ID_2")), 
-            int(getenv("FAQ_ANSWERER_1")), 
-            int(getenv("FAQ_ANSWERER_2"))
+            EnvironHelpers.get_int("BOT_OWNER_ID", 0),
+            EnvironHelpers.get_int("BOT_OWNER_ID_2", 0),
+            EnvironHelpers.get_int("FAQ_ANSWERER_1", 0),
+            EnvironHelpers.get_int("FAQ_ANSWERER_2", 0),
         }
-        
+
         # Check if user has any of the mod roles
-        mod_roles = {int(getenv("MOD_ROLE_1")), int(getenv("MOD_ROLE_2"))}
-        
+        mod_roles = {EnvironHelpers.get_int("MOD_ROLE_1", 0), EnvironHelpers.get_int("MOD_ROLE_2", 0)}
+
         # Check if user ID is in authorized users
         if interaction.user.id in authorized_users:
             return True
-            
+
         if interaction.guild:
             user_roles = {role.id for role in interaction.user.roles}
             if user_roles & mod_roles:  # Check intersection
                 return True
-        
+
         # User is not authorized
         await interaction.response.send_message(tmpl.not_authorized, ephemeral=True)
         return False
 
 counters = RollingCounterDict(24*60*60)
-class Faq(GroupCog):
-    def __init__(self, bot: Bot):
+class Faq(GroupCog, description="FAQ: view, add, remove, edit, list questions and stats."):
+    """
+    Cog for FAQ slash commands: view, add, remove, edit, list, and stats.
+    Manages FAQ questions and answers stored in the database.
+    """
+
+    def __init__(self, bot: CustomClient):
+        """Store a reference to the bot instance."""
+
         self.bot = bot
-        
- 
+
+
 
     @ac.command(name="how", description="How to use the FAQ")
     async def how(self, interaction: Interaction):
@@ -58,13 +68,14 @@ class Faq(GroupCog):
         """
         await interaction.response.send_message(tmpl.faq_how_to_use, ephemeral=False) # ephemeral=False to allow other users to help new people find the FAQ
 
-    
-    @ac.command(name="view", description="View the FAQ")
+
+    @maybe_decorate(_register_full_faq, ac.command(name="view", description="View the FAQ"))
     @uses_db(CustomClient().sessionmaker)
     async def view(self, interaction: Interaction, session: Session):
         """
         Displays the FAQ for S.A.M.
         """
+
         faq_questions = session.query(Faq_model).all()
         if not faq_questions:
             await interaction.response.send_message(tmpl.faq_no_questions, ephemeral=True)
@@ -76,10 +87,9 @@ class Faq(GroupCog):
                 super().__init__(*args, **kwargs)
             @uses_db(CustomClient().sessionmaker)
             async def callback(self, interaction: Interaction, session: Session):
-                global total_views
                 selected_question = session.query(Faq_model).filter(Faq_model.id == int(self.values[0])).first()
                 counters[selected_question.question] += 1
-                total_views += 1
+                faq_queries_metric.inc()
                 await interaction.response.send_message(tmpl.faq_response.format(selected=selected_question), ephemeral=True)
         faq_dropdowns = [FaqDropdown(placeholder="Select a question", options=chunk) for chunk in faq_chunks]
         view = ui.View()
@@ -87,7 +97,7 @@ class Faq(GroupCog):
             view.add_item(dropdown)
         await interaction.response.send_message(tmpl.faq_select_question, view=view, ephemeral=True)
 
-    @ac.command(name="add", description="Add a question to the FAQ")
+    @maybe_decorate(_register_full_faq, ac.command(name="add", description="Add a question to the FAQ"))
     @ac.check(is_answerer)
     @uses_db(CustomClient().sessionmaker)
     async def add(self, interaction: Interaction, session: Session):
@@ -112,13 +122,14 @@ class Faq(GroupCog):
         modal.on_submit = modal_callback
         await interaction.response.send_modal(modal)
 
-    @ac.command(name="remove", description="Remove a question from the FAQ")
+    @maybe_decorate(_register_full_faq, ac.command(name="remove", description="Remove a question from the FAQ"))
     @ac.check(is_answerer)
     @uses_db(CustomClient().sessionmaker)
     async def remove(self, interaction: Interaction, session: Session):
         """
         Removes a question from the FAQ
         """
+
         # send a dropdown with the questions
         faq_questions = session.query(Faq_model).all()
         if not faq_questions:
@@ -141,7 +152,7 @@ class Faq(GroupCog):
             view.add_item(dropdown)
         await interaction.response.send_message(tmpl.faq_select_question, view=view, ephemeral=True)
 
-    @ac.command(name="edit", description="Edit a question in the FAQ")
+    @maybe_decorate(_register_full_faq, ac.command(name="edit", description="Edit a question in the FAQ"))
     @ac.check(is_answerer)
     @uses_db(CustomClient().sessionmaker)
     async def edit(self, interaction: Interaction, session: Session):
@@ -183,26 +194,28 @@ class Faq(GroupCog):
             view.add_item(dropdown)
         await interaction.response.send_message(tmpl.faq_select_question, view=view, ephemeral=True)
 
-    @ac.command(name="list", description="List all the FAQ questions")
+    @maybe_decorate(_register_full_faq, ac.command(name="list", description="List all the FAQ questions"))
     @uses_db(CustomClient().sessionmaker)
     async def list(self, interaction: Interaction, session: Session):
         """
         Lists all the FAQ questions
         """
+
         faq_questions = session.query(Faq_model.question).all()
         faq_questions_str = "\n".join([f"{index + 1}. {question[0]}" for index, question in enumerate(faq_questions)])
         await interaction.response.send_message(faq_questions_str, ephemeral=True)
 
-    @ac.command(name="stats", description="View the FAQ stats")
+    @maybe_decorate(_register_full_faq, ac.command(name="stats", description="View the FAQ stats"))
     async def stats(self, interaction: Interaction):
         """
         Views the FAQ stats
         """
+
         response = "FAQ stats:\n" + str(counters)
         response = response[:2000]
         await interaction.response.send_message(response, ephemeral=True)
 
-    @ac.command(name="questionfile", description="Get the question file")
+    @maybe_decorate(_register_full_faq, ac.command(name="questionfile", description="Get the question file"))
     @ac.check(is_answerer)
     @uses_db(CustomClient().sessionmaker)
     async def questionfile(self, interaction: Interaction, session: Session):
@@ -216,11 +229,9 @@ class Faq(GroupCog):
         dfile = discord.File(file, filename="faq.md")
         await interaction.response.send_message(tmpl.faq_file_here, ephemeral=True, file=dfile)
 
-bot: Bot | None = None
-async def setup(_bot: Bot):
-    global bot
-    bot = _bot
-    await bot.add_cog(Faq(bot))
+async def setup(_bot: CustomClient):
+    await _bot.add_cog(Faq(_bot))
 
-async def teardown():
-    bot.remove_cog(Faq.__name__) # remove_cog takes a string, not a class
+
+async def teardown(_bot: CustomClient):
+    _bot.remove_cog(Faq.__name__)  # remove_cog takes a string, not a class

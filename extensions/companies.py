@@ -1,17 +1,27 @@
-from logging import getLogger
-from discord.ext.commands import GroupCog, Bot
-from discord import Interaction, app_commands as ac, ui, TextStyle, Member, User
-from models import Player, Unit, UnitStatus
-from customclient import CustomClient
-import templates as tmpl
-import os
-from utils import has_invalid_url, uses_db, EnvironHelpers, error_reporting
-from sqlalchemy.orm import Session
 import asyncio
+import os
+from logging import getLogger
+
+from discord import Interaction, app_commands as ac, ui, TextStyle, Member, User
+from discord.ext.commands import GroupCog
+from sqlalchemy.orm import Session
+import templates as tmpl
+
+from customclient import CustomClient
+from models import Player, Unit, UnitStatus
+from utils import has_invalid_url, uses_db, EnvironHelpers, error_reporting
+
 logger = getLogger(__name__)
 
-class Company(GroupCog):
-    def __init__(self, bot: Bot):
+class Company(GroupCog, description="Meta Campaign company: create, edit, show, refresh."):
+    """
+    Cog for the company slash command: create a new Meta Campaign company
+    (player record). Used when a user first joins the system.
+    """
+
+    def __init__(self, bot: CustomClient):
+        """Store a reference to the bot instance."""
+
         self.bot = bot
 
     @ac.command(name="create", description="Create a new Meta Campaign company")
@@ -24,7 +34,7 @@ class Company(GroupCog):
             logger.debug(f"User {interaction.user.display_name} already has a Meta Campaign company")
             await interaction.response.send_message(tmpl.already_have_company, ephemeral=self.bot.use_ephemeral)
             return
-        
+
         # create a new Player in the database
         player = Player(discord_id=interaction.user.id, name=interaction.user.name, rec_points=EnvironHelpers.required_int("INITIAL_REQ"))
         session.add(player)
@@ -106,13 +116,11 @@ class Company(GroupCog):
         self.bot.queue.put_nowait((1, player, 0))
         await interaction.response.send_message(tmpl.company_refreshed, ephemeral=CustomClient().use_ephemeral)
 
-bot: Bot = None
-async def setup(_bot: Bot):
-    global bot
-    bot = _bot
+async def setup(_bot: CustomClient):
     logger.info("Setting up Company cog")
-    await bot.add_cog(Company(bot))
+    await _bot.add_cog(Company(_bot))
 
-async def teardown():
+
+async def teardown(_bot: CustomClient):
     logger.info("Tearing down Company cog")
-    bot.remove_cog(Company.__name__) # remove_cog takes a string, not a class
+    _bot.remove_cog(Company.__name__)  # remove_cog takes a string, not a class

@@ -1,8 +1,8 @@
 import discord
 from discord import Interaction
 from discord.ext import commands
-from os import getenv
 from dotenv import load_dotenv
+from utils import EnvironHelpers
 
 load_dotenv("sensitive.env")
 
@@ -61,4 +61,4 @@ class CustomModal(discord.ui.Modal, title="Test Modal"):
 # Example of running the test bot
 if __name__ == "__main__":
     bot = TestClient()
-    bot.run(getenv("BOT_TOKEN"))
+    bot.run(EnvironHelpers.required_str("BOT_TOKEN"))

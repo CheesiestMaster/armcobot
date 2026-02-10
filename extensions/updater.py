@@ -1,19 +1,30 @@
-from logging import getLogger
-from discord.ext.commands import GroupCog, Bot
-from discord.ext import tasks
-from discord import Interaction, app_commands as ac
 import asyncio
-import os
 import datetime
+import os
+from logging import getLogger
+
+from discord import Interaction, app_commands as ac
+from discord.ext.commands import GroupCog
+from discord.ext import tasks
 import templates as tmpl
+
+from customclient import CustomClient
 from utils import EnvironHelpers
+
 logger = getLogger(__name__)
 
-class Updater(GroupCog):
-    def __init__(self, bot: Bot):
+class Updater(GroupCog, description="Daily git update check; notifies owner when updates available."):
+    """
+    Cog that runs a daily check for git updates and notifies the bot owner
+    when updates are available. No slash commands; only a background loop.
+    """
+
+    def __init__(self, bot: CustomClient):
+        """Store bot reference and start the daily update check loop."""
+
         self.bot = bot
         self.daily_update_check.start()
-    
+
     @tasks.loop(time=datetime.time(hour=8))
     async def daily_update_check(self):
         process = await asyncio.create_subprocess_exec("git", "fetch", "--dry-run", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -25,13 +36,11 @@ class Updater(GroupCog):
             owner = await self.bot.fetch_user(EnvironHelpers.required_int("BOT_OWNER_ID"))
             await owner.send("An Update is available")
 
-bot: Bot = None
-async def setup(_bot: Bot):
-    global bot
-    bot = _bot
+async def setup(_bot: CustomClient):
     logger.info("Setting up Updater")
-    await bot.add_cog(Updater(bot))
+    await _bot.add_cog(Updater(_bot))
 
-async def teardown():
+
+async def teardown(_bot: CustomClient):
     logger.info("Tearing down Updater")
-    bot.remove_cog(Updater.__name__) # remove_cog takes a string, not a class
+    _bot.remove_cog(Updater.__name__)  # remove_cog takes a string, not a class

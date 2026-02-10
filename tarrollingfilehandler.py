@@ -1,8 +1,8 @@
+import logging
 import os
 import tarfile
-import logging
-from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
+from logging.handlers import TimedRotatingFileHandler
 
 class TarRotatingFileHandler(TimedRotatingFileHandler):
     def __init__(self, filename, when="midnight", interval=1, backupCount=7, encoding=None, delay=False, utc=False):
@@ -14,7 +14,7 @@ class TarRotatingFileHandler(TimedRotatingFileHandler):
         Override doRollover to create a tar.gz archive of all rotated logs when backupCount is reached.
         """
         self.stream.close()
-        
+
         # Get list of rotated log files
         log_prefix = os.path.basename(self.baseFilename) + "."
         old_logs = sorted(
@@ -40,7 +40,7 @@ class TarRotatingFileHandler(TimedRotatingFileHandler):
 
         # Perform normal rotation (creates a new empty log file)
         super().doRollover()
-        
+
         # Reopen log file for new entries
         self.mode = 'a'
         self.stream = self._open()

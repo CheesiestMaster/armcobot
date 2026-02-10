@@ -1,7 +1,9 @@
+import logging
+
+from prometheus_client import Counter
+
 from ansicolor import AnsiColor
 from utils import RollingCounter
-import logging
-from prometheus_client import Gauge
 
 COLORS = {
     logging.DEBUG: AnsiColor.CYN_CLR,
@@ -28,10 +30,18 @@ stats = {
     "total_total": 0,
 }
 
-log_counts_metric = Gauge("armcobot_log_counts", "The number of logs", labelnames=["count_type", "log_level"])
+log_counts_metric = Counter("armcobot_log_counts_total", "Total number of log records", labelnames=["log_level"])
 
 class ColoredFormatter(logging.Formatter):
+    """
+    Logging formatter that adds ANSI color codes to log level names in
+    the formatted output. Also updates RollingCounter stats and
+    Prometheus log_counts_metric by level.
+    """
+
     def __init__(self, *args, **kwargs):
+        """Initialize with a copy of the level-to-color mapping."""
+
         self.COLORS = COLORS.copy()
         super().__init__(*args, **kwargs)
 
@@ -39,16 +49,12 @@ class ColoredFormatter(logging.Formatter):
         color = self.COLORS.get(record.levelno, AnsiColor.WHT_CLR)
         stats[f"today_{record.levelname}"].set()
         stats["today_total"].set()
-         
+
         stats[f"total_{record.levelname}"] += 1
         stats["total_total"] += 1
-        
-        # Update Prometheus metrics
-        log_counts_metric.labels(count_type="today", log_level=record.levelname).set(stats[f"today_{record.levelname}"].get())
-        log_counts_metric.labels(count_type="today", log_level="total").set(stats["today_total"].get())
-        log_counts_metric.labels(count_type="total", log_level=record.levelname).set(stats[f"total_{record.levelname}"])
-        log_counts_metric.labels(count_type="total", log_level="total").set(stats["total_total"])
-        
+
+        log_counts_metric.labels(log_level=record.levelname).inc()
+
         record.msg = f"{color.value}{record.msg}{AnsiColor.RESET.value}"
         return super().format(record)
 

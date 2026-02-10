@@ -1,7 +1,7 @@
-from os import remove
-from typing import BinaryIO, Union, Optional
-from pathlib import Path
 import logging
+from os import remove
+from pathlib import Path
+from typing import BinaryIO, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class FileRoller:
             last_file = self.path.with_name(f"{self.path.stem}.{self.max_count - 1}{original_suffix}")
             if last_file.exists():
                 remove(last_file)
-            
+
             for i in range(self.max_count - 1, -1, -1):
                 current_file = self.path.with_name(f"{self.path.stem}.{i}{original_suffix}")
                 next_file = self.path.with_name(f"{self.path.stem}.{i + 1}{original_suffix}")
@@ -53,7 +53,7 @@ class FileRoller:
         else:
             suffixes = [int(p.stem.split('.')[-1]) for p in self.path.parent.glob(f"{self.path.stem}.*{original_suffix}") if p.stem.split('.')[-1].isdigit()]
             max_suffix = max(suffixes, default=0)
-            
+
             for i in range(max_suffix, 0, -1):
                 current_file = self.path.with_name(f"{self.path.stem}.{i}{original_suffix}")
                 next_file = self.path.with_name(f"{self.path.stem}.{i + 1}{original_suffix}")

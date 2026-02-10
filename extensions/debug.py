@@ -1,37 +1,46 @@
 import asyncio
-from discord.ext.tasks import Loop
+import os
+import random
+from asyncio import QueueEmpty
+from datetime import datetime, timedelta
+from io import BytesIO
 from logging import getLogger
 import logging
 from pathlib import Path
-from discord.ext.commands import GroupCog, Bot, Cog
+
 from discord import Interaction, app_commands as ac, ui, TextStyle, Embed, SelectOption, Forbidden, HTTPException, Message, NotFound, TextChannel, File
+from discord.ext.commands import GroupCog, Cog
+from discord.ext.tasks import Loop, loop
 from dotenv import dotenv_values
-from sqlalchemy import text, func
-import os
-from models import Player, Statistic, Dossier, Campaign, CampaignInvite, Unit, UnitStatus
-from asyncio import QueueEmpty
-import random
-from customclient import CustomClient
-from coloredformatter import stats
-from utils import EnvironHelpers, error_reporting, uses_db, toggle_command_ban, is_server
-from sqlalchemy.orm import Session
-from sqlalchemy import exists
-import templates as tmpl
-from datetime import datetime, timedelta
-from psutil import Process
-from MessageManager import MessageManager
-from discord.ext.tasks import loop
-from io import BytesIO
 from prometheus_client import generate_latest
+from psutil import Process
+from sqlalchemy import text, func, exists
+from sqlalchemy.orm import Session
+import templates as tmpl
+
+from coloredformatter import stats
+from customclient import CustomClient
+from MessageManager import MessageManager
+from models import Player, Statistic, Dossier, Campaign, CampaignInvite, Unit, UnitStatus
+from utils import EnvironHelpers, chunked_send, error_reporting, uses_db, toggle_command_ban, is_server
+
 logger = getLogger(__name__)
 
 process: Process = None
 
-class Debug(GroupCog):
+class Debug(GroupCog, description="Debug: reload extensions/strings, clear messages, query, and more. Mods only."):
+    """
+    Cog for debug slash commands: reload extensions, reload strings,
+    clear deletable messages, and other development utilities.
+    Restricted to moderators.
+    """
+
     def __init__(self, bot: CustomClient):
+        """Store bot reference, set up extension list and context menus."""
+
         global process
         self.bot = bot
- 
+
         self.interaction_check = self._is_mod
         # get the list of extensions from the disk, and create a list of them for the autocomplete
         self.extensions = [f.stem for f in Path("extensions").glob("*.py") if f.stem != "__init__"]
@@ -48,7 +57,7 @@ class Debug(GroupCog):
     async def _is_mod(self, interaction: Interaction):
         try:
             logger.debug(f"Checking if {interaction.user.global_name} is a mod")
-            
+
             # Try to use MAIN_GUILD_ID from environment first
             main_guild_id = EnvironHelpers.required_int("MAIN_GUILD_ID")
             if main_guild_id:
@@ -58,11 +67,11 @@ class Debug(GroupCog):
                 # Fall back to interaction guild if environment variable is not set
                 casting_guild = interaction.guild if interaction.guild else None
                 logger.debug("Using interaction guild as fallback")
-            
+
             if casting_guild is None:
                 logger.debug("No guild available for mod check")
                 return False
-                
+
             cast_user = casting_guild.get_member(interaction.user.id)
             logger.debug(f"Casting user: {cast_user}")
             valid = any(cast_user.get_role(role_id) for role_id in self.bot.mod_roles)
@@ -102,7 +111,7 @@ class Debug(GroupCog):
     if EnvironHelpers.get_bool("LOOP_ACTIVE"):
         @ac.command(name="restart", description="Restart the bot")
         async def restart(self, interaction: Interaction):
-            logger.info("Restart command invoked") 
+            logger.info("Restart command invoked")
             if interaction: # allow the command to be used internally as well as in discord, we can pass None to use it internally and it will not try to send a message
                 await interaction.response.send_message(tmpl.restarting_bot)
             await self.bot.close() # this will trigger the start.sh script to restart, if we used kill it would completely stop the script
@@ -116,7 +125,7 @@ class Debug(GroupCog):
             open("update.flag", "w").close()
             await self.bot.close()
 
-        
+
     @ac.command(name="reload_strings", description="Reload the templates module")
     async def reload_strings(self, interaction: Interaction):
         """Reload the templates module to refresh string templates."""
@@ -125,7 +134,7 @@ class Debug(GroupCog):
         try:
             import importlib
             import sys
-            
+
             # Check if user_templates exists and is loaded
             if 'user_templates' in sys.modules:
                 try:
@@ -133,21 +142,21 @@ class Debug(GroupCog):
                 except (ImportError, ModuleNotFoundError):
                     # Handle case where user_templates was deleted or can't be reloaded
                     pass
-            
+
             # Always reload templates.py
             import templates
             importlib.reload(templates)
-            
+
             # Reload all modules that import templates
             modules_to_reload = [
                 'customclient',
                 'extensions.shop',
-                'extensions.faq', 
+                'extensions.faq',
                 'extensions.companies',
                 'extensions.updater',
                 'extensions.campaigns'
             ]
-            
+
             for module_name in modules_to_reload:
                 if module_name in sys.modules:
                     try:
@@ -155,7 +164,7 @@ class Debug(GroupCog):
                         logger.info(f"Reloaded {module_name}")
                     except Exception as e:
                         logger.warning(f"Failed to reload {module_name}: {e}")
-            
+
             # Update the global tmpl reference
             import templates as tmpl
             await interaction.response.send_message(tmpl.debug_reload_success, ephemeral=self.bot.use_ephemeral)
@@ -213,13 +222,13 @@ class Debug(GroupCog):
                     # Split query on semicolons and run sequentially
                     queries = [q.strip() for q in sql_query.split(';') if q.strip()]
                     logger.info(f"Running {len(queries)} queries sequentially")
-                    
+
                     all_results = []
                     for i, query in enumerate(queries):
                         logger.info(f"Running query {i+1}/{len(queries)}: {query}")
                         try:
                             result = session.execute(text(query))
-                            
+
                             try:
                                 rows = result.fetchall()
                                 all_results.append((i+1, query, rows))
@@ -232,11 +241,11 @@ class Debug(GroupCog):
                             # If the query execution itself fails, propagate the exception immediately
                             logger.error(f"Query {i+1} failed: {query_error}")
                             raise query_error
-                    
+
                     # Single commit for all queries to maintain transactional atomicity
                     session.commit()
                     logger.info("All queries committed successfully")
-                    
+
                     # Build response message
                     response_text = ""
                     for query_num, query, rows in all_results:
@@ -244,10 +253,10 @@ class Debug(GroupCog):
                             response_text += f"**Query {query_num}:**\n```{query}```\n**Result:**\n```{rows}```\n\n"
                         else:
                             response_text += f"**Query {query_num}:**\n```{query}```\n**Result:** No rows returned\n\n"
-                    
+
                     # Chunk the response if it's too large
-                    await self._send_chunked_response(_interaction, response_text)
-                        
+                    await chunked_send(_interaction, response_text, self.bot.use_ephemeral)
+
                 except Exception as e:
                     logger.error(f"Error running query: {e}")
                     # Rollback on error to maintain transactional atomicity
@@ -272,59 +281,12 @@ class Debug(GroupCog):
                 rows = result.fetchall()
             except Exception:
                 rows = None
-            
+
             response_text = tmpl.debug_query_result.format(rows=rows) if rows else tmpl.debug_query_no_rows
-            await self._send_chunked_response(interaction, response_text)
+            await chunked_send(interaction, response_text, self.bot.use_ephemeral)
         except Exception as e:
             logger.error(f"Error running query: {e}")
             await interaction.response.send_message(tmpl.debug_query_error.format(e=e), ephemeral=self.bot.use_ephemeral)
-
-    async def _send_chunked_response(self, interaction: Interaction, text: str, chunk_size: int = 2000):
-        """
-        Send a response in chunks if it exceeds the Discord message limit.
-        
-        Args:
-            interaction: The Discord interaction
-            text: The text to send
-            chunk_size: Maximum characters per chunk (default 2000)
-        """
-        if len(text) <= chunk_size:
-            # Single message is fine
-            if interaction.response.is_done():
-                await interaction.followup.send(text, ephemeral=self.bot.use_ephemeral)
-            else:
-                await interaction.response.send_message(text, ephemeral=self.bot.use_ephemeral)
-            return
-        
-        # Need to chunk the response
-        chunks = []
-        current_chunk = ""
-        
-        # Split by lines to avoid breaking in the middle of a line
-        lines = text.split('\n')
-        
-        for line in lines:
-            # If adding this line would exceed chunk size, start a new chunk
-            if len(current_chunk) + len(line) + 1 > chunk_size:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = line
-            else:
-                current_chunk += ('\n' + line) if current_chunk else line
-        
-        # Add the last chunk if it has content
-        if current_chunk:
-            chunks.append(current_chunk)
-        
-        # Send the first chunk as the main response
-        if interaction.response.is_done():
-            await interaction.followup.send(chunks[0], ephemeral=self.bot.use_ephemeral)
-        else:
-            await interaction.response.send_message(chunks[0], ephemeral=self.bot.use_ephemeral)
-        
-        # Send remaining chunks as followups
-        for chunk in chunks[1:]:
-            await interaction.followup.send(chunk, ephemeral=self.bot.use_ephemeral)
 
     @uses_db(CustomClient().sessionmaker)
     async def botcompany(self, interaction: Interaction, _: MessageManager, session: Session):
@@ -350,7 +312,7 @@ class Debug(GroupCog):
         rp_modal.on_submit = on_submit
         await interaction.response.send_modal(rp_modal)
 
-    
+
     async def dump_queue(self, interaction: Interaction, _: MessageManager):
         await interaction.response.defer()
         while not self.bot.queue.empty():
@@ -362,7 +324,10 @@ class Debug(GroupCog):
 
     @ac.command(name="clear_deletable", description="Deletes all deletable messages in the channel.")
     async def clear_deletable(self, interaction: Interaction, limit: int = 100):
-        """Deletes all deletable messages in the channel."""
+        """
+        Delete up to `limit` deletable messages in the channel.
+        Used to clean up old bot messages.
+        """
         channel = interaction.channel
 
         # Fetch the last 100 messages (you can adjust this number as needed)
@@ -383,7 +348,7 @@ class Debug(GroupCog):
 
         await interaction.response.send_message(tmpl.all_deletable_cleared, ephemeral=True)
 
-    
+
     async def stats(self, interaction: Interaction, _: MessageManager):
         uptime: timedelta = datetime.now() - self.bot.start_time
         version = self.bot.version
@@ -427,7 +392,7 @@ class Debug(GroupCog):
             return
         await toggle_command_ban(is_banned, interaction.user.mention)
         await interaction.response.send_message(tmpl.debug_command_ban_toggle.format(action='disabled' if is_banned else 'enabled'), ephemeral=self.bot.use_ephemeral)
-        
+
     @ac.command(name="fkcheck", description="Validate External Foreign Keys")
     async def fkcheck(self, interaction: Interaction):
         if not await is_server(interaction):
@@ -538,20 +503,20 @@ class Debug(GroupCog):
         """Get the current log file opened by __main__.file_handler as a Discord file."""
         logger.debug(f"Logfile command invoked by {interaction.user.id} ({interaction.user.global_name})")
         await interaction.response.defer(ephemeral=True)
-        
+
         # Get the log file path from environment
         log_file_path = EnvironHelpers.required_str("LOG_FILE")
         logger.debug(f"Log file path from environment: {log_file_path}")
-        
+
         if not log_file_path or not os.path.exists(log_file_path):
             logger.debug(f"Log file not found or not configured: {log_file_path}")
             await interaction.followup.send("Log file not found or not configured", ephemeral=True)
             return
-        
+
         logger.debug(f"Log file exists, creating Discord file object")
         # Create a Discord file directly from the log file
         discord_file = File(log_file_path, filename=f"armco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
-        
+
         logger.debug(f"Sending log file to user: {discord_file.filename}")
         await interaction.followup.send(
             f"Current log file:",
@@ -565,17 +530,17 @@ class Debug(GroupCog):
         """Get the latest Prometheus metrics in Prometheus text format."""
         logger.debug(f"Prom command invoked by {interaction.user.id} ({interaction.user.global_name})")
         await interaction.response.defer(ephemeral=True)
-        
+
         try:
             # Generate the latest Prometheus metrics
             metrics_data = generate_latest()
-            
+
             # Create a BytesIO object from the metrics data
             metrics_bytes = BytesIO(metrics_data)
-            
+
             # Create a Discord file
             discord_file = File(metrics_bytes, filename=f"prometheus_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
-            
+
             logger.debug(f"Sending Prometheus metrics to user: {discord_file.filename}")
             await interaction.followup.send(
                 "Prometheus metrics:",
@@ -605,13 +570,11 @@ class Debug(GroupCog):
     async def cog_unload(self):
         self._bump_briefing.cancel()
 
-bot: Bot = None
 async def setup(_bot: CustomClient):
-    global bot
-    bot = _bot
     logger.debug("Setting up Debug cog")
-    await bot.add_cog(Debug(bot))
+    await _bot.add_cog(Debug(_bot))
 
-async def teardown():
+
+async def teardown(_bot: CustomClient):
     logger.debug("Tearing down Debug cog")
-    bot.remove_cog(Debug.__name__) # remove_cog takes a string, not a class
+    _bot.remove_cog(Debug.__name__)  # remove_cog takes a string, not a class

@@ -1,41 +1,46 @@
-from logging import getLogger
-from discord.ext.commands import GroupCog, Bot
-from discord.ext import tasks
-from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji, SelectOption, ui, ButtonStyle
-from discord.ui import Modal, TextInput
-from models import Player, Unit, UnitStatus, PlayerUpgrade, Medals
-from customclient import CustomClient
-import os
-from utils import EnvironHelpers, error_reporting, has_invalid_url, uses_db, filter_df, is_management
-from sqlalchemy.orm import Session
-import pandas as pd
-from datetime import datetime, timedelta
-import pytz
 import asyncio
+import os
+from datetime import datetime, timedelta
+from logging import getLogger
+
+import pandas as pd
+import pytz
+from discord import Interaction, app_commands as ac, Member, TextStyle, Emoji, SelectOption, ui, ButtonStyle
+from discord.ext.commands import GroupCog
+from discord.ext import tasks
+from discord.ui import Modal, TextInput
 from prometheus_client import Gauge
+from sqlalchemy.orm import Session
+
+from customclient import CustomClient
+from models import Player, Unit, UnitStatus, PlayerUpgrade, Medals
 from prometheus import as_of
+from utils import EnvironHelpers, error_reporting, has_invalid_url, uses_db, filter_df, is_management
+
 logger = getLogger(__name__)
 
 # create backpay gauges
 players_remaining = Gauge("armcobot_players_remaining", "The number of players remaining to be backpaid", labelnames=["backpay_type"])
 paid_today = Gauge("armcobot_paid_today", "The number of players paid today", labelnames=["backpay_type"])
 
-class Admin(GroupCog, group_name="admin", name="Admin"):
+class Admin(GroupCog, group_name="admin", name="Admin", description="Admin commands for players, units, points, and medals."):
     """
     Admin commands for managing players, units, points, and medals in the bot.
     """
-    def __init__(self, bot: Bot):
+
+    def __init__(self, bot: CustomClient):
         """
         Initialize the Admin cog with a reference to the bot instance.
         """
+
         super().__init__()
         self.bot = bot
         if EnvironHelpers.get_bool("PROD"):
-            self.interaction_check = is_management
+            self.interaction_check = is_management # type: ignore[assignment]
 
         self._setup_context_menus()
         self.bot.add_listener(self.on_ready)
-    
+
     # after the bot is ready, we want to start the backpay task
     async def on_ready(self):
         if EnvironHelpers.get_bool("RUN_BACKPAY"):
@@ -44,8 +49,8 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 self.single_backpay = True
                 self.attempt_backpay.start()
             self.single_backpay = False # this line must be left uncommented even when single backpay is disabled, or backpays will crash
-        
-    
+
+
     def _setup_context_menus(self):
         logger.debug("Setting up context menus for admin commands")
         @self.bot.tree.context_menu(name="Req Point")
@@ -91,17 +96,18 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     async def reqpoint_command(self, interaction: Interaction, player: Member, points: int):
         await self._change_req_points(interaction, player, points)
 
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def _change_req_points(self, interaction: Interaction, player: Member, points: int, session: Session):
         """
         Adjusts a player's requisition points by adding or removing a specified amount.
         """
+
         # find the player by discord id
         player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not player:
             await interaction.response.send_message("User doesn't have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
             return
-        
+
         # update the player's rec points
         player.rec_points += points
         logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
@@ -115,17 +121,18 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         await self._change_bonuspay(interaction, player, points)
 
 
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def _change_bonuspay(self, interaction: Interaction, player: Member, points: int, session: Session):
         """
         Modify a player's bonus pay by adding or removing a specified amount.
         """
+
         # find the player by discord id
         player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not player:
             await interaction.response.send_message("User doesn't have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
             return
-        
+
         # update the player's bonus pay
         player.bonus_pay += points
         logger.debug(f"User {player.name} now has {player.bonus_pay} bonus pay")
@@ -137,9 +144,10 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         """
         Activates several units by name through a modal form.
         """
+
         modal = Modal(title="Activate Units", custom_id="activate_units")
         modal.add_item(TextInput(label="Unit names", custom_id="unit_names", style=TextStyle.long))
-        @uses_db(sessionmaker=CustomClient().sessionmaker) # we need to decorate the callback, as the command itself has left scope
+        @uses_db(CustomClient().sessionmaker) # we need to decorate the callback, as the command itself has left scope
         async def modal_callback(interaction: Interaction, session: Session):
             unit_names = interaction.data["components"][0]["components"][0]["value"]
             logger.debug(f"Received unit names: {unit_names}")
@@ -169,7 +177,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             await interaction.response.send_message(f"Activated {activated}, not found {not_found}", ephemeral=self.bot.use_ephemeral)
             logger.debug(f"Activation results - Activated: {activated}, Not found: {not_found}")
         modal.on_submit = modal_callback
-                
+
         await interaction.response.send_modal(modal)
 
     @ac.command(name="create_medal", description="Create a medal")
@@ -197,11 +205,12 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     @ac.command(name="award_medal", description="Award a medal to a player")
     @ac.describe(player="The player to award the medal to")
     @ac.describe(medal="The name of the medal")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def award_medal(self, interaction: Interaction, player: Member, medal: str, session: Session):
         """
         Assign a specific medal to a player.
         """
+
         # find the player by discord id
         _player: Player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
@@ -217,13 +226,14 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         session.add(_medal)
         await interaction.response.send_message(f"{player.name} has been awarded the medal {medal}", ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="create_unit_type", description="Create a new unit type")
+    #@ac.command(name="create_unit_type", description="Create a new unit type")
     @ac.describe(name="The name of the unit type")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def create_unit_type(self, interaction: Interaction, name: str, session: Session):
         """
         Define a new unit type that can be assigned to players' units.
         """
+
         if len(name) > 15:
             await interaction.response.send_message("Unit type name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)
             return
@@ -235,27 +245,29 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         await interaction.response.send_message(f"Unit type {name} created", ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="refresh_stats", description="Refresh the statistics and dossiers for all players")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def refresh_stats(self, interaction: Interaction, session: Session):
         """
         Refreshes the statistics and dossiers for all players.
         """
+
         await interaction.response.send_message("Refreshing statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
         for player in session.query(Player).all():
             self.bot.queue.put_nowait((1, player)) # make the bot think the player was edited, using nowait to avoid yielding control
         await interaction.followup.send("Refreshed statistics and dossiers for all players", ephemeral=self.bot.use_ephemeral)
-    
+
     @ac.command(name="refresh_player", description="Refresh the statistics and dossiers for a player")
     @ac.describe(player="The player to refresh the statistics and dossiers for")
     async def refresh_player_command(self, interaction: Interaction, player: Member):
         await self._refresh_player(interaction, player)
 
 
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def _refresh_player(self, interaction: Interaction, player: Member, session: Session):
         """
         Refreshes the statistics and dossiers for a specific player.
         """
+
         await interaction.response.send_message(f"Refreshing statistics and dossiers for {player.name}", ephemeral=self.bot.use_ephemeral)
         _player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
@@ -266,16 +278,17 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     @ac.command(name="specialupgrade", description="Give a player a one-off or relic item")
     @ac.describe(player="The player to give the item to")
     @ac.describe(name="The name of the item")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def specialupgrade(self, interaction: Interaction, player: Member, name: str, session: Session):
         """
         Give a unique or relic item to a player's active unit.
         """
+
         _player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
             await interaction.response.send_message("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
             return
-        
+
         # Check for active units first
         active_units = _player.active_units
         if active_units:
@@ -296,7 +309,11 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
             await self._create_special_upgrade(interaction, _player, _unit, name, session)
 
     async def _create_special_upgrade(self, interaction: Interaction, _player: Player, _unit: Unit, name: str, session: Session):
-        """Create the special upgrade and send response."""
+        """
+        Create a special (one-off or relic) upgrade for the given unit and
+        respond to the interaction. Used by the specialupgrade command flow.
+        """
+
         # create an PlayerUpgrade with the given name, type "SPECIAL", and the unit as the parent
         if len(name) > 30:
             await interaction.response.send_message("Name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)
@@ -307,11 +324,15 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         self.bot.queue.put_nowait((1, _player, 0))
 
     async def _show_unit_select(self, interaction: Interaction, _player: Player, active_units: list, name: str, session: Session):
-        """Show a select menu for multiple active units."""
+        """
+        Show a select menu so the user can choose which active unit receives
+        the special upgrade. Used when the player has multiple active units.
+        """
+
         if len(name) > 30:
             await interaction.response.send_message("Name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)
             return
-        
+
         class UnitSelectView(ui.View):
             def __init__(self, parent_instance, _player, active_units, name, session):
                 super().__init__(timeout=60)
@@ -320,7 +341,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 self.active_units = active_units
                 self.name = name
                 self.session = session
-                
+
                 # Create select options
                 options = []
                 for unit in active_units:
@@ -329,27 +350,28 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                         description=f"{unit.unit_type} - {unit.status}",
                         value=str(unit.id)
                     ))
-                
+
                 select = ui.Select(options=options, placeholder="Choose a unit to give the special upgrade to")
                 select.callback = self.on_unit_select
                 self.add_item(select)
-            
+
             async def on_unit_select(self, interaction: Interaction):
                 selected_unit_id = int(interaction.data['values'][0])
                 _unit = next(unit for unit in self.active_units if unit.id == selected_unit_id)
                 await self.parent_instance._create_special_upgrade(interaction, self._player, _unit, self.name, self.session)
                 self.stop()
-        
+
         view = UnitSelectView(self, _player, active_units, name, session)
         await interaction.response.send_message(f"Select which unit to give '{name}' to:", view=view, ephemeral=self.bot.use_ephemeral)
-        
+
     @ac.command(name="remove_unit", description="Remove a unit from a player")
     @ac.describe(player="The player to remove the unit from")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def remove_unit(self, interaction: Interaction, player: Member, session: Session):
         """
         Remove a specific unit from a player's records.
         """
+
         # we need to make a modal for this, as we need a dropdown for the unit type
         class UnitSelect(ui.Select):
             def __init__(self, player_units: list[Unit]):
@@ -366,7 +388,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 self.add_item(UnitSelect(player_units))
 
             @ui.button(label="Remove Unit", style=ButtonStyle.primary)
-            @uses_db(sessionmaker=CustomClient().sessionmaker)
+            @uses_db(CustomClient().sessionmaker)
             async def remove_unit_callback(self, interaction: Interaction, button: ui.Button, session: Session):
 
                 # create the unit in the database
@@ -376,14 +398,14 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 if not unit:
                     await interaction.response.send_message("Unit not found", ephemeral=self.bot.use_ephemeral)
                     return
-                
+
                 # Delete all upgrades associated with the unit first
                 for upgrade in unit.upgrades:
                     session.delete(upgrade)
-                
+
                 # Flush to ensure upgrades are deleted before unit deletion
                 session.flush()
-                
+
                 # Now delete the unit
                 session.delete(unit)
                 logger.debug(f"Unit with the id {unit_id} was deleted from player {player.name}")
@@ -404,11 +426,12 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
 
     #@ac.command(name="remove_unittype", description="Remove a unit type from the game")
     @ac.describe(name="The name of the unit type to remove")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def remove_unittype(self, interaction: Interaction, name: str, session: Session):
         """
         Delete a unit type and mark all related inactive units as legacy.
         """
+
         if name in self.bot.config.get("unit_types"):
             self.bot.config["unit_types"].remove(name)
             await self.bot.resync_config(session)
@@ -424,7 +447,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
 
     @ac.command(name="deactivate_unit", description="Deactivate a unit")
     @ac.describe(callsign="The callsign of the unit to deactivate")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def deactivate_unit(self, interaction: Interaction, callsign: str, session: Session):
         # filter on the callsign
         unit = session.query(Unit).filter(Unit.callsign == callsign).first()
@@ -440,7 +463,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
     @ac.command(name="change_callsign", description="Change the callsign of a unit")
     @ac.describe(old_callsign="The callsign of the unit to change")
     @ac.describe(new_callsign="The new callsign for the unit")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def change_callsign(self, interaction: Interaction, old_callsign: str, new_callsign: str, session: Session):
         # change the callsign of the unit
         unit = session.query(Unit).filter(Unit.callsign == old_callsign).first()
@@ -461,7 +484,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
 
     @ac.command(name="change_status", description="Change the status of a unit")
     @ac.describe(player="The player whose unit you want to change the status of")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def change_status(self, interaction: Interaction, player: Member, session: Session):
         # create a view with a select menu for all of the player's units
         # when a unit is selected, create a view with the status options, if the status is changed to legacy, set the legacy flag, it it's changed to active, prompt for a callsign
@@ -471,7 +494,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 options = [SelectOption(label=unit.name, value=unit.id) for unit in player_units]
                 super().__init__(placeholder="Select name of unit you want to change the status of", options=options)
 
-            @uses_db(sessionmaker=CustomClient().sessionmaker)
+            @uses_db(CustomClient().sessionmaker)
             async def callback(self, interaction: Interaction, session: Session):
                 status_view = ui.View()
                 unit = session.query(Unit).filter(Unit.id == self.values[0]).first()
@@ -484,7 +507,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 options = [SelectOption(label=status.value, value=status.value, default=unit.status == status) for status in UnitStatus]
                 super().__init__(placeholder="Select the new status for the unit", options=options)
 
-            @uses_db(sessionmaker=CustomClient().sessionmaker)
+            @uses_db(CustomClient().sessionmaker)
             async def callback(self, interaction: Interaction, session: Session):
                 # if the new status is active, create a modal for the callsign, if it's either active or legacy, set the appropriate flag, if it's inactive, kia, or mia, just set the status and commit
                 self.unit = session.merge(self.unit)
@@ -501,7 +524,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 await interaction.response.send_message(f"Unit {self.unit.name} status changed to {new_status.value}", ephemeral=self.bot.use_ephemeral)
                 self.bot.queue.put_nowait((1, self.unit.player, 0))
 
-            @uses_db(sessionmaker=CustomClient().sessionmaker)
+            @uses_db(CustomClient().sessionmaker)
             async def change_callsign_callback(self, interaction: Interaction, session: Session):
                 self.unit = session.merge(self.unit)
                 new_callsign = interaction.data["components"][0]["components"][0]["value"]
@@ -517,11 +540,12 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
 
     @ac.command(name="edit_company", description="Edit a player's company")
     @ac.describe(player="The player to edit the company of")
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def edit_company(self, interaction: Interaction, player: Member, session: Session):
         """
         Edit a player's company.
         """
+
         class EditCompanyModal(ui.Modal):
             def __init__(self, _player):
                 super().__init__(title="Edit the player's Meta Campaign company")
@@ -530,7 +554,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
                 self.add_item(ui.TextInput(label="Name", placeholder="Enter the company name", required=True, max_length=32, default=_player.name))
                 self.add_item(ui.TextInput(label="Lore", placeholder="Enter the company lore", max_length=1000, style=TextStyle.paragraph, default=_player.lore or ""))
 
-            @uses_db(sessionmaker=CustomClient().sessionmaker)
+            @uses_db(CustomClient().sessionmaker)
             async def on_submit(self, interaction: Interaction, session: Session):
                 self.player = session.merge(self.player)
                 if any(char in child.value for child in self.children for char in EnvironHelpers.get_str("BANNED_CHARS", "")):
@@ -567,6 +591,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         """
         Manage units for a player.
         """
+
         player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not player:
             await interaction.response.send_message("The player doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
@@ -578,24 +603,24 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         view.add_item(select)
         await interaction.response.send_message("Please select the unit you want to manage", view=view, ephemeral=CustomClient().use_ephemeral)
 
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def manage_units_callback(self, interaction: Interaction, session: Session):
         unit = session.query(Unit).filter(Unit.id == interaction.data["values"][0]).first()
         if not unit:
             await interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
             return
         view = ui.View()
-        
+
 
 
 
     @tasks.loop(count=1)
     async def align_backpay(self):
         logger.info("Aligning backpay task")
-        
+
         # Get the current time in UTC
         now_utc = datetime.now(pytz.utc)
-        
+
         # Convert to EST
         est = pytz.timezone('America/New_York')
         now_est = now_utc.astimezone(est)
@@ -620,7 +645,7 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         logger.info("Aligning backpay task complete")
 
     @tasks.loop(hours=7*24) # weekly
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     async def attempt_backpay(self, session: Session):
         logger.info("Attempting to backpay players")
         # get the set of all player ids
@@ -669,23 +694,23 @@ class Admin(GroupCog, group_name="admin", name="Admin"):
         if self.single_backpay:
             self.attempt_backpay.stop()
 
-bot: Bot = None
-async def setup(_bot: Bot):
+async def setup(_bot: CustomClient):
     """
     Registers the Admin cog with the bot.
 
     Args:
-        _bot (Bot): The bot instance to register the cog to.
+        _bot (CustomClient): The bot instance to register the cog to.
     """
-    global bot
-    bot = _bot
-    logger.info("Setting up Admin cog")
-    await bot.add_cog(Admin(bot))
-    await bot.tree.sync()
 
-async def teardown():
+    logger.info("Setting up Admin cog")
+    await _bot.add_cog(Admin(_bot))
+    await _bot.tree.sync()
+
+
+async def teardown(_bot: CustomClient):
     """
     Unregisters the Admin cog, removing all related commands.
     """
+
     logger.info("Tearing down Admin cog")
-    bot.remove_cog(Admin.__name__) # remove_cog takes a string, not a class
+    _bot.remove_cog(Admin.__name__)  # remove_cog takes a string, not a class

@@ -13,13 +13,13 @@ def Singleton(_cls: Type[T]) -> Type[T]:
     Raises:
         TypeError: If the decorator is applied to a non-class type.
         ValueError: If the class already has a _is_singleton attribute.
-        
+
     Returns:
         SingletonClass: The singleton version of the input class.
     """
     _instance = None
     _init = False
-    
+
     if not isinstance(_cls, type):
         raise TypeError("Singleton decorator can only be applied to classes")
     if hasattr(_cls, "_is_singleton"):
@@ -50,5 +50,5 @@ def Singleton(_cls: Type[T]) -> Type[T]:
             "__doc__": _cls.__doc__,  # Include the original class docstring
         }
     )
-    
+
     return SingletonClass if not TYPE_CHECKING else _cls

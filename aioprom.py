@@ -1,7 +1,8 @@
 import asyncio
-import time
 import sys
+import time
 from typing import Dict, Tuple
+
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Gauge
 
 # technically correct, StreamWriter.wait_closed() is 3.7+ but it's also already in a catchall try/except
@@ -80,7 +81,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     await send_simple(writer, 429)
                     return
                 _last_seen[ip] = now
-        
+
         try:
             data = await asyncio.wait_for(reader.readuntil(HDR_END), timeout=READ_TIMEOUT)
         except asyncio.LimitOverrunError:
@@ -92,7 +93,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         if len(data) > MAX_HEADER_BYTES:
             await send_simple(writer, 431)
             return
-        
+
         try:
             request_line = data.split(CRLF, 1)[0]
             method, path, version = request_line.split(b' ')
@@ -103,21 +104,21 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         if version not in (b'HTTP/1.0', b'HTTP/1.1'):
             await send_simple(writer, 505)
             return
-        
+
         if version == b'HTTP/1.1' and not b"\r\nhost:" in data.lower():
             await send_simple(writer, 400) # missing host header
             return
-        
+
         if method != b'GET':
             if method in KNOWN_METHODS:
                 await send_simple(writer, 405)
             else:
                 await send_simple(writer, 501)
             return
-        
+
         # we don't actually look at the path, we just always server metrics
         payload = generate_latest()
-        
+
         headers = (
             HDR_200_PREFIX +
             itoa(len(payload)) +
@@ -147,7 +148,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
 async def send_simple(writer: asyncio.StreamWriter, status_code: int):
     response = _ERROR_RESPONSES.get(status_code, FALLBACK_ERROR_RESPONSE)
-    
+
     writer.write(response)
     try:
         await writer.drain()

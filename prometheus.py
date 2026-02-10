@@ -1,18 +1,26 @@
+"""
+Prometheus metrics for the bot: player counts, rec points, units, upgrades,
+disk usage, and DB stats. Exposes Gauges updated by poll_metrics_slow.
+"""
+
+import asyncio
 import os
-from prometheus_client import Gauge
-from discord.ext.tasks import loop
-from customclient import CustomClient # just needed so we can get a bunch of the stats, and a sessionmaker for the db stats
+import subprocess
 from datetime import datetime
+from logging import getLogger
+
+import psutil
+from discord.ext.tasks import loop
+from prometheus_client import Gauge
 from sqlalchemy import func
+
+from customclient import CustomClient  # just needed so we can get a bunch of the stats, and a sessionmaker for the db stats
 from models import Player, Unit, PlayerUpgrade
 from utils import EnvironHelpers
-import psutil
-import subprocess
-import asyncio
-from logging import getLogger
+
 logger = getLogger(__name__)
 
-start_time = Gauge("armcobot_start_time", "The start time of the bot")
+start_time = Gauge("armcobot_start_time_seconds", "Start time of the bot (Unix timestamp)")
 player_count = Gauge("armcobot_player_count", "The number of users registered with the bot")
 rec_points = Gauge("armcobot_rec_points", "The total number of unspent requisition points")
 bonus_pay = Gauge("armcobot_bonus_pay", "The total number of unspent bonus pay")
@@ -21,12 +29,12 @@ purchased_units = Gauge("armcobot_purchased_units", "The number of units purchas
 active_units = Gauge("armcobot_active_units", "The number of active units")
 dead_units = Gauge("armcobot_dead_units", "The number of dead units")
 upgrades = Gauge("armcobot_upgrades", "The number of upgrades purchased")
-as_of = Gauge("armcobot_as_of", "The time the metrics were last updated", labelnames=['loop'])
+as_of = Gauge("armcobot_as_of_seconds", "Time the database metrics were last updated (Unix timestamp)", labelnames=['loop'])
 units_by_type = Gauge("armcobot_units_by_type", "The number of units by type", labelnames=['unit_type'])
 purchased_by_type = Gauge("armcobot_purchased_by_type", "The number of units purchased by type", labelnames=['unit_type'])
 live_by_type = Gauge("armcobot_live_by_type", "The number of units live by type", labelnames=['unit_type'])
 units_by_type_and_campaign = Gauge("armcobot_units_by_type_and_campaign", "The number of units by type and campaign", labelnames=['unit_type', 'campaign_id'])
-root_disk_usage = Gauge("armcobot_root_disk_usage_percent", "Percent of / disk used")
+root_disk_usage = Gauge("armcobot_root_disk_usage_ratio", "Fraction of / disk used (0-1)")
 info = Gauge("armcobot_info", "Information about the bot", labelnames=['commit', 'ahead', 'behind'])
 
 # Disk alert variables
@@ -43,15 +51,23 @@ ahead = int(subprocess.run(["git", "rev-list", "--count", "origin/main..HEAD"], 
 info.labels(commit=commit, ahead=ahead, behind=behind).set(1)
 
 last_alerted_version = None
+
+
 @loop(seconds=60)
 async def poll_metrics_slow():
+    """
+    Background loop (every 60s) that updates Prometheus Gauges: DB stats
+    (players, units, upgrades, etc.), disk usage, and as_of timestamp.
+    Sends a disk usage alert to the configured user when over threshold.
+    """
+
     global last_disk_alert_time
-    bot: CustomClient = CustomClient() # type: ignore
+    bot: CustomClient = CustomClient()  # type: ignore
     as_of.labels(loop="slow").set(int(datetime.now().timestamp()))
     # Add disk usage metric for /
     usage = psutil.disk_usage(r'C:\\' if os.name == 'nt' else '/')
-    root_disk_usage.set(usage.percent)
-    
+    root_disk_usage.set(usage.percent / 100.0)
+
     # Check disk usage alert
     current_time = datetime.now()
     if usage.percent > DISK_ALERT_THRESHOLD:
@@ -67,7 +83,7 @@ async def poll_metrics_slow():
                 print(f"Disk alert sent to user {DISK_ALERT_USER_ID} at {current_time}")
             except Exception as e:
                 print(f"Failed to send disk alert: {e}")
-    
+
     with bot.sessionmaker() as session:
         db_stats_dict = {
                     "players": session.query(Player).count(),
@@ -99,7 +115,7 @@ async def poll_metrics_slow():
         live_by_type.labels(unit_type=unit_type).set(count)
     for unit_type, campaign_id, count in db_stats_dict["units_by_type_and_campaign"]:
         units_by_type_and_campaign.labels(unit_type=unit_type, campaign_id=campaign_id).set(count)
-    
+
     global last_alerted_version, behind, ahead
     if EnvironHelpers.get_bool("GIT_AUTOFETCH"):
         fetch_proc = await asyncio.create_subprocess_exec("git", "fetch", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)

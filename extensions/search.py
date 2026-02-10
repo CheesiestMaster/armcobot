@@ -1,23 +1,26 @@
 from logging import getLogger
 from typing import Optional
-from discord.ext.commands import GroupCog, Bot
+
 from discord import Interaction, Member, app_commands as ac
+from discord.ext.commands import GroupCog
 from sqlalchemy.orm import Session
-from models import Campaign, Player, PlayerUpgrade, Unit, UnitType, ShopUpgrade
-from customclient import CustomClient
-from utils import error_reporting, uses_db, fuzzy_autocomplete
 import templates as tmpl
+
+from customclient import CustomClient
+from models import Campaign, Player, PlayerUpgrade, Unit, UnitType, ShopUpgrade
+from utils import error_reporting, uses_db, fuzzy_autocomplete
 
 logger = getLogger(__name__)
 
-class Search(GroupCog):
-    def __init__(self, bot: Bot):
-        """
-                Initializes the Search cog.
+class Search(GroupCog, description="Search units by name, player, callsign, type, upgrade, or campaign."):
+    """
+    Cog for the search slash command: search units by name, player, callsign,
+    unit type, upgrade, or campaign. Uses fuzzy autocomplete for criteria.
+    """
 
-                Args:
-                    bot (Bot): The bot instance the cog will be added to.
-                """
+    def __init__(self, bot: CustomClient):
+        """Store a reference to the bot instance."""
+
         self.bot = bot
 
 
@@ -29,12 +32,12 @@ class Search(GroupCog):
     @ac.describe(unit_type="The type of the unit to search for (This must be the exact name, use the autocomplete)")
     @ac.describe(upgrade="The upgrade to search for")
     @ac.describe(campaign="The campaign to search for (This must be the exact name, use the autocomplete)")
-    @ac.autocomplete(name=fuzzy_autocomplete(Unit.name), 
-                     callsign=fuzzy_autocomplete(Unit.callsign), 
-                     unit_type=fuzzy_autocomplete(UnitType.unit_type), 
+    @ac.autocomplete(name=fuzzy_autocomplete(Unit.name),
+                     callsign=fuzzy_autocomplete(Unit.callsign),
+                     unit_type=fuzzy_autocomplete(UnitType.unit_type),
                      upgrade=fuzzy_autocomplete(ShopUpgrade.name),
                      campaign=fuzzy_autocomplete(Campaign.name)) # we don't need to autocomplete Player, because Member gets client side autocomplete anyway
-    @uses_db(sessionmaker=CustomClient().sessionmaker)
+    @uses_db(CustomClient().sessionmaker)
     @error_reporting(False)
     async def unit(self, interaction: Interaction, session: Session, name: Optional[str] = None, player: Optional[Member] = None, callsign: Optional[str] = None, unit_type: Optional[str] = None, upgrade: Optional[str] = None, campaign: Optional[str] = None) -> None:
         query = session.query(Unit)
@@ -58,28 +61,26 @@ class Search(GroupCog):
         output = ""
         for unit in units:
             line = tmpl.search_unit_output.format(unit=unit, campaign_name=f"in {unit.campaign.name}" if unit.campaign else "", callsign=f'"{unit.callsign}"' if unit.callsign else "")
-            if len(output) + len(line) + 5 > 2000: 
+            if len(output) + len(line) + 5 > 2000:
                 output += "\n..."
                 break
             output += "\n" + line
         await interaction.response.send_message(output, ephemeral=CustomClient().use_ephemeral)
 
-bot: Bot = None
-async def setup(_bot: Bot):
+async def setup(_bot: CustomClient):
     """
     Asynchronous setup function to add the Search cog to the bot.
 
     Args:
-        _bot (Bot): The bot instance to add this cog to.
+        _bot (CustomClient): The bot instance to add this cog to.
     """
-    global bot
-    bot = _bot
     logger.info("Setting up Search cog")
-    await bot.add_cog(Search(bot))
+    await _bot.add_cog(Search(_bot))
 
-async def teardown():
+
+async def teardown(_bot: CustomClient):
     """
     Asynchronous teardown function to remove the Search cog from the bot.
     """
     logger.info("Tearing down Search cog")
-    bot.remove_cog(Search.__name__) # remove_cog takes a string, not a class
+    _bot.remove_cog(Search.__name__)  # remove_cog takes a string, not a class
