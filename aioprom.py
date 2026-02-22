@@ -13,7 +13,7 @@ MAX_HEADER_BYTES = 16 * 1024
 READ_TIMEOUT = 2.0
 TIMEOUT_429_INTERVAL = 1  # Minimum seconds between requests per IP
 CACHE_TIMEOUT = TIMEOUT_429_INTERVAL * 4
-VERSION: Tuple[int, int, int] = (1,0,2)
+VERSION: Tuple[int, int, int] = (1,0,3)
 VERSION_STRING: str = ".".join(map(str, VERSION))
 SHARED_HEADERS: bytes = (
     b"Server: aioprom/" + VERSION_STRING.encode('ascii') + b"\r\n" +
@@ -87,8 +87,10 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         except asyncio.LimitOverrunError:
             await send_simple(writer, 431)
             return
-        except (asyncio.IncompleteReadError, asyncio.TimeoutError):
+        except asyncio.TimeoutError:
             await send_simple(writer, 408)
+            return
+        except asyncio.IncompleteReadError:
             return
         if len(data) > MAX_HEADER_BYTES:
             await send_simple(writer, 431)

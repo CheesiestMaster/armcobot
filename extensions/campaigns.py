@@ -1,4 +1,5 @@
 from io import BytesIO
+from itertools import chain
 from logging import getLogger
 from typing import List, Optional
 from asyncio import gather
@@ -613,11 +614,9 @@ class Campaigns(GroupCog, description="Campaign commands: list, join, leave, vie
             await interaction.response.send_message("You don't have permission to notify players in this campaign", ephemeral=True)
             return
         chunks = chunked_join(
-            (m for (m,) in session.query(Player.mention).join(Unit).filter(Unit.campaign_id == _campaign.id).distinct().yield_per(100)),
+            chain((m for (m,) in session.query(Player.mention).join(Unit).filter(Unit.campaign_id == _campaign.id).distinct().yield_per(100)), [message] if message else []),
             separator=" " # we want to space them, not newline them, so it takes up less discord ui space
         )
-        if message:
-            chunks.append(message)
         first = next(chunks, None)
         if first:
             await interaction.response.send_message(first, ephemeral=False)
@@ -633,7 +632,7 @@ class Campaigns(GroupCog, description="Campaign commands: list, join, leave, vie
     @ac.autocomplete(campaign=fuzzy_autocomplete(Campaign.name), group=fuzzy_autocomplete(Unit.battle_group))
     @ac.describe(campaign="The campaign that the group is in", group="The group to notify")
     @uses_db(CustomClient().sessionmaker)
-    async def notify_group(self, interaction: Interaction, session: Session, campaign: str, group: str, message: str = None):
+    async def notify_group(self, interaction: Interaction, session: Session, campaign: str, group: str, message: str = ""):
         # do checks, then notify the group of players in the campaign
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
         if not _campaign:
@@ -643,11 +642,9 @@ class Campaigns(GroupCog, description="Campaign commands: list, join, leave, vie
         # no need for permission checks, because we have the check decorator, and it's either public or any GM
         # this is almost identical to the notify command, but with an additional filter on Unit.group
         chunks = chunked_join(
-            (m for (m,) in session.query(Player.mention).join(Unit).filter(Unit.battle_group == group, Unit.campaign_id == _campaign.id).distinct().yield_per(100)),
+            chain((m for (m,) in session.query(Player.mention).join(Unit).filter(Unit.battle_group == group, Unit.campaign_id == _campaign.id).distinct().yield_per(100)), [message] if message else []),
             separator=" " # we want to space them, not newline them, so it takes up less discord ui space
         )
-        if message:
-            chunks.append(message)
         first = next(chunks, None)
         if first:
             await interaction.response.send_message(first, ephemeral=False)

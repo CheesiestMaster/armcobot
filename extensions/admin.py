@@ -90,7 +90,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
             await self._refresh_player(interaction, target)
 
 
-    @ac.command(name="recpoint", description="Give or remove a number of requisition points from a player")
+    # @ac.command(name="recpoint", description="Give or remove a number of requisition points from a player")
     @ac.describe(player="The player to give or remove points from")
     @ac.describe(points="The number of points to give or remove")
     async def reqpoint_command(self, interaction: Interaction, player: Member, points: int):
@@ -114,7 +114,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         await interaction.response.send_message(f"{player.name} now has {player.rec_points} requisition points", ephemeral=self.bot.use_ephemeral)
         self.bot.queue.put_nowait((1, player, 0))
 
-    @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
+    # @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
     @ac.describe(player="The player to give or remove bonus pay from")
     @ac.describe(points="The number of bonus pay to give or remove")
     async def bonuspay_command(self, interaction: Interaction, player: Member, points: int):
@@ -180,7 +180,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
 
         await interaction.response.send_modal(modal)
 
-    @ac.command(name="create_medal", description="Create a medal")
+    #@ac.command(name="create_medal", description="Create a medal")
     @ac.describe(name="The name of the medal")
     @ac.describe(left_emote="The emote id to use for the left side of the medal")
     @ac.describe(center_emote="The emote id to use for the center of the medal")
@@ -202,7 +202,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         logger.debug(f"Medal {name} created with emotes {left_emote}, {center_emote}, {right_emote}")
         await interaction.response.send_message(f"Medal {name} created", ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="award_medal", description="Award a medal to a player")
+    #@ac.command(name="award_medal", description="Award a medal to a player")
     @ac.describe(player="The player to award the medal to")
     @ac.describe(medal="The name of the medal")
     @uses_db(CustomClient().sessionmaker)
@@ -275,7 +275,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
             return
         self.bot.queue.put_nowait((1, _player))
 
-    @ac.command(name="specialupgrade", description="Give a player a one-off or relic item")
+    # @ac.command(name="specialupgrade", description="Give a player a one-off or relic item")
     @ac.describe(player="The player to give the item to")
     @ac.describe(name="The name of the item")
     @uses_db(CustomClient().sessionmaker)
@@ -364,7 +364,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         view = UnitSelectView(self, _player, active_units, name, session)
         await interaction.response.send_message(f"Select which unit to give '{name}' to:", view=view, ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="remove_unit", description="Remove a unit from a player")
+    # @ac.command(name="remove_unit", description="Remove a unit from a player")
     @ac.describe(player="The player to remove the unit from")
     @uses_db(CustomClient().sessionmaker)
     async def remove_unit(self, interaction: Interaction, player: Member, session: Session):
@@ -445,7 +445,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
 
         await interaction.response.send_message(f"Unit type {name} removed", ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="deactivate_unit", description="Deactivate a unit")
+    # @ac.command(name="deactivate_unit", description="Deactivate a unit")
     @ac.describe(callsign="The callsign of the unit to deactivate")
     @uses_db(CustomClient().sessionmaker)
     async def deactivate_unit(self, interaction: Interaction, callsign: str, session: Session):
@@ -460,7 +460,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         await interaction.response.send_message(f"Unit {unit.name} deactivated", ephemeral=self.bot.use_ephemeral)
         self.bot.queue.put_nowait((1, unit.player, 0))
 
-    @ac.command(name="change_callsign", description="Change the callsign of a unit")
+    # @ac.command(name="change_callsign", description="Change the callsign of a unit")
     @ac.describe(old_callsign="The callsign of the unit to change")
     @ac.describe(new_callsign="The new callsign for the unit")
     @uses_db(CustomClient().sessionmaker)
@@ -482,7 +482,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         await interaction.response.send_message(f"Unit {unit.name} callsign changed to {new_callsign}", ephemeral=self.bot.use_ephemeral)
         self.bot.queue.put_nowait((1, unit.player, 0))
 
-    @ac.command(name="change_status", description="Change the status of a unit")
+    # @ac.command(name="change_status", description="Change the status of a unit")
     @ac.describe(player="The player whose unit you want to change the status of")
     @uses_db(CustomClient().sessionmaker)
     async def change_status(self, interaction: Interaction, player: Member, session: Session):
@@ -504,7 +504,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         class StatusSelect(ui.Select):
             def __init__(self, unit: Unit):
                 self.unit = unit
-                options = [SelectOption(label=status.value, value=status.value, default=unit.status == status) for status in UnitStatus]
+                options = [SelectOption(label=status.name, value=status.value, default=unit.status == status) for status in UnitStatus]
                 super().__init__(placeholder="Select the new status for the unit", options=options)
 
             @uses_db(CustomClient().sessionmaker)
@@ -521,7 +521,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
                     self.unit.status = UnitStatus.LEGACY
                 else:
                     self.unit.status = new_status
-                await interaction.response.send_message(f"Unit {self.unit.name} status changed to {new_status.value}", ephemeral=self.bot.use_ephemeral)
+                await interaction.response.send_message(f"Unit {self.unit.name} status changed to {new_status.name}", ephemeral=self.bot.use_ephemeral)
                 self.bot.queue.put_nowait((1, self.unit.player, 0))
 
             @uses_db(CustomClient().sessionmaker)
@@ -538,7 +538,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         view.add_item(UnitSelect(player))
         await interaction.response.send_message("Please select the unit you want to change the status of", view=view, ephemeral=CustomClient().use_ephemeral)
 
-    @ac.command(name="edit_company", description="Edit a player's company")
+    # @ac.command(name="edit_company", description="Edit a player's company")
     @ac.describe(player="The player to edit the company of")
     @uses_db(CustomClient().sessionmaker)
     async def edit_company(self, interaction: Interaction, player: Member, session: Session):
@@ -583,7 +583,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         modal = EditCompanyModal(player)
         await interaction.response.send_modal(modal)
 
-    @ac.command(name="manage_units", description="Manage units for a player")
+    # @ac.command(name="manage_units", description="Manage units for a player")
     @ac.describe(player="The player to manage the units for")
     @error_reporting()
     @uses_db(CustomClient().sessionmaker)
