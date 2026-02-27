@@ -12,7 +12,7 @@ from discord import Interaction, app_commands as ac, ui, TextStyle, Embed, Selec
 from discord.ext.commands import GroupCog, Cog
 from discord.ext.tasks import Loop, loop
 from dotenv import dotenv_values
-from prometheus_client import generate_latest
+from prometheus_client import generate_latest, ProcessCollector, CollectorRegistry, REGISTRY
 from psutil import Process
 from sqlalchemy import text, func, exists
 from sqlalchemy.orm import Session
@@ -250,12 +250,14 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
                     response_text = ""
                     for query_num, query, rows in all_results:
                         if rows:
-                            response_text += f"**Query {query_num}:**\n```{query}```\n**Result:**\n```{rows}```\n\n"
+                            response_text += f"**Query {query_num}:**\n```{query}```\n**Result:**\n```{list(map(tuple, rows))}```\n\n"
                         else:
                             response_text += f"**Query {query_num}:**\n```{query}```\n**Result:** No rows returned\n\n"
 
                     # Chunk the response if it's too large
                     await chunked_send(_interaction, response_text, self.bot.use_ephemeral)
+
+                    pass # just so I can set a breakpoint after the send finishes for debugging
 
                 except Exception as e:
                     logger.error(f"Error running query: {e}")
@@ -282,7 +284,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
             except Exception:
                 rows = None
 
-            response_text = tmpl.debug_query_result.format(rows=rows) if rows else tmpl.debug_query_no_rows
+            response_text = tmpl.debug_query_result.format(rows=list(map(tuple, rows))) if rows else tmpl.debug_query_no_rows
             await chunked_send(interaction, response_text, self.bot.use_ephemeral)
         except Exception as e:
             logger.error(f"Error running query: {e}")
@@ -448,12 +450,18 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
         await interaction.response.send_message(message, ephemeral=self.bot.use_ephemeral)
 
     @ac.command(name="test", description="Does whatever Cheese made it do today")
+    @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
     async def test(self, interaction: Interaction, session: Session):
-        global_env = dotenv_values("global.env")
-        local_env = dotenv_values(global_env.get("LOCAL_ENV_FILE"))
-        environ = {k:v for k,v in os.environ.items() if k in global_env.keys()} # filter out secrets and system environment variables
-        await interaction.response.send_message(f"Global Environment:\n{global_env}\nLocal Environment:\n{local_env}\nEnvironment Variables:\n{environ}", ephemeral=True)
+        registry = CollectorRegistry()
+        pc =ProcessCollector(registry=registry)
+        out = pc.collect()
+        metric_data = "\n".join(str(m) for m in out)
+        metric_bytes = BytesIO(metric_data.encode("utf-8"))
+        discord_file = File(metric_bytes, filename="metrics.txt")
+        await interaction.response.send_message(file=discord_file, ephemeral=True)
+        collectors = REGISTRY._collector_to_names.keys()
+        await interaction.followup.send(f"Collectors: {collectors}", ephemeral=True)
 
     @ac.command(name="logmark", description="make a marker in the logs")
     async def logmark(self, interaction: Interaction):

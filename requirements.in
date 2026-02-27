@@ -1,0 +1,11 @@
+
+# Direct dependencies only. Generate requirements.txt with: pip-compile requirements.in
+
+discord.py
+pandas
+prometheus_client
+psutil
+python-dotenv
+pytz
+SQLAlchemy
+openpyxl

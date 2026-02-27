@@ -34,13 +34,26 @@ while true; do
         echo "Updating..."
         rm -f ./update.flag
         git fetch
-        # check if there is a difference on ./start.sh
-        if [ "$(git diff ./start.sh)" != "" ]; then
+        reexec=false
+        repip=false
+        # check if there is a difference on ./start.sh against upstream
+        if ! git diff --quiet HEAD..@{u} -- "$0"; then
             echo "start.sh has changed, reexecuting..."
-            git pull
+            reexec=true
+        fi
+
+        if ! git diff --quiet HEAD..@{u} -- requirements.txt; then
+            echo "requirements.txt has changed, reinstalling..."
+            repip=true
+        fi
+        
+        git pull
+        if [ "$repip" = true ]; then
+            pip install -r requirements.txt
+        fi
+        if [ "$reexec" = true ]; then
             exec "$0" "$@"
         fi
-        git pull
         echo "Updated"
     fi
     echo "Restarting..."

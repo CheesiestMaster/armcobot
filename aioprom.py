@@ -13,8 +13,9 @@ MAX_HEADER_BYTES = 16 * 1024
 READ_TIMEOUT = 2.0
 TIMEOUT_429_INTERVAL = 1  # Minimum seconds between requests per IP
 CACHE_TIMEOUT = TIMEOUT_429_INTERVAL * 4
-VERSION: Tuple[int, int, int] = (1,0,3)
+VERSION: Tuple[int, int, int] = (1,0,4)
 VERSION_STRING: str = ".".join(map(str, VERSION))
+ALLOWED_VERSIONS = {b'HTTP/1.0', b'HTTP/1.1'}
 SHARED_HEADERS: bytes = (
     b"Server: aioprom/" + VERSION_STRING.encode('ascii') + b"\r\n" +
     b"Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate\r\n" +
@@ -103,7 +104,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             await send_simple(writer, 400)
             return
 
-        if version not in (b'HTTP/1.0', b'HTTP/1.1'):
+        if version not in ALLOWED_VERSIONS:
             await send_simple(writer, 505)
             return
 

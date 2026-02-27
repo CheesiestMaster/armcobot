@@ -15,7 +15,7 @@ set count=0
 
 :loop
 echo. > pending.flag
-python main.py
+.\.venv\Scripts\python.exe main.py
 if exist terminate.flag (
     echo Terminating...
     goto end
@@ -37,14 +37,37 @@ if exist update.flag (
     echo Updating...
     del update.flag
     git fetch
-    git diff start.bat >nul 2>&1
-    if not errorlevel 1 (
-        echo start.bat has changed, reexecuting...
-        git pull
+
+    set reexec=false
+    set repip=false
+
+    rem Check if this script has changed on the remote (HEAD..upstream)
+    git diff --quiet HEAD..@{u} -- "%~f0"
+    if errorlevel 1 (
+        echo start.bat has changed in remote, scheduling reexec...
+        set reexec=true
+    )
+
+    rem Check if requirements.txt has changed on the remote (HEAD..upstream)
+    git diff --quiet HEAD..@{u} -- requirements.txt
+    if errorlevel 1 (
+        echo requirements.txt has changed in remote, scheduling pip install...
+        set repip=true
+    )
+
+    git pull    
+
+    if /I "%repip%"=="true" (
+        echo Installing updated requirements...
+        .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+    )
+
+    if /I "%reexec%"=="true" (
+        echo Re-executing start.bat...
         call "%~f0" %*
         exit /b
     )
-    git pull
+
     echo Updated
 )
 echo Restarting...

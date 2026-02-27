@@ -490,7 +490,7 @@ class Paginator:
     def __len__(self) -> int:
         return len(self.items)
 
-async def callback_listener(callback: Coroutine, bind: str):
+async def callback_listener(callback: Coroutine, bind: str, oneshot: bool = False):
     """
     Run an HTTP server on `bind` (e.g. "127.0.0.1:12345") that invokes
     `callback` on each request and responds with 200 OK. Used for shutdown
@@ -502,8 +502,14 @@ async def callback_listener(callback: Coroutine, bind: str):
     """
 
     address, port = bind.split(":")
+    triggered = asyncio.Event()
 
     async def listener(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        if triggered.is_set():
+            writer.close()
+            return
+        if oneshot:
+            triggered.set()
         try:
             await callback()
             response = (

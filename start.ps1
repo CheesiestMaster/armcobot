@@ -21,7 +21,7 @@ while ($true) {
     New-Item -Path "./pending.flag" -ItemType File -Force | Out-Null
     
     # Run main.py
-    python main.py
+    & .\.venv\Scripts\python.exe main.py
     
     if (Test-Path "./terminate.flag") {
         Write-Host "Terminating..."
@@ -44,14 +44,37 @@ while ($true) {
         Write-Host "Updating..."
         Remove-Item "./update.flag"
         git fetch
-        $diff = git diff ./start.ps1
-        if ($diff -ne "") {
-            Write-Host "start.ps1 has changed, reexecuting..."
-            git pull
-            & $PSCommandPath $args
+
+        $reexec = $false
+        $repip = $false
+
+        # Check if this script has changed on the remote (HEAD..upstream)
+        git diff --quiet HEAD..@{u} -- $PSCommandPath
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "start.ps1 has changed in remote, scheduling reexec..."
+            $reexec = $true
+        }
+
+        # Check if requirements.txt has changed on the remote (HEAD..upstream)
+        git diff --quiet HEAD..@{u} -- requirements.txt
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "requirements.txt has changed in remote, scheduling pip install..."
+            $repip = $true
+        }
+
+        git pull
+
+        if ($repip) {
+            Write-Host "Installing updated requirements..."
+            .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+        }
+
+        if ($reexec) {
+            Write-Host "Re-executing start.ps1..."
+            & $PSCommandPath @args
             exit
         }
-        git pull
+
         Write-Host "Updated"
     }
     Write-Host "Restarting..."

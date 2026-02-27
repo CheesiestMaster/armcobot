@@ -1,0 +1,4 @@
+pytest
+pytest-asyncio
+mysqlclient
+pip-tools
