@@ -1,8 +1,11 @@
 import asyncio
 from collections.abc import Mapping, Sequence
+from dataclasses import InitVar, dataclass, field
+from datetime import UTC, datetime
 from functools import lru_cache, wraps
 import inspect
 from inspect import Parameter, Signature
+from io import BytesIO
 import logging
 from logging import Logger, getLogger
 import os
@@ -13,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generator, Iterable,
 
 import discord
 from discord import Interaction, abc, app_commands as ac
+from discord.ui import Item
 import pandas as pd
 from prometheus_client import Counter, Gauge
 from sqlalchemy import ColumnElement, true
@@ -101,6 +105,7 @@ async def _notify_owner_mysql_error_4031():
 
 created_sessions = Counter("armcobot_created_sessions_total", "Total number of sessions created", labelnames=["scope"])
 inflight_sessions = Gauge("armcobot_inflight_sessions", "Number of sessions currently in use", labelnames=["scope"])
+error_counter = Counter("armcobot_errors_total", "Total number of errors", labelnames=["guild_name", "error"])
 
 def fqn(func: Callable) -> str:
     """
@@ -756,7 +761,7 @@ def error_reporting(verbose: None | bool = None):
 
     return decorator
 
-def on_error_decorator(counter: Counter):
+def on_error_decorator(counter: Counter, has_self: bool = False):
     """
     Decorator that increments a Prometheus counter by guild and error type
     before calling the wrapped error handler.
@@ -770,11 +775,28 @@ def on_error_decorator(counter: Counter):
     """
 
     def decorator(func: Callable[[Interaction, Exception], Coroutine]):
-        @wraps(func)
-        async def wrapper(interaction: Interaction, error: Exception):
-            counter.labels(guild_name=interaction.guild.name if interaction.guild else "DMs", error=type(error).__name__).inc()
-            return await func(interaction, error)
-        return wrapper
+        if not has_self:
+            @wraps(func)
+            async def wrapper(interaction: Interaction, error: Exception, *args, **kwargs):
+                global CustomClient
+                if CustomClient is None:
+                    from customclient import CustomClient
+                CustomClient().last_error = LastErrorRecord(error, interaction)
+                logger.debug(f"Last error recorded: {CustomClient().last_error}")
+                counter.labels(guild_name=interaction.guild.name if interaction.guild else "DMs", error=type(error).__name__).inc()
+                return await func(interaction, error, *args, **kwargs)
+            return wrapper
+        else:
+            @wraps(func)
+            async def wrapper(self, interaction: Interaction, error: Exception, *args, **kwargs):
+                global CustomClient
+                if CustomClient is None:
+                    from customclient import CustomClient
+                CustomClient().last_error = LastErrorRecord(error, interaction)
+                logger.debug(f"Last error recorded: {CustomClient().last_error}")
+                counter.labels(guild_name=interaction.guild.name if interaction.guild else "DMs", error=type(error).__name__).inc()
+                return await func(self, interaction, error, *args, **kwargs)
+            return wrapper
     return decorator
 
 def inject(**_kwargs):
@@ -1281,3 +1303,51 @@ async def chunked_send(
     await send_first(chunks[0], ephemeral=ephemeral)
     for chunk in chunks[1:]:
         await interaction.followup.send(chunk, ephemeral=ephemeral)
+
+@dataclass
+class LastErrorRecord:
+    error: Exception
+    interaction: InitVar[Interaction]
+
+    timestamp: datetime = field(init=False, default_factory=lambda: datetime.now(UTC))
+
+    user_mention: str = field(init=False)
+    user_name: str = field(init=False)
+    guild: str = field(init=False)
+    channel_mention: str = field(init=False)
+    channel_name: str = field(init=False)
+    command: str | None = field(init=False)
+    traceback: str = field(init=False)
+
+    def __post_init__(self, interaction: Interaction):
+        self.user_mention = interaction.user.mention
+        self.user_name = interaction.user.display_name
+        self.guild = interaction.guild.name if interaction.guild else "DMs"
+        self.channel_mention = interaction.channel.mention if interaction.guild else ""
+        self.channel_name = interaction.channel.name if interaction.guild else "DMs"
+        self.command = interaction.command.name if interaction.command else None
+        self.traceback = ''.join(traceback.format_exception(self.error))
+
+    def __str__(self):
+        return f"""Timestamp: <t:{int(self.timestamp.timestamp())}:F>
+User: {self.user_mention} ({self.user_name})
+Guild: {self.guild}
+Channel: {self.channel_mention} ({self.channel_name})
+Command: {self.command}
+---- TRACEBACK ----
+{self.traceback}
+---- END TRACEBACK ----"""
+    
+    def to_attachment(self) -> discord.File:
+        data = str(self).encode('utf-8', errors='replace')
+        return discord.File(BytesIO(data), filename=f"error_{int(self.timestamp.timestamp())}.txt")
+
+class RecordingView(discord.ui.View):
+    @on_error_decorator(error_counter, has_self=True)
+    async def on_error(self, interaction: Interaction, error: Exception, item: Item[Any], /) -> None:
+        return await super().on_error(interaction, error, item)
+
+class RecordingModal(discord.ui.Modal):
+    @on_error_decorator(error_counter, has_self=True)
+    async def on_error(self, interaction: Interaction, error: Exception, /) -> None:
+        return await super().on_error(interaction, error)

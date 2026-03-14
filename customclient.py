@@ -35,7 +35,7 @@ import templates as tmpl
 from singleton import Singleton
 
 from models import Config, Dossier, Extension, Medals, Player, PlayerUpgrade, Statistic, Unit
-from utils import EnvironHelpers, RatelimitError, UserSemaphore, uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator, fuzzy_autocomplete_caches
+from utils import EnvironHelpers, LastErrorRecord, RatelimitError, UserSemaphore, uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator, error_counter, fuzzy_autocomplete_caches
 
 use_ephemeral = EnvironHelpers.get_bool("EPHEMERAL", False)
 
@@ -44,7 +44,6 @@ logging.getLogger("discord").setLevel(logging.WARNING)
 
 # Create interaction counter metric
 interaction_counter = Counter("armcobot_interactions_total", "Total number of interactions", labelnames=["guild_name"])
-error_counter = Counter("armcobot_errors_total", "Total number of errors", labelnames=["guild_name", "error"])
 ratelimited_counter = Counter("armcobot_ratelimited_total", "Total number of commands dropped due to ratelimits", labelnames=["guild_name"])
 queue_size_metric = Gauge("armcobot_queue_size", "The size of the queue")
 discord_latency = Gauge("armcobot_discord_latency_seconds", "The latency of the bot to Discord")
@@ -70,6 +69,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
     session: Session
     use_ephemeral: bool
     config: dict
+    last_error: LastErrorRecord | None = None
     sessionmaker: Callable
     start_time: datetime
 
@@ -818,6 +818,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             if len(session.query(Extension.name).all()) > 0:
                 await self.load_extensions([ext[0] for ext in session.query(Extension.name).all()])
             else:
+                logger.warning("No extensions found in the database, loading default extensions")
                 await self.load_extension("extensions.debug") # the debug extension is always loaded
                 await self.load_extensions(["extensions.configuration", "extensions.admin", "extensions.faq", "extensions.companies", "extensions.units", "extensions.shop", "extensions.campaigns", "extensions.stockpile", "extensions.management"])
 

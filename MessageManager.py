@@ -1,7 +1,7 @@
 from typing import Any, Optional, Type, Union
 
 import discord
-from discord.ui import View
+from utils import RecordingView
 
 class MessageManager:
     """
@@ -13,7 +13,7 @@ class MessageManager:
     def __init__(
         self,
         destination: Union[discord.Interaction, discord.abc.Messageable],
-        view_type: Optional[Type[View]] = None,
+        view_type: Optional[Type[RecordingView]] = None,
         embed_type: Optional[Type[discord.Embed]] = None,
     ):
         """
@@ -30,7 +30,7 @@ class MessageManager:
         self.embed = embed_type() if embed_type else None
         self.message = None
 
-    async def send_message(self, embed: Optional[discord.Embed] = None, view: Optional[View] = None, **kwargs: Any):
+    async def send_message(self, embed: Optional[discord.Embed] = None, view: Optional[RecordingView] = None, **kwargs: Any):
         """
         Send a message to the destination. Uses response.send_message,
         followup.send, or channel.send depending on destination state.
@@ -59,7 +59,7 @@ class MessageManager:
                 raise ValueError("Destination is None")
             self.message = await self.destination.send(**send_kwargs)
 
-    async def update_message(self, view: Optional[View] = None, embed: Optional[discord.Embed] = None, **kwargs: Any):
+    async def update_message(self, view: Optional[RecordingView] = None, embed: Optional[discord.Embed] = None, **kwargs: Any):
         """
         Updates the existing message with the current View and Embed.
 

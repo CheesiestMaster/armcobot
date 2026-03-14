@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from customclient import CustomClient
 from models import Player, Unit, UnitStatus, PlayerUpgrade, Medals
 from prometheus import as_of
-from utils import EnvironHelpers, error_reporting, has_invalid_url, uses_db, filter_df, is_management
+from utils import EnvironHelpers, error_reporting, has_invalid_url, uses_db, filter_df, is_management, RecordingView
 
 logger = getLogger(__name__)
 
@@ -333,7 +333,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
             await interaction.response.send_message("Name is too long, please use a shorter name", ephemeral=self.bot.use_ephemeral)
             return
 
-        class UnitSelectView(ui.View):
+        class UnitSelectView(RecordingView):
             def __init__(self, parent_instance, _player, active_units, name, session):
                 super().__init__(timeout=60)
                 self.parent_instance = parent_instance
@@ -381,7 +381,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
             async def callback(self, interaction: Interaction):
                 await interaction.response.defer(ephemeral=True)
 
-        class RemoveUnitView(ui.View):
+        class RemoveUnitView(RecordingView):
             def __init__(self, player_units: list[Unit]):
                 super().__init__()
                 self.bot = CustomClient()
@@ -496,7 +496,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
 
             @uses_db(CustomClient().sessionmaker)
             async def callback(self, interaction: Interaction, session: Session):
-                status_view = ui.View()
+                status_view = RecordingView()
                 unit = session.query(Unit).filter(Unit.id == self.values[0]).first()
                 status_view.add_item(StatusSelect(unit))
                 await interaction.response.send_message("Please select the new status for the unit", view=status_view, ephemeral=self.bot.use_ephemeral)
@@ -534,7 +534,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
                 await interaction.response.send_message(f"Unit {self.unit.name} activated with callsign {new_callsign}", ephemeral=CustomClient().use_ephemeral)
                 self.bot.queue.put_nowait((1, self.unit.player, 0))
 
-        view = ui.View()
+        view = RecordingView()
         view.add_item(UnitSelect(player))
         await interaction.response.send_message("Please select the unit you want to change the status of", view=view, ephemeral=CustomClient().use_ephemeral)
 
@@ -596,7 +596,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         if not player:
             await interaction.response.send_message("The player doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
             return
-        view = ui.View()
+        view = RecordingView()
         select = ui.Select(placeholder="Select the unit you want to manage")
         [select.add_option(label=unit.name, value=unit.id) for unit in player.units] # side effect comprehension
         select.callback = self.manage_units_callback
@@ -609,7 +609,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         if not unit:
             await interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
             return
-        view = ui.View()
+        view = RecordingView()
 
 
 

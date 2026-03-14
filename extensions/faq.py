@@ -10,7 +10,7 @@ import templates as tmpl
 
 from customclient import CustomClient
 from models import Faq as Faq_model
-from utils import EnvironHelpers, maybe_decorate, uses_db, chunk_list, RollingCounterDict
+from utils import EnvironHelpers, maybe_decorate, uses_db, chunk_list, RollingCounterDict, RecordingView
 
 logger = getLogger(__name__)
 
@@ -92,7 +92,7 @@ class Faq(GroupCog, description="FAQ: view, add, remove, edit, list questions an
                 faq_queries_metric.inc()
                 await interaction.response.send_message(tmpl.faq_response.format(selected=selected_question), ephemeral=True)
         faq_dropdowns = [FaqDropdown(placeholder="Select a question", options=chunk) for chunk in faq_chunks]
-        view = ui.View()
+        view = RecordingView()
         for dropdown in faq_dropdowns:
             view.add_item(dropdown)
         await interaction.response.send_message(tmpl.faq_select_question, view=view, ephemeral=True)
@@ -147,7 +147,7 @@ class Faq(GroupCog, description="FAQ: view, add, remove, edit, list questions an
                 session.delete(selected_question)
                 await interaction.response.send_message(tmpl.faq_question_removed, ephemeral=True)
         faq_dropdowns = [FaqDropdown(placeholder="Select a question", options=chunk) for chunk in faq_chunks]
-        view = ui.View()
+        view = RecordingView()
         for dropdown in faq_dropdowns:
             view.add_item(dropdown)
         await interaction.response.send_message(tmpl.faq_select_question, view=view, ephemeral=True)
@@ -189,7 +189,7 @@ class Faq(GroupCog, description="FAQ: view, add, remove, edit, list questions an
                 modal.on_submit = modal_callback
                 await interaction.response.send_modal(modal)
         faq_dropdowns = [FaqDropdown(placeholder="Select a question", options=chunk) for chunk in faq_chunks]
-        view = ui.View()
+        view = RecordingView()
         for dropdown in faq_dropdowns:
             view.add_item(dropdown)
         await interaction.response.send_message(tmpl.faq_select_question, view=view, ephemeral=True)

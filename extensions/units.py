@@ -7,14 +7,13 @@ from typing import Tuple
 import discord
 from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOption, User
 from discord.ext.commands import GroupCog
-from discord.ui import View
 from sqlalchemy import exists, func
 from sqlalchemy.orm import Session
 import templates as tmpl
 
 from customclient import CustomClient
 from models import Player, Unit as Unit_model, UnitStatus, Campaign, CampaignInvite, UnitType
-from utils import EnvironHelpers, fuzzy_autocomplete, hide_arg, maybe_decorate, uses_db, is_management, error_reporting, with_log_level
+from utils import EnvironHelpers, fuzzy_autocomplete, hide_arg, maybe_decorate, uses_db, is_management, error_reporting, with_log_level, RecordingView
 
 logger = getLogger(__name__)
 
@@ -82,7 +81,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
                 logger.triage(f"Unit type selected: {self.values[0]}")
                 await interaction.response.defer(ephemeral=True)
 
-        class CreateUnitView(ui.View):
+        class CreateUnitView(RecordingView):
             def __init__(self):
                 super().__init__()
                 self.add_item(UnitSelect())
@@ -243,7 +242,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
                 return False, "🔒"
             return True, "✅"
 
-        view = View(timeout=None)
+        view = RecordingView(timeout=None)
         select = ui.Select(placeholder=tmpl.unit_select_campaign_placeholder)
         logger.triage(f"Creating campaign select with {len(campaigns)} options")
         for campaign in campaigns:
@@ -274,7 +273,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
                 return
 
             unit_select = ui.Select(placeholder=tmpl.unit_select_unit_placeholder)
-            unit_view = View(timeout=None)
+            unit_view = RecordingView(timeout=None)
             logger.triage(f"Querying inactive units for player {_player.name}")
             units = session.query(Unit_model).filter(Unit_model.player_id == _player.id, Unit_model.status == "INACTIVE", Unit_model.unit_type != "STOCKPILE").all()
 
@@ -377,7 +376,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
                 CustomClient().queue.put_nowait((1, player, 0)) # this is a nested class, so we have to invoke the singleton instead of using self.bot.queue
                 await interaction.followup.send(tmpl.unit_removed.format(unit=unit), ephemeral=CustomClient().use_ephemeral)
 
-        view = View()
+        view = RecordingView()
         try:
             view.add_item(UnitSelect())
         except Exception as e:
@@ -450,7 +449,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
                         cog.bot.queue.put_nowait((1, player, 0))
                         logger.debug(f"Queued notification for deactivated unit: player_id={player.discord_id}, unit_callsign={original_callsign}")
 
-            class DeactivateUnitView(ui.View):
+            class DeactivateUnitView(RecordingView):
                 def __init__(self, units: list[Unit_model]):
                     super().__init__()
                     select = UnitDeactivateSelect(units)
@@ -560,7 +559,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
 
 
 
-        view = View()
+        view = RecordingView()
         view.add_item(UnitSelect())
         await interaction.response.send_message(tmpl.unit_select_to_rename, view=view, ephemeral=CustomClient().use_ephemeral)
 
@@ -610,7 +609,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
                 await interaction.followup.send(tmpl.unit_transfer_success.format(unit=unit, target_player=target_player), ephemeral=CustomClient().use_ephemeral)
 
 
-        view = View()
+        view = RecordingView()
         try:
             view.add_item(UnitSelect())
         except Exception as e:

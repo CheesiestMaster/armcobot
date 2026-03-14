@@ -10,7 +10,7 @@ import templates as tmpl
 from customclient import CustomClient
 from MessageManager import MessageManager
 from models import Campaign, Player, Unit, UnitStatus, PlayerUpgrade, UnitType, UpgradeType, ShopUpgrade, ShopUpgradeUnitTypes
-from utils import error_reporting, is_management, uses_db, inject, Paginator, fuzzy_autocomplete
+from utils import error_reporting, is_management, uses_db, inject, Paginator, fuzzy_autocomplete, RecordingView
 
 logger = getLogger(__name__)
 
@@ -39,7 +39,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
             return
         message_manager = MessageManager(interaction)
         embed = self.EditCompanyEmbed(company, player)
-        view = ui.View()
+        view = RecordingView()
         btn = ui.Button(label="Edit Company", style=ButtonStyle.primary, custom_id="edit_company")
         view.add_item(btn)
         @error_reporting(False)
@@ -52,7 +52,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
             modal = self.EditCompanyModal(_company, message_manager)
             await _interaction.response.send_modal(modal)
         btn.callback = btn_callback
-        await message_manager.send_message(embed=embed, view=view)
+        await message_manager.send_message(embed=embed, view=view, ephemeral=CustomClient().use_ephemeral)
 
     class EditCompanyEmbed(Embed):
         def __init__(self, company: Player, member: Member):
@@ -108,7 +108,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
     async def shop(self, interaction: Interaction, session: Session):
         logger.info(f"Manage shop command invoked by {interaction.user.id} ({interaction.user.name})")
         message_manager = MessageManager(interaction)
-        view = ui.View()
+        view = RecordingView()
         predicate = self._shop_original_author(interaction)
         injector = inject(message_manager=message_manager)
         unittype_button = ui.Button(label=tmpl.shop_unit_type_button, style=ButtonStyle.primary)
@@ -120,7 +120,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
         upgrade_button = ui.Button(label=tmpl.shop_upgrade_button, style=ButtonStyle.primary)
         view.add_item(upgrade_button)
         upgrade_button.callback = ac.check(predicate)(injector(self._shop_upgrade_callback))
-        await message_manager.send_message(content=tmpl.shop_manage_select_content, view=view, ephemeral=True)
+        await message_manager.send_message(content=tmpl.shop_manage_select_content, view=view, ephemeral=CustomClient().use_ephemeral)
 
     @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
@@ -129,7 +129,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
         unit_types = session.query(UnitType.unit_type).all()
         unit_types.append(("\0Add New Unit Type",))
         paginator: Paginator[tuple] = Paginator(unit_types, 25)
-        view = ui.View()
+        view = RecordingView()
         select = ui.Select(placeholder=tmpl.shop_unit_type_select_placeholder)
         previous_button = ui.Button(label=tmpl.shop_previous_button, style=ButtonStyle.secondary, disabled=True)
         next_button = ui.Button(label=tmpl.shop_next_button, style=ButtonStyle.secondary, disabled=not paginator.has_next())
@@ -180,7 +180,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                 @error_reporting(True)
                 async def modal_submit(interaction: Interaction):
                     new_unit_type_data["unit_type"] = interaction.data["components"][0]["components"][0]["value"]
-                    view = ui.View()
+                    view = RecordingView()
                     is_base_unit = ui.Select(placeholder=tmpl.shop_is_base_placeholder, options=[SelectOption(label="Yes", value="y"), SelectOption(label="No", value="n")])
                     unit_req_amount = ui.Select(placeholder=tmpl.shop_unit_req_amount_placeholder, options=[SelectOption(label=str(i), value=str(i)) for i in range(0, 4)])
                     done_button = ui.Button(label=tmpl.shop_done_button, style=ButtonStyle.primary)
@@ -208,14 +208,14 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                         new_unit_type = UnitType(unit_type=new_unit_type_data["unit_type"], is_base=new_unit_type_data["is_base"], unit_req=new_unit_type_data["unit_req"])
                         session.add(new_unit_type)
                         await interaction.response.defer(thinking=False, ephemeral=True)
-                        await message_manager.update_message(content=tmpl.shop_unit_type_added, view=ui.View())
+                        await message_manager.update_message(content=tmpl.shop_unit_type_added, view=RecordingView())
                     done_button.callback = done_button_callback
                 modal.on_submit = modal_submit
             else:
                 unit_type_ = session.query(UnitType).filter(UnitType.unit_type == target).first()
-                def ui_factory(unit_type: UnitType) -> tuple[ui.View, Embed]:
+                def ui_factory(unit_type: UnitType) -> tuple[RecordingView, Embed]:
                     nonlocal target
-                    view = ui.View()
+                    view = RecordingView()
                     embed = Embed(title=tmpl.shop_unit_type_title.format(unit_type=unit_type.unit_type))
                     embed.add_field(name="Is Base", value="Yes" if unit_type.is_base else "No")
                     embed.add_field(name="Unit Req", value=str(unit_type.unit_req))
@@ -264,7 +264,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                             await interaction.response.send_message(tmpl.shop_unit_type_renamed.format(old=unit_type.unit_type, new=new_name), ephemeral=True)
                             updated_unit_type = session.query(UnitType).filter(UnitType.unit_type == new_name).first()
                             new_view, new_embed = ui_factory(updated_unit_type)
-                            await message_manager.update_message(content="Please set up the unit type", view=new_view, embed=new_embed)
+                            await message_manager.update_message(content="Please set up the unit type", view=new_view, embed=new_embed, ephemeral=CustomClient().use_ephemeral)
                         modal.on_submit = modal_submit
                         await interaction.response.send_modal(modal)
                     rename_button.callback = rename_button_callback
@@ -336,7 +336,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
         upgrade_types = session.query(UpgradeType.name).all()
         upgrade_types.append(("\0Add New Upgrade Type",))
         paginator: Paginator[tuple] = Paginator(upgrade_types, 25)
-        view = ui.View()
+        view = RecordingView()
         select = ui.Select(placeholder=tmpl.shop_upgrade_type_select_placeholder)
         previous_button = ui.Button(label=tmpl.shop_previous_button, style=ButtonStyle.secondary, disabled=True)
         next_button = ui.Button(label=tmpl.shop_next_button, style=ButtonStyle.secondary, disabled=not paginator.has_next())
@@ -403,14 +403,14 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                     session.add(new_upgrade_type)
                     session.commit()
                     await interaction.response.defer(thinking=False, ephemeral=True)
-                    await message_manager.update_message(content=tmpl.shop_upgrade_type_added, view=ui.View())
+                    await message_manager.update_message(content=tmpl.shop_upgrade_type_added, view=RecordingView())
                 modal.on_submit = modal_submit
                 await interaction.response.send_modal(modal)
             else:
                 upgrade_type_ = session.query(UpgradeType).filter(UpgradeType.name == target).first()
-                def ui_factory(upgrade_type: UpgradeType) -> tuple[ui.View, Embed]:
+                def ui_factory(upgrade_type: UpgradeType) -> tuple[RecordingView, Embed]:
                     nonlocal target
-                    view = ui.View()
+                    view = RecordingView()
                     embed = Embed(title=tmpl.shop_upgrade_type_title.format(name=upgrade_type.name))
                     embed.add_field(name="Emoji", value=upgrade_type.emoji or "None")
                     embed.add_field(name="Is Refit", value="Yes" if upgrade_type.is_refit else "No")
@@ -470,7 +470,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                         if not upgrade_type:
                             await interaction.response.send_message(tmpl.unexpected_error, ephemeral=True)
                             return
-                        edit_view = ui.View()
+                        edit_view = RecordingView()
                         is_refit_select = ui.Select(placeholder="Is Refit", options=[SelectOption(label="Yes", value="true", default=upgrade_type.is_refit), SelectOption(label="No", value="false", default=not upgrade_type.is_refit)])
                         non_purchaseable_select = ui.Select(placeholder="Non Purchaseable", options=[SelectOption(label="Yes", value="true", default=upgrade_type.non_purchaseable), SelectOption(label="No", value="false", default=not upgrade_type.non_purchaseable)])
                         can_use_unit_req_select = ui.Select(placeholder="Can Use Unit Req", options=[SelectOption(label="Yes", value="true", default=upgrade_type.can_use_unit_req), SelectOption(label="No", value="false", default=not upgrade_type.can_use_unit_req)])
@@ -592,7 +592,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
         shop_upgrades = session.query(ShopUpgrade.id, ShopUpgrade.name).order_by(ShopUpgrade.sort_key, ShopUpgrade.id).all()
         shop_upgrades.append(("\0Add New Shop Upgrade", "\0Add New Shop Upgrade"))
         paginator: Paginator[tuple] = Paginator(shop_upgrades, 25)
-        view = ui.View()
+        view = RecordingView()
         select = ui.Select(placeholder=tmpl.shop_upgrade_select_placeholder)
         previous_button = ui.Button(label=tmpl.shop_previous_button, style=ButtonStyle.secondary, disabled=True)
         next_button = ui.Button(label=tmpl.shop_next_button, style=ButtonStyle.secondary, disabled=not paginator.has_next())
@@ -636,15 +636,16 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
             target = interaction.data["values"][0]
             if target == "\0Add New Shop Upgrade":
                 upgrade_types = session.query(UpgradeType).all()
-                add_view = ui.View()
+                add_view = RecordingView()
                 upgrade_type_options = [SelectOption(label=ut.name, value=ut.name) for ut in upgrade_types]
                 upgrade_type_select = ui.Select(placeholder=tmpl.shop_select_upgrade_type_placeholder, options=upgrade_type_options)
                 disabled_select = ui.Select(placeholder=tmpl.shop_disabled_placeholder, options=[SelectOption(label="No", value="n"), SelectOption(label="Yes", value="y")])
-                repeatable_select = ui.Select(placeholder=tmpl.shop_repeatable_placeholder, options=[SelectOption(label="No", value="n"), SelectOption(label="Yes", value="y")])
+                repeatable_options = [SelectOption(label="Unlimited", value="0")] + [SelectOption(label=str(n), value=str(n)) for n in range(1, 11)]
+                repeatable_select = ui.Select(placeholder=tmpl.shop_repeatable_placeholder, options=repeatable_options)
                 add_view.add_item(upgrade_type_select)
                 add_view.add_item(disabled_select)
                 add_view.add_item(repeatable_select)
-                selected_values = {"upgrade_type": None, "disabled": False, "repeatable": False}
+                selected_values = {"upgrade_type": None, "disabled": False, "repeatable": 0}
                 @check
                 @error_reporting(True)
                 async def upgrade_type_callback(interaction: Interaction):
@@ -660,9 +661,10 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                 @check
                 @error_reporting(True)
                 async def repeatable_callback(interaction: Interaction):
-                    selected_values["repeatable"] = repeatable_select.values[0] == "y" if repeatable_select.values else False
+                    selected_values["repeatable"] = int(repeatable_select.values[0]) if repeatable_select.values else 0
                     await interaction.response.defer(thinking=False, ephemeral=True)
-                    await message_manager.update_message(content=tmpl.shop_repeatable_status.format(status='Yes' if selected_values['repeatable'] else 'No'), view=add_view)
+                    status = "Unlimited" if selected_values["repeatable"] == 0 else f"Max: {selected_values['repeatable']}"
+                    await message_manager.update_message(content=tmpl.shop_repeatable_status.format(status=status), view=add_view)
                 proceed_button = ui.Button(label=tmpl.shop_proceed_to_details_button, style=ButtonStyle.primary)
                 @check
                 @error_reporting(True)
@@ -699,7 +701,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                             session.add(ShopUpgradeUnitTypes(shop_upgrade_id=new_shop_upgrade.id, unit_type=unit_type_name))
                         session.commit()
                         await interaction.response.defer(thinking=False, ephemeral=True)
-                        await message_manager.update_message(content=tmpl.shop_upgrade_added, view=ui.View())
+                        await message_manager.update_message(content=tmpl.shop_upgrade_added, view=RecordingView())
                     modal.on_submit = modal_submit
                     await interaction.response.send_modal(modal)
                 proceed_button.callback = proceed_callback
@@ -710,16 +712,16 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                 await interaction.response.send_message(tmpl.shop_please_select_boolean_options, view=add_view, ephemeral=True)
             else:
                 shop_upgrade_ = session.query(ShopUpgrade).filter(ShopUpgrade.id == int(target)).first()
-                def ui_factory(shop_upgrade: ShopUpgrade) -> tuple[ui.View, Embed]:
+                def ui_factory(shop_upgrade: ShopUpgrade) -> tuple[RecordingView, Embed]:
                     nonlocal target
-                    view = ui.View()
+                    view = RecordingView()
                     embed = Embed(title=tmpl.shop_upgrade_title.format(name=shop_upgrade.name))
                     embed.add_field(name="Type", value=shop_upgrade.type)
                     embed.add_field(name="Cost", value=str(shop_upgrade.cost))
                     embed.add_field(name="Refit Target", value=shop_upgrade.refit_target or "None")
                     embed.add_field(name="Required Upgrade ID", value=str(shop_upgrade.required_upgrade_id) if shop_upgrade.required_upgrade_id else "None")
                     embed.add_field(name="Disabled", value="Yes" if shop_upgrade.disabled else "No")
-                    embed.add_field(name="Repeatable", value="Yes" if shop_upgrade.repeatable else "No")
+                    embed.add_field(name="Repeatable", value="Unlimited" if shop_upgrade.repeatable == 0 else f"Max: {shop_upgrade.repeatable}")
                     compatible_unit_types = [assoc.unit_type for assoc in shop_upgrade.unit_types]
                     embed.add_field(name="Compatible Unit Types", value="\n".join(compatible_unit_types) if compatible_unit_types else "None", inline=False)
                     rename_button = ui.Button(label=tmpl.shop_rename_button, style=ButtonStyle.primary)
@@ -784,7 +786,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                         compatible_unit_types = [assoc.unit_type for assoc in shop_upgrade_obj.unit_types]
                         unit_types_text = "\n".join(compatible_unit_types)
                         upgrade_types = session.query(UpgradeType).all()
-                        edit_view = ui.View()
+                        edit_view = RecordingView()
                         upgrade_type_options = [SelectOption(label=ut.name, value=ut.name) for ut in upgrade_types]
                         upgrade_type_select = ui.Select(placeholder=tmpl.shop_select_upgrade_type_placeholder, options=upgrade_type_options)
                         for option in upgrade_type_select.options:
@@ -792,7 +794,12 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                                 option.default = True
                                 break
                         disabled_select = ui.Select(placeholder=tmpl.shop_disabled_placeholder, options=[SelectOption(label="Disabled: No", value="n", default=not shop_upgrade_obj.disabled), SelectOption(label="Disabled: Yes", value="y", default=shop_upgrade_obj.disabled)])
-                        repeatable_select = ui.Select(placeholder=tmpl.shop_repeatable_placeholder, options=[SelectOption(label="Repeatable: No", value="n", default=not shop_upgrade_obj.repeatable), SelectOption(label="Repeatable: Yes", value="y", default=shop_upgrade_obj.repeatable)])
+                        repeatable_options = [SelectOption(label="Unlimited", value="0"), *[SelectOption(label=str(n), value=str(n)) for n in range(1, 11)]]
+                        if shop_upgrade_obj.repeatable > 10:
+                            repeatable_options.append(SelectOption(label=str(shop_upgrade_obj.repeatable), value=str(shop_upgrade_obj.repeatable)))
+                        for opt in repeatable_options:
+                            opt.default = (opt.value == str(shop_upgrade_obj.repeatable))
+                        repeatable_select = ui.Select(placeholder=tmpl.shop_repeatable_placeholder, options=repeatable_options)
                         edit_view.add_item(upgrade_type_select)
                         edit_view.add_item(disabled_select)
                         edit_view.add_item(repeatable_select)
@@ -812,23 +819,25 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                         @check
                         @error_reporting(True)
                         async def repeatable_cb(interaction: Interaction):
-                            selected_values["repeatable"] = repeatable_select.values[0] == "y" if repeatable_select.values else shop_upgrade_obj.repeatable
+                            selected_values["repeatable"] = int(repeatable_select.values[0]) if repeatable_select.values else shop_upgrade_obj.repeatable
                             await interaction.response.defer(thinking=False, ephemeral=True)
-                            await message_manager.update_message(content=tmpl.shop_repeatable_status.format(status='Yes' if selected_values['repeatable'] else 'No'), view=edit_view)
+                            status = "Unlimited" if selected_values["repeatable"] == 0 else f"Max: {selected_values['repeatable']}"
+                            await message_manager.update_message(content=tmpl.shop_repeatable_status.format(status=status), view=edit_view)
                         proceed_button = ui.Button(label=tmpl.shop_proceed_to_details_button, style=ButtonStyle.primary)
                         @check
                         @error_reporting(True)
                         @uses_db(CustomClient().sessionmaker)
                         async def proceed_cb(interaction: Interaction, session: Session):
+                            _shop_upgrade_obj = session.query(ShopUpgrade).filter(ShopUpgrade.id == shop_upgrade_id_).first()
                             if not selected_values["upgrade_type"]:
                                 await interaction.response.send_message(tmpl.shop_please_select_upgrade_type, ephemeral=True)
                                 return
                             modal = ui.Modal(title=tmpl.shop_edit_shop_upgrade_modal_title)
-                            name_input = ui.TextInput(label=tmpl.shop_upgrade_name_label, placeholder=tmpl.shop_upgrade_name_placeholder, default=shop_upgrade_obj.name, min_length=1, max_length=30)
-                            cost_input = ui.TextInput(label=tmpl.shop_upgrade_cost_label, placeholder=tmpl.shop_cost_placeholder, default=str(shop_upgrade_obj.cost), min_length=1, max_length=10)
-                            refit_target_input = ui.TextInput(label=tmpl.shop_refit_target_label, placeholder=tmpl.shop_refit_target_optional_placeholder, default=shop_upgrade_obj.refit_target or "", max_length=15, required=False)
-                            required_upgrade_id_input = ui.TextInput(label="Required Upgrade ID", placeholder=tmpl.shop_required_upgrade_id_placeholder, default=str(shop_upgrade_obj.required_upgrade_id) if shop_upgrade_obj.required_upgrade_id else "", max_length=10, required=False)
-                            unit_types_input = ui.TextInput(label="Compatible Unit Types", placeholder=tmpl.shop_compatible_unit_types_placeholder, default=selected_values["unit_types_text"], style=TextStyle.paragraph, required=False)
+                            name_input = ui.TextInput(label=tmpl.shop_upgrade_name_label, placeholder=tmpl.shop_upgrade_name_placeholder, default=_shop_upgrade_obj.name, min_length=1, max_length=30)
+                            cost_input = ui.TextInput(label=tmpl.shop_upgrade_cost_label, placeholder=tmpl.shop_cost_placeholder, default=str(_shop_upgrade_obj.cost), min_length=1, max_length=10)
+                            refit_target_input = ui.TextInput(label=tmpl.shop_refit_target_label, placeholder=tmpl.shop_refit_target_optional_placeholder, default=_shop_upgrade_obj.refit_target or "", max_length=15, required=False)
+                            required_upgrade_id_input = ui.TextInput(label="Required Upgrade ID", placeholder=tmpl.shop_required_upgrade_id_placeholder, default=str(_shop_upgrade_obj.required_upgrade_id) if _shop_upgrade_obj.required_upgrade_id else "", max_length=10, required=False)
+                            unit_types_input = ui.TextInput(label="Compatible Unit Types", placeholder=tmpl.shop_compatible_unit_types_placeholder, default="\n".join([assoc.unit_type for assoc in _shop_upgrade_obj.unit_types]), style=TextStyle.paragraph, required=False)
                             modal.add_item(name_input)
                             modal.add_item(cost_input)
                             modal.add_item(refit_target_input)
@@ -859,7 +868,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                                     session.add(ShopUpgradeUnitTypes(shop_upgrade_id=shop_upgrade_obj.id, unit_type=unit_type_name))
                                 session.commit()
                                 await interaction.response.defer(thinking=False, ephemeral=True)
-                                await message_manager.update_message(content=tmpl.shop_upgrade_updated, view=ui.View())
+                                await message_manager.update_message(content=tmpl.shop_upgrade_updated, view=RecordingView())
                             modal.on_submit = modal_submit
                             await interaction.response.send_modal(modal)
                         proceed_button.callback = proceed_cb
@@ -908,9 +917,9 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
     async def units(self, interaction: Interaction, player: Member, session: Session):
         player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not player:
-            await interaction.response.send_message("The player doesn't have a Meta Campaign company", ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message("The player doesn't have a Meta Campaign company", ephemeral=True)
             return
-        view = ui.View()
+        view = RecordingView()
         select = ui.Select(placeholder="Select the unit you want to manage")
         if not player.units:
             select.disabled = True
@@ -918,23 +927,23 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
         [select.add_option(label=unit.name, value=unit.id) for unit in player.units] # side effect comprehension
         select.callback = self.manage_units_callback
         view.add_item(select)
-        await interaction.response.send_message(f"Please select the unit you want to manage for {player.name}", view=view, ephemeral=CustomClient().use_ephemeral)
+        await interaction.response.send_message(f"Please select the unit you want to manage for {player.name}", view=view, ephemeral=True)
 
     @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
     async def manage_units_callback(self, interaction: Interaction, session: Session):
         if interaction.data["values"][0] == "no_units":
-            await interaction.response.send_message("No unit selected", ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message("No unit selected", ephemeral=True)
             return
         unit = session.query(Unit).filter(Unit.id == int(interaction.data["values"][0])).first()
         if not unit:
-            await interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message("Unit not found", ephemeral=True)
             return
         message_manager = MessageManager(interaction)
         member = interaction.guild.get_member(int(unit.player.discord_id)) if interaction.guild else None
         embed = self.UnitManageEmbed(unit, member)
         view = self.UnitManageView(unit, message_manager, interaction.user.id)
-        await message_manager.send_message(embed=embed, view=view)
+        await message_manager.send_message(embed=embed, view=view, ephemeral=CustomClient().use_ephemeral)
 
     class UnitManageEmbed(Embed):
         def __init__(self, unit: Unit, member: Member | None):
@@ -945,7 +954,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
             self.add_field(name="Status", value=unit.status.name if unit.status else "—", inline=True)
             self.set_footer(text=f"Unit ID: {unit.id}")
 
-    class UnitManageView(ui.View):
+    class UnitManageView(RecordingView):
         def __init__(self, unit: Unit, message_manager: MessageManager, original_user_id: int):
             super().__init__()
             self.unit = unit
@@ -982,7 +991,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
             unit = session.merge(self.unit)
             self.message_manager.embed.title = f"Remove {unit.name}?"
             self.message_manager.embed.description = "Are you sure you want to remove this unit? Click Confirm below to proceed to final confirmation."
-            confirm_view = ui.View()
+            confirm_view = RecordingView()
             confirm_btn = ui.Button(label="Confirm", style=ButtonStyle.primary, custom_id="remove_confirm_1")
             cancel_btn = ui.Button(label="Cancel", style=ButtonStyle.secondary, custom_id="remove_cancel_1")
             unit_id = unit.id
@@ -994,7 +1003,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                     await _interaction.response.send_message("You are not the person who ran the command", ephemeral=True)
                     return
                 await _interaction.response.defer(ephemeral=True)
-                second_view = ui.View()
+                second_view = RecordingView()
                 final_btn = ui.Button(label="Permanently Remove Unit", style=ButtonStyle.danger, custom_id="remove_confirm_2")
                 cancel2_btn = ui.Button(label="Cancel", style=ButtonStyle.secondary, custom_id="remove_cancel_2")
 
@@ -1006,7 +1015,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                         return
                     _unit = session.query(Unit).filter(Unit.id == unit_id).first()
                     if not _unit:
-                        await _interaction2.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
+                        await _interaction2.response.send_message("Unit not found", ephemeral=True)
                         return
                     unit_name = _unit.name
                     player = _unit.player
@@ -1015,7 +1024,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                     session.flush()
                     session.delete(_unit)
                     CustomClient().queue.put_nowait((1, player, 0))
-                    await _interaction2.response.send_message(f"Unit {unit_name} has been removed", ephemeral=CustomClient().use_ephemeral)
+                    await _interaction2.response.send_message(f"Unit {unit_name} has been removed", ephemeral=True)
 
                 @error_reporting(True)
                 async def cancel2_cb(_interaction2: Interaction):
@@ -1072,14 +1081,14 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                     return
                 name = _interaction.data["components"][0]["components"][0]["value"].strip()
                 if not name:
-                    await _interaction.response.send_message("Name cannot be empty", ephemeral=CustomClient().use_ephemeral)
+                    await _interaction.response.send_message("Name cannot be empty", ephemeral=True)
                     return
                 if len(name) > 30:
-                    await _interaction.response.send_message("Name is too long", ephemeral=CustomClient().use_ephemeral)
+                    await _interaction.response.send_message("Name is too long", ephemeral=True)
                     return
                 _unit = session.query(Unit).filter(Unit.id == unit_id).first()
                 if not _unit:
-                    await _interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
+                    await _interaction.response.send_message("Unit not found", ephemeral=True)
                     return
                 upgrade = PlayerUpgrade(name=name, type="SPECIAL", unit_id=unit_id)
                 session.add(upgrade)
@@ -1087,7 +1096,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                 self.message_manager.embed.set_field_at(0, name="Callsign", value=_unit.callsign or "—", inline=True)
                 self.message_manager.embed.set_field_at(1, name="Status", value=_unit.status.name if _unit.status else "—", inline=True)
                 await self.message_manager.update_message()
-                await _interaction.response.send_message(f"Special upgrade {name} given to {_unit.name}", ephemeral=CustomClient().use_ephemeral)
+                await _interaction.response.send_message(f"Special upgrade {name} given to {_unit.name}", ephemeral=True)
             modal.on_submit = on_submit
             await interaction.response.send_modal(modal)
 
@@ -1099,7 +1108,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                 return
             unit = session.merge(self.unit)
             if not unit.active:
-                await interaction.response.send_message("Unit is not active", ephemeral=CustomClient().use_ephemeral)
+                await interaction.response.send_message("Unit is not active", ephemeral=True)
                 return
             unit.active = False
             unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
@@ -1108,7 +1117,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
             self.message_manager.embed.set_field_at(0, name="Callsign", value="—", inline=True)
             self.message_manager.embed.set_field_at(1, name="Status", value=unit.status.name if unit.status else "—", inline=True)
             await self.message_manager.update_message()
-            await interaction.response.send_message(f"Unit {unit.name} deactivated", ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message(f"Unit {unit.name} deactivated", ephemeral=True)
 
         @error_reporting(True)
         @uses_db(CustomClient().sessionmaker)
@@ -1130,20 +1139,20 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                     return
                 new_callsign = _interaction.data["components"][0]["components"][0]["value"].strip()
                 if len(new_callsign) > 15:
-                    await _interaction.response.send_message("Callsign is too long", ephemeral=CustomClient().use_ephemeral)
+                    await _interaction.response.send_message("Callsign is too long", ephemeral=True)
                     return
                 if session.query(Unit).filter(Unit.callsign == new_callsign, Unit.id != unit_id).first():
-                    await _interaction.response.send_message("Callsign is already taken", ephemeral=CustomClient().use_ephemeral)
+                    await _interaction.response.send_message("Callsign is already taken", ephemeral=True)
                     return
                 _unit = session.query(Unit).filter(Unit.id == unit_id).first()
                 if not _unit:
-                    await _interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
+                    await _interaction.response.send_message("Unit not found", ephemeral=True)
                     return
                 _unit.callsign = new_callsign
                 CustomClient().queue.put_nowait((1, _unit.player, 0))
                 self.message_manager.embed.set_field_at(0, name="Callsign", value=new_callsign, inline=True)
                 await self.message_manager.update_message()
-                await _interaction.response.send_message(f"Unit {_unit.name} callsign changed to {new_callsign}", ephemeral=CustomClient().use_ephemeral)
+                await _interaction.response.send_message(f"Unit {_unit.name} callsign changed to {new_callsign}", ephemeral=True)
             modal.on_submit = on_submit
             await interaction.response.send_modal(modal)
 
@@ -1158,7 +1167,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                 placeholder="Select new status",
                 options=[SelectOption(label=s.name, value=s.value, default=unit.status == s) for s in UnitStatus]
             )
-            status_view = ui.View()
+            status_view = RecordingView()
             status_view.add_item(status_select)
 
             unit_id = unit.id
@@ -1171,7 +1180,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                     return
                 _unit = session.query(Unit).filter(Unit.id == unit_id).first()
                 if not _unit:
-                    await _interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
+                    await _interaction.response.send_message("Unit not found", ephemeral=True)
                     return
                 new_status = UnitStatus(_interaction.data["values"][0])
                 if new_status == UnitStatus.ACTIVE:
@@ -1188,21 +1197,21 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                         new_callsign = cs_interaction.data["components"][0]["components"][0]["value"].strip()
                         campaign_input = cs_interaction.data["components"][1]["components"][0]["value"].strip()
                         if len(new_callsign) > 15:
-                            await cs_interaction.response.send_message("Callsign too long", ephemeral=CustomClient().use_ephemeral)
+                            await cs_interaction.response.send_message("Callsign too long", ephemeral=True)
                             return
                         if session.query(Unit).filter(Unit.callsign == new_callsign, Unit.id != unit_id).first():
-                            await cs_interaction.response.send_message("Callsign already taken", ephemeral=CustomClient().use_ephemeral)
+                            await cs_interaction.response.send_message("Callsign already taken", ephemeral=True)
                             return
                         campaign_conds = [Campaign.name == campaign_input]
                         if campaign_input.isdigit():
                             campaign_conds.append(Campaign.id == int(campaign_input))
                         campaign = session.query(Campaign).filter(or_(*campaign_conds)).first()
                         if not campaign:
-                            await cs_interaction.response.send_message("Campaign not found", ephemeral=CustomClient().use_ephemeral)
+                            await cs_interaction.response.send_message("Campaign not found", ephemeral=True)
                             return
                         _u = session.query(Unit).filter(Unit.id == unit_id).first()
                         if not _u:
-                            await cs_interaction.response.send_message("Unit not found", ephemeral=CustomClient().use_ephemeral)
+                            await cs_interaction.response.send_message("Unit not found", ephemeral=True)
                             return
                         _u.callsign = new_callsign
                         _u.campaign_id = campaign.id
@@ -1212,7 +1221,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                         self.message_manager.embed.set_field_at(0, name="Callsign", value=new_callsign, inline=True)
                         self.message_manager.embed.set_field_at(1, name="Status", value=UnitStatus.ACTIVE.name, inline=True)
                         await self.message_manager.update_message()
-                        await cs_interaction.response.send_message(f"Unit {_u.name} activated with callsign {new_callsign}", ephemeral=CustomClient().use_ephemeral)
+                        await cs_interaction.response.send_message(f"Unit {_u.name} activated with callsign {new_callsign}", ephemeral=True)
                     callsign_modal.on_submit = callsign_submit
                     await _interaction.response.send_modal(callsign_modal)
                 elif new_status == UnitStatus.LEGACY:
@@ -1221,15 +1230,15 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                     CustomClient().queue.put_nowait((1, _unit.player, 0))
                     self.message_manager.embed.set_field_at(1, name="Status", value=UnitStatus.LEGACY.name, inline=True)
                     await self.message_manager.update_message()
-                    await _interaction.response.send_message(f"Unit {_unit.name} status changed to {new_status.name}", ephemeral=CustomClient().use_ephemeral)
+                    await _interaction.response.send_message(f"Unit {_unit.name} status changed to {new_status.name}", ephemeral=True)
                 else:
                     _unit.status = new_status
                     CustomClient().queue.put_nowait((1, _unit.player, 0))
                     self.message_manager.embed.set_field_at(1, name="Status", value=new_status.name, inline=True)
                     await self.message_manager.update_message()
-                    await _interaction.response.send_message(f"Unit {_unit.name} status changed to {new_status.name}", ephemeral=CustomClient().use_ephemeral)
+                    await _interaction.response.send_message(f"Unit {_unit.name} status changed to {new_status.name}", ephemeral=True)
             status_select.callback = status_select_cb
-            await interaction.response.send_message("Select the new status:", view=status_view, ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message("Select the new status:", view=status_view, ephemeral=True)
 
 async def setup(_bot: CustomClient):
     await _bot.add_cog(Manage(_bot))

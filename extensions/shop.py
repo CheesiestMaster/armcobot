@@ -9,7 +9,7 @@ import templates as tmpl
 from customclient import CustomClient
 from MessageManager import MessageManager
 from models import Player, Unit, UnitStatus, ShopUpgrade, ShopUpgradeUnitTypes, PlayerUpgrade, UnitType, UpgradeType
-from utils import uses_db, Paginator, error_reporting
+from utils import uses_db, Paginator, error_reporting, RecordingView
 
 logger = getLogger(__name__)
 
@@ -67,7 +67,7 @@ class Shop(GroupCog, description="View and purchase upgrades for units."):
         - Handles unit selection navigation
         """
         logger.triage(f"Creating shop home view for player {player_id}")
-        view = ui.View()
+        view = RecordingView()
         embed = Embed(title=tmpl.shop_title, color=0xc06335)
 
         # Get player's currency information
@@ -192,7 +192,7 @@ class Shop(GroupCog, description="View and purchase upgrades for units."):
         ).filter(Unit.id == unit_id).first()
         logger.triage(f"Creating shop view for unit: {unit_name} with status: {unit_status}")
 
-        view = ui.View()
+        view = RecordingView()
         embed = Embed(title=tmpl.shop_unit_title.format(unit_name=unit_name), color=0xc06335)
 
         # Create back button to return to shop home
@@ -306,7 +306,7 @@ class Shop(GroupCog, description="View and purchase upgrades for units."):
         return view, embed
 
     @uses_db(CustomClient().sessionmaker)
-    async def shop_inactive_view_factory(self, unit_id: int, player_id: int, message_manager: MessageManager, embed: Embed, view: ui.View, session: Session):
+    async def shop_inactive_view_factory(self, unit_id: int, player_id: int, message_manager: MessageManager, embed: Embed, view: RecordingView, session: Session):
         """
         Creates the shop interface for inactive units that can purchase upgrades.
 
@@ -363,7 +363,7 @@ class Shop(GroupCog, description="View and purchase upgrades for units."):
             This function handles:
             - Filtering out disabled upgrades
             - Checking unit requisition compatibility
-            - Filtering out already owned non-repeatable upgrades
+            - Filtering out upgrades at max per-unit limit (by count)
             - Calculating currency and affordability indicators
             - Formatting upgrade display with emojis and cost indicators
 
@@ -403,13 +403,13 @@ class Shop(GroupCog, description="View and purchase upgrades for units."):
                     continue
                 # we need to reacquire the _unit object in this scope, from the unit_id argument of the parent function
                 _unit = session.query(Unit).filter(Unit.id == unit_id).first()
-                # Check if upgrade is already owned and not repeatable
-                owned_upgrade = session.query(PlayerUpgrade).filter(
+                # Skip if at max per-unit limit (repeatable 0 = unlimited, else max count)
+                owned_count = session.query(PlayerUpgrade).filter(
                     PlayerUpgrade.unit_id == _unit.id,
                     PlayerUpgrade.shop_upgrade_id == _upgrade.id
-                ).first()
-                if not _upgrade.repeatable and owned_upgrade:
-                    logger.triage(f"Skipping non-repeatable upgrade {_upgrade.name} as it is already owned")
+                ).count()
+                if _upgrade.repeatable != 0 and owned_count >= _upgrade.repeatable:
+                    logger.triage(f"Skipping upgrade {_upgrade.name} as unit already has max ({owned_count} >= {_upgrade.repeatable})")
                     continue
 
                 # Add ❌ indicator if player can't afford the upgrade
@@ -682,14 +682,14 @@ class Shop(GroupCog, description="View and purchase upgrades for units."):
                 return
 
             # Handle regular upgrades (non-refit)
-            # Check if upgrade is already owned and not repeatable
-            existing = session.query(PlayerUpgrade).filter(
+            # Reject if at max per-unit limit (repeatable 0 = unlimited, else max count)
+            existing_count = session.query(PlayerUpgrade).filter(
                 PlayerUpgrade.unit_id == _unit.id,
                 PlayerUpgrade.shop_upgrade_id == upgrade.id
-            ).first()
-            logger.triage(f"Checking if upgrade is repeatable: {upgrade.repeatable}")
-            if existing and not upgrade.repeatable:
-                logger.triage(f"Player {interaction.user.name} already has this upgrade: {upgrade.name}")
+            ).count()
+            logger.triage(f"Checking upgrade repeatable limit: {upgrade.repeatable}, current count: {existing_count}")
+            if upgrade.repeatable != 0 and existing_count >= upgrade.repeatable:
+                logger.triage(f"Player {interaction.user.name} at limit for upgrade: {upgrade.name}")
                 embed.description = tmpl.already_have_upgrade
                 embed.color = 0xff0000  # Red for error
                 await message_manager.update_message()

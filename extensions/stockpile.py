@@ -2,13 +2,13 @@ from logging import getLogger
 
 from discord import Interaction, app_commands as ac
 from discord.ext.commands import GroupCog
-from discord.ui import Select, View
+from discord.ui import Select
 from sqlalchemy.orm import Session
 
 from customclient import CustomClient
 from MessageManager import MessageManager
 from models import Player, Unit, PlayerUpgrade
-from utils import uses_db
+from utils import uses_db, RecordingView
 
 logger = getLogger(__name__)
 
@@ -30,7 +30,7 @@ class Stockpile(GroupCog, description="Store and retrieve upgrades in your stock
         logger.info(f"{interaction.user.name} <{interaction.user.id}> is storing an upgrade")
         message_manager = MessageManager(interaction)
         unit_select = Select(placeholder="Select a unit")
-        view = View()
+        view = RecordingView()
         _player: Player = session.query(Player).filter(Player.discord_id == str(interaction.user.id)).first()
         logger.debug(f"Player: {_player}")
         if _player is None:
@@ -75,7 +75,7 @@ class Stockpile(GroupCog, description="Store and retrieve upgrades in your stock
             else:
                 upgrade_select.add_option(label="This unit has no upgrades", value="None", default=True)
                 upgrade_select.disabled = True
-            _view = View()
+            _view = RecordingView()
             _view.add_item(unit_select)
             _view.add_item(upgrade_select)
             await message_manager.update_message(view=_view)
@@ -125,7 +125,7 @@ class Stockpile(GroupCog, description="Store and retrieve upgrades in your stock
     async def retrieve(self, interaction: Interaction, session):
         logger.info(f"{interaction.user.name} is retrieving an upgrade")
         message_manager = MessageManager(interaction)
-        view = View()
+        view = RecordingView()
         _player: Player = session.query(Player).filter(Player.discord_id == str(interaction.user.id)).first()
         if _player is None:
             await message_manager.send_message(view=view, content="You don't have a company yet, please create one with `/company create`", ephemeral=self.bot.use_ephemeral)

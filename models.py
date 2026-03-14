@@ -419,6 +419,7 @@ class ShopUpgrade(BaseModel):
     __table_args__ = (
         Index('ix_shop_upgrades_type_cost', 'type', 'cost'),
         CheckConstraint('cost >= 0', name='cost_positive'),
+        CheckConstraint('repeatable >= 0', name='ck_shop_upgrades_repeatable_non_negative'),
         {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4', 'mysql_collate': 'utf8mb4_unicode_ci'},
     )
 
@@ -430,7 +431,7 @@ class ShopUpgrade(BaseModel):
     refit_target: Mapped[str | None] = mapped_column(ForeignKey("unit_types.unit_type", ondelete="SET NULL"), nullable=True, index=True)
     required_upgrade_id: Mapped[int | None] = mapped_column(ForeignKey("shop_upgrades.id", ondelete="SET NULL"), nullable=True, index=True)
     disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", index=True)
-    repeatable: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", index=True)
+    repeatable: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", index=True)
 
     sort_key = column_property(select(UpgradeType.sort_order).where(UpgradeType.name == type).scalar_subquery())
 

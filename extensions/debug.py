@@ -22,7 +22,7 @@ from coloredformatter import stats
 from customclient import CustomClient
 from MessageManager import MessageManager
 from models import Player, Statistic, Dossier, Campaign, CampaignInvite, Unit, UnitStatus
-from utils import EnvironHelpers, chunked_send, error_reporting, uses_db, toggle_command_ban, is_server
+from utils import EnvironHelpers, chunked_send, error_reporting, uses_db, toggle_command_ban, is_server, RecordingView
 
 logger = getLogger(__name__)
 
@@ -369,7 +369,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
     async def menu(self, interaction: Interaction):
         # I am moving most of the debug commands to the menu, which will use a MessageManager to keep the command list shorter
         mm = MessageManager(interaction)
-        view = ui.View(timeout=None)
+        view = RecordingView(timeout=None)
 
         options = [v for k, v in self.__class__.__dict__.items() if not k.startswith("_") and callable(v)]
         if not options:
@@ -560,23 +560,13 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
             logger.error(f"Error generating Prometheus metrics: {e}")
             await interaction.followup.send(f"Error generating metrics: {e}", ephemeral=True)
 
-    has_run = True # False
-    @loop(hours=3)
-    async def _bump_briefing(self):
-        if not self.has_run:
-            self.has_run = True
-            return # skip the first run, so we don't send a message when the module is reloaded
-        channel = self.bot.get_channel(1382037040438181950)
-        if channel:
-            async for message in channel.history(limit=5):
-                if message.author == self.bot.user:
-                    return
-            target = "https://discord.com/channels/222052888531173386/1382037040438181950/1392894268263239730"
-            message = f"## Atlas Briefing T7 - {target}"
-            await channel.send(message)
 
-    async def cog_unload(self):
-        self._bump_briefing.cancel()
+    @ac.command(name="last_error", description="Show the last error")
+    async def last_error(self, interaction: Interaction):
+        if self.bot.last_error is not None:
+            await interaction.response.send_message(file=self.bot.last_error.to_attachment(), ephemeral=True)
+        else:
+            await interaction.response.send_message("No error has occurred yet", ephemeral=True)
 
 async def setup(_bot: CustomClient):
     logger.debug("Setting up Debug cog")
