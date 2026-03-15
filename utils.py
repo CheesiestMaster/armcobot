@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from functools import lru_cache, wraps
 import inspect
 from inspect import Parameter, Signature
@@ -27,6 +27,12 @@ if TYPE_CHECKING:
     from customclient import CustomClient
 else:
     CustomClient = None
+
+try:
+    from datetime import UTC
+except ImportError:
+    from datetime import timezone
+    UTC = timezone.utc
 
 P = TypeVar("P")
 T = TypeVar("T", bound=Sequence[Any])

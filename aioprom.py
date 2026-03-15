@@ -5,9 +5,9 @@ from typing import Dict, Tuple
 
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Gauge
 
-# technically correct, StreamWriter.wait_closed() is 3.7+ but it's also already in a catchall try/except
-if sys.version_info < (3, 5):
-    raise RuntimeError("Python 3.5 or higher is required")
+# technically correct, StreamWriter.wait_closed() is 3.7+ but it's also already in a catchall try/except, 3.6 is needed for start_server
+if sys.version_info < (3, 6):
+    raise RuntimeError("Python 3.6 or higher is required")
 
 MAX_HEADER_BYTES = 16 * 1024
 READ_TIMEOUT = 2.0
