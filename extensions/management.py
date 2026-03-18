@@ -129,6 +129,7 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
         unit_types = session.query(UnitType.unit_type).all()
         unit_types.append(("\0Add New Unit Type",))
         paginator: Paginator[tuple] = Paginator(unit_types, 25)
+        #await interaction.response.defer(thinking=False, ephemeral=True)
         view = RecordingView()
         select = ui.Select(placeholder=tmpl.shop_unit_type_select_placeholder)
         previous_button = ui.Button(label=tmpl.shop_previous_button, style=ButtonStyle.secondary, disabled=True)
@@ -325,9 +326,9 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                 view, embed = ui_factory(unit_type_)
                 await message_manager.update_message(content=tmpl.shop_please_setup_unit_type, view=view, embed=embed)
                 await interaction.response.defer(thinking=False, ephemeral=True)
-            select.callback = select_callback
-            await interaction.response.defer(thinking=False, ephemeral=True)
-            await message_manager.update_message(content=tmpl.shop_please_select_unit_type, view=view)
+        select.callback = select_callback
+        await interaction.response.defer(thinking=False, ephemeral=True)
+        await message_manager.update_message(content=tmpl.shop_please_select_unit_type, view=view)
 
     @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
@@ -581,9 +582,9 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
                 view, embed = ui_factory(upgrade_type_)
                 await message_manager.update_message(content=tmpl.shop_please_setup_upgrade_type, view=view, embed=embed)
                 await interaction.response.defer(thinking=False, ephemeral=True)
-            select.callback = select_callback
-            await interaction.response.defer(thinking=False, ephemeral=True)
-            await message_manager.update_message(content=tmpl.shop_please_select_upgrade_type, view=view)
+        select.callback = select_callback
+        await interaction.response.defer(thinking=False, ephemeral=True)
+        await message_manager.update_message(content=tmpl.shop_please_select_upgrade_type, view=view)
 
     @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
