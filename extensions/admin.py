@@ -90,7 +90,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
             await self._refresh_player(interaction, target)
 
 
-    # @ac.command(name="recpoint", description="Give or remove a number of requisition points from a player")
+    @ac.command(name="recpoint", description="Give or remove a number of requisition points from a player")
     @ac.describe(player="The player to give or remove points from")
     @ac.describe(points="The number of points to give or remove")
     async def reqpoint_command(self, interaction: Interaction, player: Member, points: int):
@@ -114,7 +114,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         await interaction.response.send_message(f"{player.name} now has {player.rec_points} requisition points", ephemeral=self.bot.use_ephemeral)
         self.bot.queue.put_nowait((1, player, 0))
 
-    # @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
+    @ac.command(name="bonuspay", description="Give or remove a number of bonus pay from a player")
     @ac.describe(player="The player to give or remove bonus pay from")
     @ac.describe(points="The number of bonus pay to give or remove")
     async def bonuspay_command(self, interaction: Interaction, player: Member, points: int):
@@ -271,7 +271,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
         await interaction.response.send_message(f"Refreshing statistics and dossiers for {player.name}", ephemeral=self.bot.use_ephemeral)
         _player = session.query(Player).filter(Player.discord_id == player.id).first()
         if not _player:
-            await interaction.response.send_message("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
+            await interaction.followup.send("Player does not have a Meta Campaign company", ephemeral=self.bot.use_ephemeral)
             return
         self.bot.queue.put_nowait((1, _player))
 

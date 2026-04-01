@@ -5,6 +5,7 @@ from asyncio import QueueEmpty
 from datetime import datetime, timedelta
 from io import BytesIO
 from logging import getLogger
+from logging.handlers import RotatingFileHandler
 import logging
 from pathlib import Path
 
@@ -78,6 +79,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
             logger.debug(f"Valid: {valid}")
             if not valid:
                 logger.warning(f"{interaction.user.global_name} tried to use debug commands")
+                await interaction.response.send_message(tmpl.no_permission, ephemeral=True)
             return valid
         except AttributeError as e:
             if "'NoneType' object has no attribute 'get_member'" in str(e):
@@ -567,6 +569,13 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
             await interaction.response.send_message(file=self.bot.last_error.to_attachment(), ephemeral=True)
         else:
             await interaction.response.send_message("No error has occurred yet", ephemeral=True)
+
+    @ac.command(name="roll_logs", description="Roll the logs")
+    async def roll_logs(self, interaction: Interaction):
+        for handler in logging.getLogger().handlers:
+            if isinstance(handler, RotatingFileHandler):
+                handler.doRollover()
+        await interaction.response.send_message("Logs rolled", ephemeral=True)
 
 async def setup(_bot: CustomClient):
     logger.debug("Setting up Debug cog")

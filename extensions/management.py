@@ -4,6 +4,7 @@ from typing import Callable
 from discord import ButtonStyle, Embed, Interaction, Member, SelectOption, TextStyle, app_commands as ac, ui
 from discord.ext.commands import GroupCog
 from sqlalchemy import or_
+import sqlalchemy
 from sqlalchemy.orm import Session
 import templates as tmpl
 
@@ -88,8 +89,13 @@ class Manage(GroupCog, description="Management commands: company, units, and rel
             try:
                 _company.rec_points = int(self.children[2].value) or _company.rec_points
                 _company.bonus_pay = int(self.children[3].value) or _company.bonus_pay
+                session.commit()
             except ValueError:
                 await interaction.response.send_message("Invalid input: currency values must be numerical", ephemeral=True)
+                return
+            except sqlalchemy.exc.OperationalError: # the only thing which can go wrong is the check constraint on bonus pay
+                await interaction.response.send_message("Bonus Pay cannot be negative", ephemeral=True)
+                session.rollback()
                 return
             await interaction.response.send_message("Company updated", ephemeral=True)
             self.message_manager.embed.update(_company)

@@ -567,8 +567,9 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
     @ac.check(is_management)  # only management can transfer units
     @uses_db(CustomClient().sessionmaker)
     async def transfer_unit(self, interaction: Interaction, campaign: str, session: Session):
-        if not await campaign.is_management(interaction):
-            await interaction.response.send_message(tmpl.no_permission, ephemeral=True)
+        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
+        if _campaign is None:
+            await interaction.response.send_message(tmpl.campaign_not_found, ephemeral=True)
             return
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:
