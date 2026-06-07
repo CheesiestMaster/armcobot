@@ -28,6 +28,7 @@ class Company(GroupCog, description="Meta Campaign company: create, edit, show, 
     @error_reporting()
     @uses_db(CustomClient().sessionmaker)
     async def create(self, interaction: Interaction, session: Session):
+        logger = getLogger(f"{__name__}.create")
         # check if the user already has a company
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if player:
@@ -49,6 +50,7 @@ class Company(GroupCog, description="Meta Campaign company: create, edit, show, 
     @ac.command(name="edit", description="Edit your Meta Campaign company")
     @uses_db(CustomClient().sessionmaker)
     async def edit(self, interaction: Interaction, session: Session):
+        logger = getLogger(f"{__name__}.edit")
         # we need a long text input for this, so modal is needed
         class EditCompanyModal(ui.Modal):
             def __init__(self, player):

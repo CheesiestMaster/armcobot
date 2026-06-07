@@ -8,8 +8,10 @@ from logging import getLogger
 from logging.handlers import RotatingFileHandler
 import logging
 from pathlib import Path
+from enum import Enum
 
-from discord import Interaction, app_commands as ac, ui, TextStyle, Embed, SelectOption, Forbidden, HTTPException, Message, NotFound, TextChannel, File
+from discord import ButtonStyle, Interaction, app_commands as ac, ui, TextStyle, Embed, SelectOption, Forbidden, HTTPException, Message, NotFound, TextChannel, File
+import discord
 from discord.ext.commands import GroupCog, Cog
 from discord.ext.tasks import Loop, loop
 from dotenv import dotenv_values
@@ -28,6 +30,14 @@ from utils import EnvironHelpers, chunked_send, error_reporting, uses_db, toggle
 logger = getLogger(__name__)
 
 process: Process = None
+
+class LogLevel(Enum):
+    NOTSET = "NOTSET"
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
 
 class Debug(GroupCog, description="Debug: reload extensions/strings, clear messages, query, and more. Mods only."):
     """
@@ -104,6 +114,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
 
     @ac.command(name="stop", description="Stop the bot")
     async def stop(self, interaction: Interaction):
+        logger = getLogger(f"{__name__}.stop")
         logger.info("Stop command invoked")
         await interaction.response.send_message(tmpl.stopping_bot)
         if EnvironHelpers.get_bool("LOOP_ACTIVE"):
@@ -113,6 +124,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
     if EnvironHelpers.get_bool("LOOP_ACTIVE"):
         @ac.command(name="restart", description="Restart the bot")
         async def restart(self, interaction: Interaction):
+            logger = getLogger(f"{__name__}.restart")
             logger.info("Restart command invoked")
             if interaction: # allow the command to be used internally as well as in discord, we can pass None to use it internally and it will not try to send a message
                 await interaction.response.send_message(tmpl.restarting_bot)
@@ -121,6 +133,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
         @ac.command(name="update_and_restart", description="Update the bot and restart it")
         async def update_and_restart(self, interaction: Interaction):
             # just like restart, except we touch the update.flag file
+            logger = getLogger(f"{__name__}.update_and_restart")
             logger.info("Update and restart command invoked")
             if interaction:
                 await interaction.response.send_message(tmpl.updating_bot)
@@ -132,6 +145,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
     async def reload_strings(self, interaction: Interaction):
         """Reload the templates module to refresh string templates."""
         global tmpl
+        logger = getLogger(f"{__name__}.reload_strings")
         logger.info("Reload strings command invoked")
         try:
             import importlib
@@ -178,6 +192,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
     @ac.autocomplete(extension=_autocomplete_extensions)
     async def reload(self, interaction: Interaction, extension: str):
         extension = "extensions." + extension
+        logger = getLogger(f"{__name__}.reload")
         logger.info(f"Reload command invoked for {extension}")
         await interaction.response.send_message(tmpl.debug_reloading.format(extension=extension), ephemeral=self.bot.use_ephemeral)
         await self.bot.reload_extension(extension)
@@ -187,6 +202,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
     @ac.autocomplete(extension=_autocomplete_extensions)
     async def load(self, interaction: Interaction, extension: str):
         extension = "extensions." + extension
+        logger = getLogger(f"{__name__}.load")
         logger.info(f"Load command invoked for {extension}")
         await interaction.response.send_message(tmpl.debug_loading.format(extension=extension))
         await self.bot.load_extension(extension)
@@ -199,6 +215,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
     @ac.autocomplete(extension=_autocomplete_extensions)
     async def unload(self, interaction: Interaction, extension: str):
         extension = "extensions." + extension
+        logger = getLogger(f"{__name__}.unload")
         if extension == "extensions.debug":
             logger.warning("Attempt to unload debug extension from in Discord")
             await interaction.response.send_message(tmpl.cannot_unload_debug)
@@ -213,6 +230,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
     @ac.describe(query="SQL query to run (leave empty for modal)")
     @uses_db(CustomClient().sessionmaker)
     async def query(self, interaction: Interaction, query: str = "", session: Session = None) -> None:
+        logger = getLogger(f"{__name__}.query")
         if not query:
             # Send modal for multi-line SQL input
             query_modal = ui.Modal(title="SQL Query")
@@ -332,6 +350,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
         Delete up to `limit` deletable messages in the channel.
         Used to clean up old bot messages.
         """
+        logger = getLogger(f"{__name__}.clear_deletable")
         channel = interaction.channel
 
         # Fetch the last 100 messages (you can adjust this number as needed)
@@ -455,29 +474,65 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
     @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
     async def test(self, interaction: Interaction, session: Session):
-        registry = CollectorRegistry()
-        pc =ProcessCollector(registry=registry)
-        out = pc.collect()
-        metric_data = "\n".join(str(m) for m in out)
-        metric_bytes = BytesIO(metric_data.encode("utf-8"))
-        discord_file = File(metric_bytes, filename="metrics.txt")
-        await interaction.response.send_message(file=discord_file, ephemeral=True)
-        collectors = REGISTRY._collector_to_names.keys()
-        await interaction.followup.send(f"Collectors: {collectors}", ephemeral=True)
+        lv = ui.LayoutView()
+        test_button1 = ui.Button(label="Test", style=ButtonStyle.primary, custom_id="test_button1")
+        test_button2 = ui.Button(label="Test", style=ButtonStyle.secondary, custom_id="test_button2")
+        test_button3 = ui.Button(label="Test", style=ButtonStyle.success, custom_id="test_button3")
+        test_button4 = ui.Button(label="Test", style=ButtonStyle.danger, custom_id="test_button4")
+        test_button5 = ui.Button(label="Test", style=ButtonStyle.link, url="https://www.example.com")
+        test_select = ui.Select(placeholder="Test", options=[SelectOption(label="Test", value="test")])
+        test_user_select = ui.UserSelect(placeholder="Test", custom_id="test_user_select")
+        test_role_select = ui.RoleSelect(placeholder="Test", custom_id="test_role_select")
+        test_channel_select = ui.ChannelSelect(placeholder="Test", custom_id="test_channel_select")
+        test_mentionable_select = ui.MentionableSelect(placeholder="Test", custom_id="test_mentionable_select")
+        button_row = ui.ActionRow(test_button1, test_button2, test_button3, test_button4, test_button5)
+        select_row = ui.ActionRow(test_select)
+        user_select_row = ui.ActionRow(test_user_select)
+        role_select_row = ui.ActionRow(test_role_select)
+        channel_select_row = ui.ActionRow(test_channel_select)
+        mentionable_select_row = ui.ActionRow(test_mentionable_select)
+        test_text = ui.TextDisplay(content="Test")
+        file = discord.File("Cavalier.png")
+        thumbnail = ui.Thumbnail(file)
+        test_section = ui.Section(test_text, "Test", accessory=thumbnail)
+        test_file = ui.File(file)
+        test_separator = ui.Separator()
+        test_gallery = ui.MediaGallery(*([discord.MediaGalleryItem(file)]*10))
+        test_container = ui.Container(button_row, select_row, user_select_row, role_select_row, channel_select_row, mentionable_select_row, test_section, test_separator, test_file, test_gallery)
+        lv.add_item(test_container)
+        await interaction.response.send_message(view=lv, files=[file], ephemeral=False)
 
     @ac.command(name="logmark", description="make a marker in the logs")
     async def logmark(self, interaction: Interaction):
+        logger = getLogger(f"{__name__}.logmark")
         logger.info(f"[LOGMARK] {interaction.user.global_name} used logmark")
         await interaction.response.send_message(tmpl.marker_made, ephemeral=True)
 
+    def find_loggers(self, stub: str, max_results: int = 25) -> list[str]:
+        manager = logging.Logger.manager
+        stub_depth = stub.count(".")
+
+        matches = [
+            name for name in manager.loggerDict
+            if name.startswith(stub)
+            and name.count(".") == stub_depth
+        ]
+
+        matches.sort()
+        return matches[:max_results]
+
+    async def _logger_autocomplete(self, interaction: Interaction, current: str):
+        return [ac.Choice(name=logger, value=logger) for logger in self.find_loggers(current)]
+
     @ac.command(name="set_level", description="Set the log level")
-    async def set_level(self, interaction: Interaction, _logger: str, level: int):
+    @ac.autocomplete(_logger=_logger_autocomplete)
+    async def set_level(self, interaction: Interaction, _logger: str, level: LogLevel):
         if _logger == "root":
             # the logger in scope is not the root logger, so we need to get the root logger
             logger = logging.getLogger()
         else:
             logger = logging.getLogger(_logger)
-        logger.setLevel(level)
+        logger.setLevel(level.value)
         logger.info(f"Log level set to {level}")
         await interaction.response.send_message(tmpl.debug_log_level.format(level=level), ephemeral=True)
 
@@ -511,6 +566,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
     @error_reporting(True)
     async def logfile(self, interaction: Interaction):
         """Get the current log file opened by __main__.file_handler as a Discord file."""
+        logger = getLogger(f"{__name__}.logfile")
         logger.debug(f"Logfile command invoked by {interaction.user.id} ({interaction.user.global_name})")
         await interaction.response.defer(ephemeral=True)
 
@@ -538,6 +594,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
     @ac.command(name="prom", description="Get Prometheus metrics as a file")
     async def prom(self, interaction: Interaction):
         """Get the latest Prometheus metrics in Prometheus text format."""
+        logger = getLogger(f"{__name__}.prom")
         logger.debug(f"Prom command invoked by {interaction.user.id} ({interaction.user.global_name})")
         await interaction.response.defer(ephemeral=True)
 
@@ -582,6 +639,6 @@ async def setup(_bot: CustomClient):
     await _bot.add_cog(Debug(_bot))
 
 
-async def teardown(_bot: CustomClient):
+def teardown(_bot: CustomClient):
     logger.debug("Tearing down Debug cog")
     _bot.remove_cog(Debug.__name__)  # remove_cog takes a string, not a class

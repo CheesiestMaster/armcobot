@@ -27,6 +27,7 @@ class Stockpile(GroupCog, description="Store and retrieve upgrades in your stock
     @ac.command(name="store", description="Store an upgrade in your stockpile")
     @uses_db(CustomClient().sessionmaker)
     async def store(self, interaction: Interaction, session: Session):
+        logger = getLogger(f"{__name__}.store")
         logger.info(f"{interaction.user.name} <{interaction.user.id}> is storing an upgrade")
         message_manager = MessageManager(interaction)
         unit_select = Select(placeholder="Select a unit")
@@ -123,6 +124,7 @@ class Stockpile(GroupCog, description="Store and retrieve upgrades in your stock
     @ac.command(name="retrieve", description="Retrieve an upgrade from your stockpile")
     @uses_db(CustomClient().sessionmaker)
     async def retrieve(self, interaction: Interaction, session):
+        logger = getLogger(f"{__name__}.retrieve")
         logger.info(f"{interaction.user.name} is retrieving an upgrade")
         message_manager = MessageManager(interaction)
         view = RecordingView()

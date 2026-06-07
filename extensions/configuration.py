@@ -42,6 +42,7 @@ class Config(GroupCog, description="Configuration: set nickname, channels, list 
 
     @ac.command(name="setnick", description="Set the bot's nickname")
     async def setnick(self, interaction: Interaction, nick: str):
+        logger = getLogger(f"{__name__}.setnick")
         if self.is_owner(interaction):
             logger.info(f"Setting bot nickname to {nick} globally")
             await self.bot.set_bot_nick(nick)
@@ -57,6 +58,7 @@ class Config(GroupCog, description="Configuration: set nickname, channels, list 
     @ac.command(name="setdossier", description="Set the dossier channel to the current channel")
     @uses_db(CustomClient().sessionmaker)
     async def setdossier(self,interaction: Interaction, session: Session):
+        logger = getLogger(f"{__name__}.setdossier")
         if interaction.channel.type != ChannelType.text:
             await interaction.response.send_message(tmpl.text_channel_only, ephemeral=self.bot.use_ephemeral)
             return
@@ -74,6 +76,7 @@ class Config(GroupCog, description="Configuration: set nickname, channels, list 
     @ac.command(name="setstatistics", description="Set the statistics channel to the current channel")
     @uses_db(CustomClient().sessionmaker)
     async def setstatistics(self,interaction: Interaction, session: Session):
+        logger = getLogger(f"{__name__}.setstatistics")
         if interaction.channel.type != ChannelType.text:
             await interaction.response.send_message(tmpl.text_channel_only, ephemeral=self.bot.use_ephemeral)
             return

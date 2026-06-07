@@ -3,10 +3,11 @@ MAIN_CURRENCY = "Requisition Points"
 MAIN_CURRENCY_SHORT = "Req"
 SECONDARY_CURRENCY = "Bonus Pay"
 SECONDARY_CURRENCY_SHORT = "BP"
+UNIT_CURRENCY = "Unit Req"
 
 # Import user templates to override constants (this is an optional import because you don't have to override anything)
 try:
-    from user_templates import MAIN_CURRENCY, MAIN_CURRENCY_SHORT, SECONDARY_CURRENCY, SECONDARY_CURRENCY_SHORT #type: ignore
+    from user_templates import MAIN_CURRENCY, MAIN_CURRENCY_SHORT, SECONDARY_CURRENCY, SECONDARY_CURRENCY_SHORT, UNIT_CURRENCY #type: ignore
 except ImportError:
     pass
 
@@ -273,6 +274,10 @@ not_enough_bonus_pay = f"You don't have enough {SECONDARY_CURRENCY} to convert"
 dont_have_stockpile = "You don't have a stockpile unit"
 upgrade_non_purchaseable = "This upgrade is not purchaseable"
 refit_unit_req = f"\n\nYou now have {{unit_req}} {MAIN_CURRENCY_SHORT} you must spend on this unit"
+no_units = "You don't have any units"
+too_many_units = "You have too many units, please contact a moderator"
+unit_is_dead = "This unit is dead"
+you_have_bought_unit = "You have bought the unit {unit_name}"
 
 # Shop UI elements
 shop_title = "Shop"
@@ -405,6 +410,11 @@ search_unit_output = '{unit.name} {callsign} ({unit.unit_type}) {unit.status.nam
 
 # Campaign related messages
 notify_no_players = "No players found"
+
+# Management related messages
+edit_rec_points_instructions = "Enter the number of points to set, or the number of points to change the total by, you cannot alter both fields, you can only either set or change"
+edit_bonus_pay_instructions = "Enter the number of points to set, or the number of points to change the total by, you cannot alter both fields, you can only either set or change"
+edit_unit_req_instructions = "Enter the number of points to set, or the number of points to change the total by, you cannot alter both fields, you can only either set or change"
 
 # Import any other user template overrides
 try:

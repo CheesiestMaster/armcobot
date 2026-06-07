@@ -104,6 +104,7 @@ class Faq(GroupCog, description="FAQ: view, add, remove, edit, list questions an
         """
         Adds a question to the FAQ
         """
+        logger = getLogger(f"{__name__}.add")
         # send a modal for the question and answer
         # check if 125 questions already exist
         if session.query(Faq_model).count() >= 125:
@@ -129,6 +130,7 @@ class Faq(GroupCog, description="FAQ: view, add, remove, edit, list questions an
         """
         Removes a question from the FAQ
         """
+        logger = getLogger(f"{__name__}.remove")
 
         # send a dropdown with the questions
         faq_questions = session.query(Faq_model).all()
@@ -159,6 +161,7 @@ class Faq(GroupCog, description="FAQ: view, add, remove, edit, list questions an
         """
         Edits a question in the FAQ
         """
+        logger = getLogger(f"{__name__}.edit")
         # send a dropdown with the questions
         faq_questions = session.query(Faq_model).all()
         if not faq_questions:

@@ -9,3 +9,4 @@ python-dotenv
 pytz
 SQLAlchemy
 openpyxl
+aioprom

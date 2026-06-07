@@ -50,12 +50,12 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
                 self.attempt_backpay.start()
             self.single_backpay = False # this line must be left uncommented even when single backpay is disabled, or backpays will crash
 
-
     def _setup_context_menus(self):
         logger.debug("Setting up context menus for admin commands")
         @self.bot.tree.context_menu(name="Req Point")
         @ac.check(is_management)
         async def reqpoint_menu(interaction: Interaction, target: Member):
+            cmd_logger = getLogger(f"{__name__}.req_point")
             # send a modal to get the point amount, then call the private method to handle the change
             reqpoint_modal = ui.Modal(title="Req Point", custom_id="reqpoint_modal")
             reqpoint_modal.add_item(ui.TextInput(label="How many points?", style=TextStyle.short, placeholder="Enter a number"))
@@ -65,13 +65,14 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
                     await _interaction.response.send_message("Please enter a valid number", ephemeral=self.bot.use_ephemeral)
                     return
                 points = int(points)
-                await self._change_req_points(_interaction, target, points)
+                await self._change_req_points(_interaction, target, points, cmd_logger=cmd_logger)
             reqpoint_modal.on_submit = on_submit
             await interaction.response.send_modal(reqpoint_modal)
 
         @self.bot.tree.context_menu(name="Bonus Pay")
         @ac.check(is_management)
         async def bonuspay_menu(interaction: Interaction, target: Member):
+            cmd_logger = getLogger(f"{__name__}.bonus_pay")
             bonuspay_modal = ui.Modal(title="Bonus Pay", custom_id="bonuspay_modal")
             bonuspay_modal.add_item(ui.TextInput(label="How many points?", style=TextStyle.short, placeholder="Enter a number"))
             async def on_submit(_interaction: Interaction):
@@ -80,7 +81,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
                     await _interaction.response.send_message("Please enter a valid number", ephemeral=self.bot.use_ephemeral)
                     return
                 points = int(points)
-                await self._change_bonuspay(_interaction, target, points)
+                await self._change_bonuspay(_interaction, target, points, cmd_logger=cmd_logger)
             bonuspay_modal.on_submit = on_submit
             await interaction.response.send_modal(bonuspay_modal)
 
@@ -94,10 +95,11 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
     @ac.describe(player="The player to give or remove points from")
     @ac.describe(points="The number of points to give or remove")
     async def reqpoint_command(self, interaction: Interaction, player: Member, points: int):
-        await self._change_req_points(interaction, player, points)
+        cmd_logger = getLogger(f"{__name__}.recpoint")
+        await self._change_req_points(interaction, player, points, cmd_logger=cmd_logger)
 
     @uses_db(CustomClient().sessionmaker)
-    async def _change_req_points(self, interaction: Interaction, player: Member, points: int, session: Session):
+    async def _change_req_points(self, interaction: Interaction, player: Member, points: int, session: Session, *, cmd_logger):
         """
         Adjusts a player's requisition points by adding or removing a specified amount.
         """
@@ -110,7 +112,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
 
         # update the player's rec points
         player.rec_points += points
-        logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
+        cmd_logger.debug(f"User {player.name} now has {player.rec_points} requisition points")
         await interaction.response.send_message(f"{player.name} now has {player.rec_points} requisition points", ephemeral=self.bot.use_ephemeral)
         self.bot.queue.put_nowait((1, player, 0))
 
@@ -118,11 +120,12 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
     @ac.describe(player="The player to give or remove bonus pay from")
     @ac.describe(points="The number of bonus pay to give or remove")
     async def bonuspay_command(self, interaction: Interaction, player: Member, points: int):
-        await self._change_bonuspay(interaction, player, points)
+        cmd_logger = getLogger(f"{__name__}.bonuspay")
+        await self._change_bonuspay(interaction, player, points, cmd_logger=cmd_logger)
 
 
     @uses_db(CustomClient().sessionmaker)
-    async def _change_bonuspay(self, interaction: Interaction, player: Member, points: int, session: Session):
+    async def _change_bonuspay(self, interaction: Interaction, player: Member, points: int, session: Session, *, cmd_logger):
         """
         Modify a player's bonus pay by adding or removing a specified amount.
         """
@@ -135,7 +138,7 @@ class Admin(GroupCog, group_name="admin", name="Admin", description="Admin comma
 
         # update the player's bonus pay
         player.bonus_pay += points
-        logger.debug(f"User {player.name} now has {player.bonus_pay} bonus pay")
+        cmd_logger.debug(f"User {player.name} now has {player.bonus_pay} bonus pay")
         await interaction.response.send_message(f"{player.name} now has {player.bonus_pay} bonus pay", ephemeral=self.bot.use_ephemeral)
         self.bot.queue.put_nowait((1, player, 0))
 

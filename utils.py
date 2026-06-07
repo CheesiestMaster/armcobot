@@ -1357,3 +1357,8 @@ class RecordingModal(discord.ui.Modal):
     @on_error_decorator(error_counter, has_self=True)
     async def on_error(self, interaction: Interaction, error: Exception, /) -> None:
         return await super().on_error(interaction, error)
+
+class RecordingLayoutView(discord.ui.LayoutView):
+    @on_error_decorator(error_counter, has_self=True)
+    async def on_error(self, interaction: Interaction, error: Exception, item: Item[Any], /) -> None:
+        return await super().on_error(interaction, error, item)

@@ -4,8 +4,9 @@ import os
 import tempfile
 from logging import getLogger
 
+import discord
 import pandas as pd
-from discord import Interaction, app_commands as ac, Attachment
+from discord import Interaction, app_commands as ac, Attachment, ui
 from discord.ext.commands import GroupCog
 from pandas import DataFrame, ExcelWriter, read_excel, read_csv
 from sqlalchemy import select, text
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 from customclient import CustomClient
 from FileRoller import FileRoller
 from models import BaseModel
-from utils import EnvironHelpers, uses_db, error_reporting
+from utils import EnvironHelpers, RecordingModal, uses_db, error_reporting
 
 logger = getLogger(__name__)
 
@@ -46,6 +47,7 @@ class Backup(GroupCog, description="Create Excel/SQL backups and restore from Ex
     @ac.command(name="create-xls", description="Create an Excel file with the current state of the database")
     @uses_db(CustomClient().sessionmaker)
     async def create_xls(self, interaction: Interaction, session: Session):
+        logger = getLogger(f"{__name__}.create-xls")
         await interaction.response.defer(ephemeral=self.use_ephemeral)
 
         # Roll the file and prepare for writing
@@ -74,6 +76,7 @@ class Backup(GroupCog, description="Create Excel/SQL backups and restore from Ex
     if CustomClient().dialect == "mysql":
         @ac.command(name="create-sql", description="Create a mysqldump file with the current state of the database")
         async def create_sql(self, interaction: Interaction):
+            logger = getLogger(f"{__name__}.create-sql")
             await interaction.response.defer(ephemeral=self.use_ephemeral)
             # we need to use subprocess to call mysqldump
             # for all other parameters, we assume localhost and armco as the user and schema
@@ -95,6 +98,7 @@ class Backup(GroupCog, description="Create Excel/SQL backups and restore from Ex
     elif CustomClient().dialect == "sqlite":
         @ac.command(name="create-sql", description="Create a sqlite3 dump file with the current state of the database")
         async def create_sql(self, interaction: Interaction):
+            logger = getLogger(f"{__name__}.create-sql")
             await interaction.response.defer(ephemeral=self.use_ephemeral)
             self.sqlite_roller.roll()
             with open(EnvironHelpers.required_str("DATABASE_URL").replace("sqlite:///", ""), "rb") as f:
@@ -107,6 +111,7 @@ class Backup(GroupCog, description="Create Excel/SQL backups and restore from Ex
     @error_reporting(verbose=True)
     @uses_db(CustomClient().sessionmaker)
     async def restore_db(self, interaction: Interaction, session: Session, file: Attachment, table_name: str = None, separator: str = ","):
+        cmd_logger = getLogger(f"{__name__}.restore")
         await interaction.response.defer(ephemeral=self.use_ephemeral)
 
         # Download the file
@@ -115,17 +120,17 @@ class Backup(GroupCog, description="Create Excel/SQL backups and restore from Ex
 
         # Determine file type and process accordingly
         if file_extension == '.xlsx':
-            await self._restore_from_xlsx(session, file_data, interaction)
+            await self._restore_from_xlsx(session, file_data, interaction, cmd_logger)
         elif file_extension == '.csv':
             if not table_name:
                 await interaction.followup.send("Table name is required for CSV files", ephemeral=True)
                 return
-            await self._restore_from_csv(session, file_data, table_name, separator, interaction)
+            await self._restore_from_csv(session, file_data, table_name, separator, interaction, cmd_logger)
         else:
             await interaction.followup.send("Unsupported file type. Please use .xlsx or .csv files", ephemeral=True)
             return
 
-    async def _restore_from_xlsx(self, session: Session, file_data: bytes, interaction: Interaction):
+    async def _restore_from_xlsx(self, session: Session, file_data: bytes, interaction: Interaction, cmd_logger):
         """
         Restore database from an Excel file. Uses sheet names as table names;
         upserts rows into matching tables and notifies the user on completion.
@@ -147,9 +152,9 @@ class Backup(GroupCog, description="Create Excel/SQL backups and restore from Ex
                         records_processed = await self._upsert_dataframe(session, df, sheet_name)
                         total_records += records_processed
                         updated_tables.append(f"{sheet_name} ({records_processed} records)")
-                        logger.info(f"Processed {records_processed} records for table {sheet_name}")
+                        cmd_logger.info(f"Processed {records_processed} records for table {sheet_name}")
                     else:
-                        logger.warning(f"Table {sheet_name} not found in database schema, skipping")
+                        cmd_logger.warning(f"Table {sheet_name} not found in database schema, skipping")
 
                 # Re-enable foreign key checks
                 self._enable_foreign_keys(session)
@@ -169,7 +174,7 @@ class Backup(GroupCog, description="Create Excel/SQL backups and restore from Ex
                 self._enable_foreign_keys(session)
                 raise e
 
-    async def _restore_from_csv(self, session: Session, file_data: bytes, table_name: str, separator: str, interaction: Interaction):
+    async def _restore_from_csv(self, session: Session, file_data: bytes, table_name: str, separator: str, interaction: Interaction, cmd_logger):
         """Restore database from CSV file for specified table"""
         if table_name not in BaseModel.metadata.tables:
             await interaction.followup.send(f"Table {table_name} not found in database schema", ephemeral=True)
@@ -291,6 +296,57 @@ class Backup(GroupCog, description="Create Excel/SQL backups and restore from Ex
         # This will fail if there are any foreign key constraint violations
         session.execute(text("SELECT 1"))
         session.flush()
+
+    @ac.command(name="dynamic")
+    async def dynamic(self, interaction: Interaction):
+        modal = BackupDynamicModal()
+        await interaction.response.send_modal(modal)
+
+class BackupDynamicModal(RecordingModal):
+    def __init__(self):
+        super().__init__(title="Backup")
+        tables = [table.name for table in BaseModel.metadata.tables.values()]
+        table_chunks = [tables[i:i+10] for i in range(0, len(tables), 10)]
+        for chunk in table_chunks:
+            table_checkboxes = [discord.CheckboxGroupOption(label=table, value=table) for table in chunk]
+            table_group = ui.Label(text="Tables", component=ui.CheckboxGroup(options=table_checkboxes, required=False))
+            self.add_item(table_group)
+        formats = ["xlsx", "csv", "json"]
+        format_checkboxes = [discord.CheckboxGroupOption(label=format, value=format) for format in formats]
+        format_group = ui.Label(text="Formats", component=ui.CheckboxGroup(options=format_checkboxes))
+        self.add_item(format_group)
+
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def on_submit(self, interaction: Interaction, session: Session):
+        logger = getLogger(f"{__name__}.BackupDynamicModal.on_submit")
+        await interaction.response.defer(ephemeral=True)
+        tables = [choice for component in interaction.data["components"][:-1] for choice in component["component"]["values"]]
+        format = [choice for choice in interaction.data["components"][-1]["component"]["values"]]
+        xls_buffer = io.BytesIO()
+        with ExcelWriter(xls_buffer) as xls_writer:
+            for table in tables:
+                table_data = session.execute(select(BaseModel.metadata.tables[table])).fetchall()
+                df = DataFrame(table_data, columns=table_data[0]._mapping.keys())
+                files = []
+                df.to_excel(xls_writer, sheet_name=table, index=False)
+                if "csv" in format:
+                    buf = io.BytesIO()
+                    df.to_csv(buf, sep=",", index=False)
+                    buf.seek(0)
+                    files.append(discord.File(buf, filename=f"{table}.csv"))
+                if "json" in format:
+                    buf = io.BytesIO()
+                    df.to_json(buf, orient="records")
+                    buf.seek(0)
+                    files.append(discord.File(buf, filename=f"{table}.json"))
+        if "xlsx" in format:
+            xls_buffer.seek(0)
+            files.append(discord.File(xls_buffer, filename="backup.xlsx"))
+        chunks = [files[i:i+10] for i in range(0, len(files), 10)]
+        for chunk in chunks:
+            await interaction.followup.send(files=chunk, ephemeral=True)
+                
 
 async def setup(_bot: CustomClient):
     await _bot.add_cog(Backup(_bot))

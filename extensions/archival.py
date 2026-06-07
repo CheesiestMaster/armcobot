@@ -23,6 +23,7 @@ class Archival(GroupCog, description="Archive a channel or thread to JSON. Manag
     @ac.command(name="archive", description="Archive a channel")
     @ac.check(is_management_no_notify)
     async def archive(self, interaction: Interaction, channel: discord.TextChannel|discord.Thread):
+        logger = getLogger(f"{__name__}.archive")
         await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(f"Archiving {channel.mention}")
         logger.info(f"Archiving {channel.name} of type {type(channel)}")

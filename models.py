@@ -267,15 +267,37 @@ class Player(BaseModel):
         uselist=False,
         viewonly=True
     )
-    active_units: Mapped[list[Unit]] = relationship(
+    active_units: Mapped[set[Unit]] = relationship(
         "Unit",
         primaryjoin="and_(Player.id == Unit.player_id, Unit.active == True)",
         uselist=True,
-        viewonly=True
+        viewonly=True,
+        collection_class=set
+    )
+    proposed_units: Mapped[set[Unit]] = relationship(
+        "Unit",
+        primaryjoin="and_(Player.id == Unit.player_id, Unit.status == 'PROPOSED')",
+        uselist=True,
+        viewonly=True,
+        collection_class=set
+    )
+    inactive_units: Mapped[set[Unit]] = relationship(
+        "Unit",
+        primaryjoin="and_(Player.id == Unit.player_id, Unit.status == 'INACTIVE')",
+        uselist=True,
+        viewonly=True,
+        collection_class=set
+    )
+    dead_units: Mapped[set[Unit]] = relationship( # units which have a status of KIA or MIA
+        "Unit",
+        primaryjoin="and_(Player.id == Unit.player_id, Unit.status.in_(['KIA', 'MIA']))",
+        uselist=True,
+        viewonly=True,
+        collection_class=set
     )
 
     @hybrid_property
-    def user(self) -> discord.User:
+    def user(self) -> discord.User | None:
         """Returns a concrete discord.User object.
 
         Note: The property always returns discord.User (concrete type), while the
@@ -439,6 +461,7 @@ class ShopUpgrade(BaseModel):
     player_upgrades: Mapped[list[PlayerUpgrade]] = relationship("PlayerUpgrade", back_populates="shop_upgrade", cascade="all", lazy="select", passive_deletes=True)
     unit_types: Mapped[list[ShopUpgradeUnitTypes]] = relationship("ShopUpgradeUnitTypes", back_populates="shop_upgrade", cascade="all, delete-orphan", lazy="select", passive_deletes=True)
     required_upgrade: Mapped[Optional[ShopUpgrade]] = relationship("ShopUpgrade", remote_side=[id], lazy="joined", passive_deletes=True)
+    required_by: Mapped[list[ShopUpgrade]] = relationship("ShopUpgrade", back_populates="required_upgrade", lazy="select", passive_deletes=True)
     target_type_info: Mapped[UnitType] = relationship("UnitType", foreign_keys=[refit_target], lazy="joined", back_populates="refit_targets", passive_deletes=True)
     compatible_units: Mapped[list[Unit]] = relationship(
         "Unit",

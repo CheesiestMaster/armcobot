@@ -8,6 +8,8 @@ aiohappyeyeballs==2.4.3
     # via aiohttp
 aiohttp==3.10.10
     # via discord-py
+aioprom==1.0.9
+    # via -r requirements.in
 aiosignal==1.3.1
     # via aiohttp
 attrs==24.2.0
@@ -35,7 +37,9 @@ openpyxl==3.1.5
 pandas==2.2.3
     # via -r requirements.in
 prometheus-client==0.21.1
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   aioprom
 propcache==0.2.0
     # via yarl
 psutil==6.1.0

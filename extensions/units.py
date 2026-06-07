@@ -28,32 +28,33 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
 
         self.bot = bot
 
-    def _deactivate_unit_by_id(self, unit_id: int, session: Session) -> str:
+    def _deactivate_unit_by_id(self, unit_id: int, session: Session, *, cmd_log=None) -> str:
         """
         Helper function to deactivate a unit by its ID.
         Returns the original callsign of the deactivated unit.
         """
 
-        logger.debug(f"Deactivating unit by ID: unit_id={unit_id}")
+        log = cmd_log if cmd_log is not None else logger
+        log.debug(f"Deactivating unit by ID: unit_id={unit_id}")
 
         # Find the unit by ID
         unit = session.query(Unit_model).filter(Unit_model.id == unit_id).first()
         if not unit:
-            logger.warning(f"Unit not found by ID: unit_id={unit_id}")
+            log.warning(f"Unit not found by ID: unit_id={unit_id}")
             raise ValueError("Unit not found")
 
-        logger.debug(f"Found unit: id={unit.id}, name={unit.name}, callsign={unit.callsign}, player_id={unit.player.discord_id}, active={unit.active}, status={unit.status}")
+        log.debug(f"Found unit: id={unit.id}, name={unit.name}, callsign={unit.callsign}, player_id={unit.player.discord_id}, active={unit.active}, status={unit.status}")
 
         # Check if the unit is active
         if not unit.active:
-            logger.warning(f"Attempted to deactivate already inactive unit: unit_id={unit.id}, callsign={unit.callsign}")
+            log.warning(f"Attempted to deactivate already inactive unit: unit_id={unit.id}, callsign={unit.callsign}")
             raise ValueError("Unit is not active")
 
         original_callsign = unit.callsign
         original_status = unit.status
         original_campaign_id = unit.campaign_id
 
-        logger.debug(f"Deactivating unit: id={unit.id}, name={unit.name}, callsign={original_callsign}, status={original_status} -> INACTIVE, campaign_id={original_campaign_id} -> None")
+        log.debug(f"Deactivating unit: id={unit.id}, name={unit.name}, callsign={original_callsign}, status={original_status} -> INACTIVE, campaign_id={original_campaign_id} -> None")
 
         unit.active = False
         unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
@@ -61,7 +62,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
         unit.campaign_id = None
         unit.battle_group = None
         session.commit()
-        logger.debug(f"Successfully deactivated unit: id={unit.id}, name={unit.name}, original_callsign={original_callsign}")
+        log.debug(f"Successfully deactivated unit: id={unit.id}, name={unit.name}, original_callsign={original_callsign}")
 
         return original_callsign
 
@@ -69,6 +70,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
     @ac.describe(unit_name="The name of the unit to create")
     @uses_db(CustomClient().sessionmaker)
     async def createunit(self, interaction: Interaction, unit_name: str, session: Session):
+        logger = getLogger(f"{__name__}.create")
         logger.triage(f"Unit creation initiated by {interaction.user.global_name} with name: {unit_name}")
         class UnitSelect(ui.Select):
             def __init__(self):
@@ -197,6 +199,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
         and updates its status and campaign.
         """
 
+        logger = getLogger(f"{__name__}.activate")
         logger.triage(f"Activate unit command initiated by {interaction.user.global_name} with callsign {callsign}")
         if len(callsign) > 7:
             logger.warning(f"Callsign {callsign} from {interaction.user.global_name} is too long")
@@ -344,6 +347,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
     @ac.command(name="remove_unit", description="Remove a proposed unit from your company")
     @uses_db(CustomClient().sessionmaker)
     async def remove_unit(self, interaction: Interaction, session: Session):
+        logger = getLogger(f"{__name__}.remove_unit")
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:
             await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=CustomClient().use_ephemeral)
@@ -389,6 +393,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
     @uses_db(CustomClient().sessionmaker)
     @error_reporting(False)
     async def deactivateunit(self, interaction: Interaction, session: Session):
+        logger = getLogger(f"{__name__}.deactivate")
         logger.debug(f"Deactivate unit request: user_id={interaction.user.id}, user_name={interaction.user.global_name}")
 
         # Find the player and their active units
@@ -411,7 +416,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
             unit = active_units[0]
             logger.debug(f"Single active unit found, deactivating directly: unit_id={unit.id}, callsign={unit.callsign}")
 
-            original_callsign = self._deactivate_unit_by_id(unit.id, session)
+            original_callsign = self._deactivate_unit_by_id(unit.id, session, cmd_log=logger)
             await interaction.response.send_message(tmpl.unit_deactivated.format(original_callsign=original_callsign), ephemeral=CustomClient().use_ephemeral)
 
             # Queue notification
@@ -440,7 +445,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
                     logger.debug(f"Unit selected for deactivation: unit_id={unit_id}")
 
                     # Use closure scoping to access the parent cog
-                    original_callsign = cog._deactivate_unit_by_id(unit_id, session)
+                    original_callsign = cog._deactivate_unit_by_id(unit_id, session, cmd_log=logger)
                     await interaction.response.send_message(tmpl.unit_deactivated.format(original_callsign=original_callsign), ephemeral=CustomClient().use_ephemeral)
 
                     # Queue notification
@@ -492,6 +497,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
     @ac.command(name="rename", description="Rename a unit")
     @uses_db(CustomClient().sessionmaker)
     async def rename(self, interaction: Interaction, session: Session):
+        logger = getLogger(f"{__name__}.rename")
         logger.info("rename command invoked")
         player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:
@@ -567,6 +573,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
     @ac.check(is_management)  # only management can transfer units
     @uses_db(CustomClient().sessionmaker)
     async def transfer_unit(self, interaction: Interaction, campaign: str, session: Session):
+        logger = getLogger(f"{__name__}.transfer_unit")
         _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
         if _campaign is None:
             await interaction.response.send_message(tmpl.campaign_not_found, ephemeral=True)
