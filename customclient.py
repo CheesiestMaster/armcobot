@@ -86,7 +86,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         """
 
         defintents = Intents.default()
-        defintents.members = True
         DEFAULTS = {"command_prefix":"\0", "intents":defintents}
         kwargs = {**DEFAULTS, **kwargs} # merge DEFAULTS and kwargs, kwargs takes precedence
         super().__init__(**kwargs)

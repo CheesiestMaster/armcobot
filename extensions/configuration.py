@@ -1,7 +1,7 @@
 import os
 from logging import getLogger
 
-from discord import Interaction, app_commands as ac, ChannelType
+from discord import Interaction, app_commands as ac, ChannelType, NotFound
 from discord.ext.commands import GroupCog
 from dotenv import dotenv_values
 from sqlalchemy.orm import Session
@@ -117,12 +117,18 @@ class Config(GroupCog, description="Configuration: set nickname, channels, list 
 
         main_guild = self.bot.get_guild(int(env_values.get("MAIN_GUILD_ID")))
         if main_guild:
+            async def fetch_member_or_none(member_id):
+                try:
+                    return await main_guild.fetch_member(int(member_id))
+                except (NotFound, TypeError, ValueError):
+                    return None
+
             # get all the users and roles in the environment, and send f"{key}: {value.mention}" for each
             message = "Users:\n"
-            owner1 = main_guild.get_member(int(env_values.get("BOT_OWNER_ID")))
-            owner2 = main_guild.get_member(int(env_values.get("BOT_OWNER_ID_2")))
-            answerer1 = main_guild.get_member(int(env_values.get("FAQ_ANSWERER_1")))
-            answerer2 = main_guild.get_member(int(env_values.get("FAQ_ANSWERER_2")))
+            owner1 = await fetch_member_or_none(env_values.get("BOT_OWNER_ID"))
+            owner2 = await fetch_member_or_none(env_values.get("BOT_OWNER_ID_2"))
+            answerer1 = await fetch_member_or_none(env_values.get("FAQ_ANSWERER_1"))
+            answerer2 = await fetch_member_or_none(env_values.get("FAQ_ANSWERER_2"))
             mod1 = main_guild.get_role(int(env_values.get("MOD_ROLE_1")))
             mod2 = main_guild.get_role(int(env_values.get("MOD_ROLE_2")))
             gm = main_guild.get_role(int(env_values.get("GM_ROLE")))

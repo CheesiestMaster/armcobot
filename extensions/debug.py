@@ -83,7 +83,16 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
                 logger.debug("No guild available for mod check")
                 return False
 
-            cast_user = casting_guild.get_member(interaction.user.id)
+            if interaction.guild and interaction.guild.id == casting_guild.id and isinstance(interaction.user, discord.Member):
+                cast_user = interaction.user
+            else:
+                try:
+                    cast_user = await casting_guild.fetch_member(interaction.user.id)
+                except NotFound:
+                    logger.debug(f"User {interaction.user.id} not found in casting guild")
+                    await interaction.response.send_message(tmpl.no_permission, ephemeral=True)
+                    return False
+
             logger.debug(f"Casting user: {cast_user}")
             valid = any(cast_user.get_role(role_id) for role_id in self.bot.mod_roles)
             logger.debug(f"Valid: {valid}")
@@ -344,7 +353,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
                 break # handle race condition gracefully
         await interaction.followup.send(tmpl.queue_emptied, ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="clear_deletable", description="Deletes all deletable messages in the channel.")
+    #@ac.command(name="clear_deletable", description="Deletes all deletable messages in the channel.")
     async def clear_deletable(self, interaction: Interaction, limit: int = 100):
         """
         Delete up to `limit` deletable messages in the channel.
@@ -416,7 +425,7 @@ class Debug(GroupCog, description="Debug: reload extensions/strings, clear messa
         await toggle_command_ban(is_banned, interaction.user.mention)
         await interaction.response.send_message(tmpl.debug_command_ban_toggle.format(action='disabled' if is_banned else 'enabled'), ephemeral=self.bot.use_ephemeral)
 
-    @ac.command(name="fkcheck", description="Validate External Foreign Keys")
+    #@ac.command(name="fkcheck", description="Validate External Foreign Keys")
     async def fkcheck(self, interaction: Interaction):
         if not await is_server(interaction):
             await interaction.response.send_message(tmpl.dm_not_allowed, ephemeral=True)

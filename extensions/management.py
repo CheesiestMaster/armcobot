@@ -985,8 +985,10 @@ class ShopCompatibleUpgradesLayoutView(RecordingLayoutView):
         selected_upgrades = session.query(ShopUpgrade).filter(ShopUpgrade.id.in_(upgrade_ids)).all()
         unit_type.compatible_upgrades = selected_upgrades
         session.commit()
-        await interaction.response.send_message("Compatible upgrades updated", ephemeral=True)
         await self.edit_callback(view=self.parent_class(self.unit_type))
+        content = RecordingLayoutView()
+        content.add_item(ui.TextDisplay(content="Compatible upgrades updated"))
+        await interaction.response.edit_message(view=content)
 
 class ShopUnitTypeEditUnitReqModal(RecordingModal):
     def __init__(self, unit_type: str, old_unit_req: int):
@@ -1773,8 +1775,10 @@ class ShopUpgradeEditUnitTypesLayoutView(RecordingLayoutView):
         selected_unit_types = session.query(UnitType).filter(UnitType.unit_type.in_(selected)).all()
         upgrade.compatible_unit_types = selected_unit_types
         session.commit()
-        await interaction.response.send_message("Unit types updated", ephemeral=True)
         await self.edit_callback(view=self.parent_class(self.upgrade_id))
+        content = RecordingLayoutView()
+        content.add_item(ui.TextDisplay(content="Unit types updated"))
+        await interaction.response.edit_message(view=content)
 
 class ShopAddUpgradeModal(RecordingModal):
     def __init__(self):

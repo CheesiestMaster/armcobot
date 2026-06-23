@@ -5,7 +5,7 @@ from typing import List, Optional
 from asyncio import gather
 import random
 
-from discord import Interaction, app_commands as ac, Member, Role, Embed, File, TextStyle
+from discord import Interaction, app_commands as ac, Member, Role, Embed, File, TextStyle, NotFound
 from discord.ext.commands import GroupCog
 from discord.ui import Modal, TextInput
 from sqlalchemy import text, not_, func
@@ -426,10 +426,10 @@ class Campaigns(GroupCog, description="Campaign commands: list, join, leave, vie
         await interaction.response.defer(ephemeral=True)
         async def make_text(unit: Unit):
             player: Player = unit.player
-            member: Member|None = interaction.guild.get_member(int(player.discord_id))
-            if member:
+            try:
+                member = await interaction.guild.fetch_member(int(player.discord_id))
                 return f"{member.display_name} - {unit.callsign} - {unit.unit_type}\n"
-            else:
+            except NotFound:
                 return f"{player.discord_id} - {unit.callsign} - {unit.unit_type}\n"
         texts = await gather(*[make_text(unit) for unit in units])
         text = "".join(texts)

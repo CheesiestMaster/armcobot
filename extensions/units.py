@@ -467,7 +467,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
                 ephemeral=CustomClient().use_ephemeral
             )
 
-    @ac.command(name="units", description="Display a list of all Units for a Player")
+    #@ac.command(name="units", description="Display a list of all Units for a Player")
     @ac.describe(player="The player to deliver results for")
     @uses_db(CustomClient().sessionmaker)
     async def units(self, interaction: Interaction, player: User, session: Session):
@@ -569,7 +569,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
         view.add_item(UnitSelect())
         await interaction.response.send_message(tmpl.unit_select_to_rename, view=view, ephemeral=CustomClient().use_ephemeral)
 
-    @ac.command(name="transfer_unit", description="Transfer a proposed unit from your company")
+    #@ac.command(name="transfer_unit", description="Transfer a proposed unit from your company")
     @ac.check(is_management)  # only management can transfer units
     @uses_db(CustomClient().sessionmaker)
     async def transfer_unit(self, interaction: Interaction, campaign: str, session: Session):
@@ -626,7 +626,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
             return
         await interaction.response.send_message(tmpl.unit_select_to_transfer, view=view, ephemeral=CustomClient().use_ephemeral)
 
-    @ac.command(name="counts_by_unit_type", description="Display the number of units by unit type, made just for Frenchboi")
+    #@ac.command(name="counts_by_unit_type", description="Display the number of units by unit type, made just for Frenchboi")
     @uses_db(CustomClient().sessionmaker)
     async def counts_by_unit_type(self, interaction: Interaction, session: Session):
         counts = session.query(Unit_model.unit_type, func.count()).filter(Unit_model.unit_type != "STOCKPILE").group_by(Unit_model.unit_type).order_by(func.count().desc()).all()
