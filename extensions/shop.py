@@ -1,15 +1,14 @@
 from logging import getLogger
-from typing import Callable
 
-from discord import Interaction, TextStyle, app_commands as ac, ui, SelectOption, ButtonStyle, Embed
+from discord import ButtonStyle, Interaction, app_commands as ac, ui
+import discord
 from discord.ext.commands import GroupCog
 from sqlalchemy.orm import Session
-import templates as tmpl
 
 from customclient import CustomClient
-from MessageManager import MessageManager
-from models import Player, Unit, UnitStatus, ShopUpgrade, ShopUpgradeUnitTypes, PlayerUpgrade, UnitType, UpgradeType
-from utils import uses_db, Paginator, error_reporting, RecordingView
+from models import Player, PlayerUpgrade, ShopUpgrade, Unit, UnitStatus
+from utils import RecordingLayoutView, error_reporting, uses_db
+import templates as tmpl
 
 logger = getLogger(__name__)
 
@@ -25,759 +24,298 @@ class Shop(GroupCog, description="View and purchase upgrades for units."):
         self.bot = bot
 
     @ac.command(name="open", description="View the shop")
+    async def open(self, interaction: Interaction):
+        layout_view = ShopUnitSelectLayoutView(interaction.user.id)
+        await interaction.response.send_message(view=layout_view, ephemeral=False)
+
+class AuthorizedUserLayoutView(RecordingLayoutView):
+    discord_id: int
+
+    @error_reporting(True)
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        if interaction.user.id != int(self.discord_id):
+            logger.warning(f"User {interaction.user.id} tried to interact with view owned by {self.discord_id}")
+            await interaction.response.send_message("You are not the owner of this view", ephemeral=True)
+            return False
+        return True
+
+class ShopUnitSelectLayoutView(AuthorizedUserLayoutView):
     @uses_db(CustomClient().sessionmaker)
-    async def shop(self, interaction: Interaction, session: Session):
-        """
-        Main shop command that opens the shop interface for players.
-
-        This command:
-        - Validates that the player has a Meta Campaign company
-        - Creates the initial shop home view
-        - Displays available units and currency conversion options
-        """
-        shop_log = getLogger(f"{__name__}.open")
-        shop_log.triage(f"Shop command initiated by user {interaction.user.name} (ID: {interaction.user.id})")
-
-        # Check if player has a Meta Campaign company
-        player_id = session.query(Player.id).filter(Player.discord_id == interaction.user.id).scalar()
-        if not player_id:
-            shop_log.triage(f"User {interaction.user.name} attempted to access shop without a Meta Campaign company")
-            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=CustomClient().use_ephemeral)
+    def __init__(self, discord_id: int, session: Session):
+        super().__init__(timeout=None)
+        self.discord_id = discord_id
+        user = session.query(Player).filter(Player.discord_id == discord_id).first()
+        if user is None:
+            self.add_item(ui.TextDisplay(content=tmpl.player_not_found))
             return
+        options = [discord.SelectOption(label=unit.name, value=str(unit.id)) for unit in user.units]
+        chunks = [options[i:i+25] for i in range(0, len(options), 25)]
+        if not chunks:
+            self.add_item(ui.TextDisplay(content=tmpl.no_units))
+            return
+        if len(chunks) > 19:
+            self.add_item(ui.TextDisplay(content=tmpl.too_many_units))
+            return
+        for chunk in chunks:
+            select = ui.Select(placeholder=tmpl.shop_select_unit_placeholder, options=chunk)
+            select.callback = self.unit_select_callback
+            action_row = ui.ActionRow(select)
+            self.add_item(action_row)
+        info_button = ui.Button(label=f"You have {user.rec_points}{tmpl.MAIN_CURRENCY_SHORT} and {user.bonus_pay}{tmpl.SECONDARY_CURRENCY_SHORT}", style=ButtonStyle.grey, disabled=True)
+        convert_button = ui.Button(label=tmpl.shop_convert_bp_button, style=ButtonStyle.success, disabled=user.bonus_pay < 10)
+        convert_button.callback = self.convert_button_callback
+        action_row = ui.ActionRow(info_button, convert_button)
+        self.add_item(action_row)
 
-        shop_log.triage(f"Creating MessageManager for player {player_id}")
-        message_manager = MessageManager(interaction)
-
-        # Generate the shop home interface
-        view, embed = await self.shop_home_view_factory(player_id, message_manager, shop_log=shop_log)
-        shop_log.triage(f"Generated shop home view for player {player_id}")
-
-        # Send the shop interface to the player
-        await message_manager.send_message(view=view, embed=embed, ephemeral=CustomClient().use_ephemeral)
-        shop_log.triage(f"Shop interface sent to user {interaction.user.name}")
-
+    @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
-    async def shop_home_view_factory(self, player_id: int, message_manager: MessageManager, session: Session, *, shop_log=None):
-        """
-        Creates the main shop home interface showing available units and currency options.
+    async def convert_button_callback(self, interaction: Interaction, session: Session):
+        player = session.query(Player).filter(Player.discord_id == self.discord_id).first()
+        if player is None:
+            await interaction.response.send_message(tmpl.player_not_found, ephemeral=True)
+            return
+        if player.bonus_pay < 10:
+            await interaction.response.send_message(tmpl.not_enough_bonus_pay, ephemeral=True)
+            return
+        player.bonus_pay -= 10
+        player.rec_points += 1
+        session.commit()
+        await interaction.response.send_message("You have converted your bonus pay to requisition points", ephemeral=True)
+        layout_view = self.__class__(player.discord_id)
+        await interaction.message.edit(view=layout_view)
 
-        This method:
-        - Displays player's currency (requisition points and bonus pay)
-        - Shows a dropdown of available units
-        - Provides a button to convert bonus pay to requisition points
-        - Handles unit selection navigation
-        """
-        log = shop_log if shop_log is not None else logger
-        log.triage(f"Creating shop home view for player {player_id}")
-        view = RecordingView()
-        embed = Embed(title=tmpl.shop_title, color=0xc06335)
-
-        # Get player's currency information
-        rec_points, bonus_pay = session.query(Player.rec_points, Player.bonus_pay).filter(Player.id == player_id).first()
-
-        # Get all units belonging to the player
-        units = session.query(Unit).filter(Unit.player_id == player_id).all()
-        log.triage(f"Found {len(units)} units for player {player_id}: {[unit.name for unit in units]}")
-
-        # Create unit selection dropdown
-        if not units:
-            log.triage(f"No units found for player {player_id}, creating disabled select")
-            select_options = [SelectOption(label=tmpl.shop_no_units_option, value="no_units", default=True)]
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def unit_select_callback(self, interaction: Interaction, session: Session):
+        unit = session.query(Unit).filter(Unit.id == int(interaction.data['values'][0])).first()
+        if unit is None:
+            await interaction.response.send_message(tmpl.unit_not_found, ephemeral=True)
+            return
+        if unit.status == UnitStatus.INACTIVE:
+            layout_view = ShopInactiveUnitLayoutView(interaction.user.id, unit.id)
+        elif unit.status == UnitStatus.PROPOSED:
+            layout_view = ShopProposedUnitLayoutView(interaction.user.id, unit.id)
+        elif unit.status in {UnitStatus.MIA, UnitStatus.KIA}:
+            layout_view = ShopDeadUnitLayoutView(interaction.user.id, unit.id)
         else:
-            log.triage(f"Creating select options for {len(units)} units")
-            select_options = [SelectOption(label=unit.name, value=str(unit.id)) for unit in units]
+            await interaction.response.send_message(tmpl.unit_not_inactive, ephemeral=True)
+            return
+        await interaction.response.send_message(view=layout_view, ephemeral=False)
 
-        select = ui.Select(placeholder=tmpl.shop_select_unit_placeholder, options=select_options, disabled=not units)
-        log.triage(f"Created unit select menu with {len(select_options)} options")
-
-        # Create bonus pay to requisition points conversion button
-        bonus_button = ui.Button(label=tmpl.shop_convert_bp_button, style=ButtonStyle.success, disabled=bonus_pay < 10)
-        log.triage(f"Created BP to RP conversion button. Player has {bonus_pay} BP")
-
-        @uses_db(CustomClient().sessionmaker)
-        async def bonus_button_callback(interaction: Interaction, session: Session):
-            """
-            Callback for converting bonus pay to requisition points.
-
-            Converts 10 bonus pay to 1 requisition point.
-            Updates the button state based on remaining bonus pay.
-            """
-            log.triage(f"BP to RP conversion initiated by player {player_id}")
-            _player = session.query(Player).filter(Player.id == player_id).first()
-
-            # Validate sufficient bonus pay
-            if _player.bonus_pay < 10:
-                log.triage(f"Invalid BP to RP conversion attempt - insufficient BP: {_player.bonus_pay}")
-                bonus_button.disabled = True
-                await message_manager.update_message(content=tmpl.not_enough_bonus_pay)
-                await interaction.response.defer(thinking=False, ephemeral=True)
-                log.triage(f"Deferred response for BP to RP conversion for player {player_id}")
-                return
-
-            # Perform the conversion (10 BP = 1 RP)
-            _player.bonus_pay -= 10
-            _player.rec_points += 1
-            log.triage(f"Converted 10 BP to 1 RP. New balance: {_player.bonus_pay} BP, {_player.rec_points} RP")
-
-            # Update button state and commit changes
-            bonus_button.disabled = _player.bonus_pay < 10
-            session.commit()
-            self.bot.queue.put_nowait((1, _player, 0))
-            await message_manager.update_message()
-            await interaction.response.defer(thinking=False, ephemeral=True)
-
-        bonus_button.callback = bonus_button_callback
-
-        @uses_db(CustomClient().sessionmaker)
-        async def select_callback(interaction: Interaction, session: Session):
-            """
-            Callback for when a player selects a unit from the dropdown.
-
-            Navigates to the unit-specific shop view for purchasing upgrades.
-            """
-            selected_unit_id = int(select.values[0])
-            unit_id, unit_name = session.query(Unit.id, Unit.name).filter(Unit.id == selected_unit_id).first()
-            log.triage(f"Unit selected: {unit_name} (ID: {unit_id})")
-
-            # Validate unit exists
-            if not unit_id:
-                log.triage(f"Selected unit {selected_unit_id} not found")
-                embed.description = tmpl.unit_doesnt_exist
-                return view, embed
-
-            await interaction.response.defer(thinking=False, ephemeral=True)
-            log.triage(f"Deferred response for unit selection {unit_name}")
-            log.triage(f"Generating unit view for {unit_name}")
-
-            # Navigate to unit-specific shop view
-            unit_view, unit_embed = await self.shop_unit_view_factory(unit_id, player_id, message_manager, shop_log=shop_log)
-            await message_manager.update_message(embed=unit_embed, view=unit_view)
-
-
-        select.callback = select_callback
-
-        # Add UI elements to the view
-        view.add_item(select)
-        view.add_item(bonus_button)
-
-        # Set embed description and footer
-        embed.description = tmpl.select_unit_to_buy.format(rec_points=rec_points)
-        embed.set_footer(text=tmpl.shop_footer)
-        log.triage(f"Completed shop home view creation for player {player_id}")
-        return view, embed
-
+class ShopInactiveUnitLayoutView(AuthorizedUserLayoutView):
     @uses_db(CustomClient().sessionmaker)
-    async def shop_unit_view_factory(self, unit_id: int, player_id: int, message_manager: MessageManager, session: Session, *, shop_log=None):
+    def __init__(self, discord_id: int, unit_id: int, session: Session):
+        super().__init__(timeout=None)
+        self.discord_id = discord_id
+        self.unit_id = unit_id
+        unit = session.query(Unit).filter(Unit.id == unit_id).first()
+        if unit is None:
+            self.add_item(ui.TextDisplay(content=tmpl.unit_not_found))
+            return
+        container = ui.Container(
+            ui.TextDisplay(content=tmpl.shop_unit_title.format(unit_name=unit.name)),
+            ui.TextDisplay(content=f"Player {tmpl.MAIN_CURRENCY_SHORT}: {unit.player.rec_points}"),
+            ui.TextDisplay(content=f"{tmpl.UNIT_CURRENCY}: {unit.unit_req}" + (" Which must be spent first" if bool(unit.unit_req) else "")))
+        self.add_item(container)
+        upgrades, currency = self.populate_select_options(unit.available_upgrades, unit)
+        if not upgrades:
+            self.add_item(ui.TextDisplay(content=tmpl.no_upgrades_available))
+            return
+        options = [discord.SelectOption(label=upgrade["label"], value=upgrade["value"]) for upgrade in upgrades]
+        chunks = [options[i:i+25] for i in range(0, len(options), 25)]
+        if len(chunks) >=19:
+            self.add_item(ui.TextDisplay(content=tmpl.too_many_upgrades))
+            return
+        for chunk in chunks:
+            select = ui.Select(placeholder=tmpl.shop_select_upgrade_placeholder, options=chunk)
+            select.callback = self.upgrade_select_callback
+            action_row = ui.ActionRow(select)
+            self.add_item(action_row)
+
+    def populate_select_options(self, upgrades: list[ShopUpgrade], unit: Unit):
         """
-        Creates the shop interface for a specific unit based on its status.
-
-        This method handles different unit states:
-        - STOCKPILE: No upgrades available
-        - PROPOSED: Can purchase the unit itself
-        - MIA/KIA/ACTIVE: No upgrades available
-        - INACTIVE: Can purchase upgrades
-
-        Args:
-            unit_id: ID of the unit to create shop for
-            player_id: ID of the player
-            message_manager: Manager for updating messages
-            session: Database session
+        Fill the select menu options with available upgrades, respecting
+        currency availability, upgrade disabled state, type filtering, and per-unit limits.
+        Returns: currency (int)
         """
-        log = shop_log if shop_log is not None else logger
-        log.triage(f"Creating shop unit view for unit {unit_id} and player {player_id}")
+        current_unit_req = unit.unit_req
+        current_rec_points = unit.player.rec_points
+        select = []
+        currency = current_unit_req if current_unit_req > 0 else current_rec_points
 
-        # Get player's requisition points
-        rec_points = session.query(Player.rec_points).filter(Player.id == player_id).scalar()
+        for upgrade in upgrades:
+            if upgrade.disabled:
+                continue
+            if not upgrade.upgrade_type:
+                continue
+            if not upgrade.upgrade_type.can_use_unit_req and current_unit_req > 0:
+                continue
+            if upgrade.repeatable != 0: # 0 = unlimited, else max count
+                owned_count = sum(1 for _upgrade in unit.upgrades if _upgrade.shop_upgrade_id == upgrade.id)
+                if owned_count >= upgrade.repeatable:
+                    continue
 
-        # Get unit details
-        unit_name, unit_type, unit_status, active = session.query(
-            Unit.name, Unit.unit_type, Unit.status, Unit.active
-        ).filter(Unit.id == unit_id).first()
-        log.triage(f"Creating shop view for unit: {unit_name} with status: {unit_status}")
-
-        view = RecordingView()
-        embed = Embed(title=tmpl.shop_unit_title.format(unit_name=unit_name), color=0xc06335)
-
-        # Create back button to return to shop home
-        leave_button = ui.Button(label=tmpl.shop_back_to_home_button, style=ButtonStyle.danger)
-        @uses_db(CustomClient().sessionmaker)
-        async def leave_button_callback(interaction: Interaction, session: Session):
-            """
-            Callback when the user clicks the button to return to the main
-            shop home view. Rebuilds and sends the home message.
-            """
-
-            log.triage(f"Returning to shop home view for player {player_id}")
-            _player = session.query(Player).filter(Player.id == player_id).first()
-            view, embed = await self.shop_home_view_factory(_player.id, message_manager, shop_log=shop_log)
-            await message_manager.update_message(view=view, embed=embed)
-            await interaction.response.defer(thinking=False, ephemeral=True)
-            log.triage(f"Deferred response for returning to shop home view for player {player_id}")
-        leave_button.callback = leave_button_callback
-        view.add_item(leave_button)
-
-        # Handle STOCKPILE units (no upgrades available)
-        if unit_type == "STOCKPILE":
-            log.triage(f"Unit {unit_name} is stockpile, no upgrades available")
-            embed.description = tmpl.cant_buy_upgrades_stockpile
-            return view, embed
-
-        # Handle PROPOSED units (can purchase the unit itself)
-        if unit_status.name == "PROPOSED":
-            log.triage(f"Unit {unit_name} is proposed, checking requisition points")
-            buy_button = ui.Button(label=tmpl.shop_buy_unit_button, style=ButtonStyle.success, disabled=rec_points < 1)
-
-            @error_reporting(False)
-            @uses_db(CustomClient().sessionmaker)
-            async def buy_button_callback(interaction: Interaction, session: Session):
-                """
-                Callback for purchasing a proposed unit.
-
-                This process:
-                - Validates sufficient requisition points
-                - Adds free upgrades that come with the unit type
-                - Changes unit status to INACTIVE
-                - Deducts requisition points
-                """
-                _player = session.query(Player).filter(Player.id == player_id).first()
-                _unit = session.query(Unit).filter(Unit.id == unit_id).first()
-                log.triage(f"Buying unit {_unit.name}")
-
-                # Validate sufficient requisition points
-                if _player.rec_points < 1:
-                    log.triage(f"Player {interaction.user.name} attempted to buy unit without sufficient RP")
-                    embed.description = tmpl.not_enough_req_points_unit
-                    await message_manager.update_message()
-                    await interaction.response.defer(thinking=False, ephemeral=True)
-                    return
-
-                # Add free upgrades that come with this unit type
-                if _unit.type_info.free_upgrade_1:
-                    log.triage(f"Adding free upgrade 1: {_unit.type_info.free_upgrade_1_info.name}")
-                    free_upgrade_1 = PlayerUpgrade(
-                        unit_id=_unit.id,
-                        name=_unit.type_info.free_upgrade_1_info.name,
-                        type=_unit.type_info.free_upgrade_1_info.type,
-                        original_price=0,
-                        non_transferable=True,
-                        shop_upgrade_id=_unit.type_info.free_upgrade_1
-                    )
-                    session.add(free_upgrade_1)
-                if _unit.type_info.free_upgrade_2:
-                    log.triage(f"Adding free upgrade 2: {_unit.type_info.free_upgrade_2_info.name}")
-                    free_upgrade_2 = PlayerUpgrade(
-                        unit_id=_unit.id,
-                        name=_unit.type_info.free_upgrade_2_info.name,
-                        type=_unit.type_info.free_upgrade_2_info.type,
-                        original_price=0,
-                        non_transferable=True,
-                        shop_upgrade_id=_unit.type_info.free_upgrade_2
-                    )
-                    session.add(free_upgrade_2)
-
-                # Activate the unit and deduct cost
-                _unit.status = UnitStatus.INACTIVE
-                _player.rec_points -= 1
-                log.triage(f"Unit {_unit.name} purchased. New RP balance: {_player.rec_points}")
-
-                # Commit changes and update player
-                session.commit()
-                self.bot.queue.put_nowait((1, _player, 0))
-
-                # Refresh the shop view for the newly purchased unit
-                view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager, shop_log=shop_log)
-                await message_manager.update_message(view=view, embed=embed)
-                await interaction.response.defer(thinking=False, ephemeral=True)
-                log.triage(f"Deferred response for unit purchase {_unit.name}")
-            buy_button.callback = buy_button_callback
-            view.add_item(buy_button)
-            return view, embed
-
-        # Handle units that are MIA, KIA, or currently active in a campaign
-        elif unit_status.name in {"MIA", "KIA"} or active:
-            log.triage(f"Unit {unit_name} is {unit_status.name} or in a campaign, no upgrades available")
-            embed.description = tmpl.cant_buy_upgrades_active
-            return view, embed
-
-        # Handle INACTIVE units (can purchase upgrades)
-        elif unit_status.name == "INACTIVE":
-            log.triage(f"Unit {unit_name} is inactive, generating upgrade options")
-            return await self.shop_inactive_view_factory(unit_id, player_id, message_manager, embed, view, shop_log=shop_log)
-
-        # Handle unexpected unit status
-        log.triage(f"Invalid end state for Shop Unit View - unit {unit_name} has unexpected status: {unit_status}")
-        return view, embed
-
+            insufficient = "(❌)" if upgrade.cost > currency else ""
+            utype = upgrade.upgrade_type.emoji if hasattr(upgrade.upgrade_type, "emoji") else ""
+            label = f"{utype} {insufficient}{upgrade.name} ({upgrade.cost})"
+            select.append({"label": label, "value": str(upgrade.id)})
+        return select, currency
+        
+    @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
-    async def shop_inactive_view_factory(self, unit_id: int, player_id: int, message_manager: MessageManager, embed: Embed, view: RecordingView, session: Session, *, shop_log=None):
-        """
-        Creates the shop interface for inactive units that can purchase upgrades.
-
-        This method handles:
-        - Fetching available upgrades for the unit
-        - Pagination of upgrade options
-        - Filtering upgrades based on unit requisition and ownership
-        - Creating navigation buttons for browsing upgrades
-        """
-        log = shop_log if shop_log is not None else logger
-        log.triage(f"Creating inactive view for unit {unit_id} and player {player_id}")
-
-        # Get player's requisition points for purchasing upgrades
-        rec_points = session.query(Player.rec_points).filter(Player.id == player_id).scalar()
-
-        # Get unit details including name, type, and unit requisition
-        _unit = session.query(Unit).filter(Unit.id == unit_id).first()
-        if not _unit:
-            log.error(f"Unit {unit_id} not found")
-            raise ValueError(f"Unit {unit_id} not found")
-        log.triage(f"Unit {_unit.name} has {_unit.unit_req} unit requisition")
-        unit_req = _unit.unit_req
-        unit_name = _unit.name
-
-        # Get all upgrades compatible with this unit type
-        available_upgrades = _unit.available_upgrades
-
-        # Check if any upgrades are available for this unit type
-        if not available_upgrades:
-            log.triage(f"No compatible upgrades found for unit type {_unit.unit_type}")
-            embed.description = tmpl.no_upgrades_available
-            embed.color = 0xff0000  # Red color for error state
-            return view, embed
-
-        log.triage(f"Found {len(available_upgrades)} compatible upgrades for unit type {_unit.unit_type}")
-
-        # Create paginator to handle large numbers of upgrades (25 per page)
-        paginator = Paginator([upgrade.id for upgrade in available_upgrades], 25)
-        page = paginator.current()
-
-        # Create the dropdown select menu for upgrade selection
-        select = ui.Select(placeholder=tmpl.shop_select_upgrade_placeholder)
-        button_template = tmpl.shop_upgrade_button_template
-
-        # Initialize navigation buttons (disabled by default)
-        previous_button = ui.Button(label=tmpl.shop_previous_button, style=ButtonStyle.secondary)
-        previous_button.disabled = True
-        next_button = ui.Button(label=tmpl.shop_next_button, style=ButtonStyle.secondary)
-        next_button.disabled = True
-
-        def populate_select_options(upgrade_ids: list[int], current_unit_req: int, current_rec_points: int):
-            """
-            Helper function to populate the select dropdown with available upgrades.
-
-            This function handles:
-            - Filtering out disabled upgrades
-            - Checking unit requisition compatibility
-            - Filtering out upgrades at max per-unit limit (by count)
-            - Calculating currency and affordability indicators
-            - Formatting upgrade display with emojis and cost indicators
-
-            Args:
-                upgrade_ids: List of upgrade IDs to process
-                current_unit_req: Current unit requisition points
-                current_rec_points: Current player requisition points
-
-            Returns:
-                The currency amount used for the current page
-            """
-            select.disabled = False
-            select.options.clear()
-
-            using_unit_req = current_unit_req > 0
-
-            currency = current_unit_req if using_unit_req else current_rec_points
-
-            for upgrade_id in upgrade_ids:
-                log.triage(f"Processing upgrade ID {upgrade_id} for display")
-                _upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == upgrade_id).first()
-                log.triage(f"Adding upgrade {_upgrade.name} of type {_upgrade.type} to select")
-
-                # Skip disabled upgrades
-                if _upgrade.disabled:
-                    log.triage(f"Skipping disabled upgrade {_upgrade.name}")
-                    continue
-
-                # Skip upgrades without valid upgrade type
-                if not _upgrade.upgrade_type:
-                    log.error(f"Skipping upgrade ID:{_upgrade.id} Name:{_upgrade.name} Type:{_upgrade.type} - no valid upgrade type")
-                    continue
-
-                # Skip upgrades that can't use unit requisition when unit has unit_req
-                if not _upgrade.upgrade_type.can_use_unit_req and current_unit_req > 0:
-                    log.triage(f"Skipping upgrade {_upgrade.name} for unit {unit_name} because it has unit requisition")
-                    continue
-                # we need to reacquire the _unit object in this scope, from the unit_id argument of the parent function
-                _unit = session.query(Unit).filter(Unit.id == unit_id).first()
-                # Skip if at max per-unit limit (repeatable 0 = unlimited, else max count)
-                owned_count = session.query(PlayerUpgrade).filter(
-                    PlayerUpgrade.unit_id == _unit.id,
-                    PlayerUpgrade.shop_upgrade_id == _upgrade.id
-                ).count()
-                if _upgrade.repeatable != 0 and owned_count >= _upgrade.repeatable:
-                    log.triage(f"Skipping upgrade {_upgrade.name} as unit already has max ({owned_count} >= {_upgrade.repeatable})")
-                    continue
-
-                # Add ❌ indicator if player can't afford the upgrade
-                insufficient = "❌" if _upgrade.cost > currency else ""
-
-                # Get emoji for upgrade type display
-                utype = _upgrade.upgrade_type.emoji
-
-                # Add option to select dropdown with formatted label
-                select.add_option(
-                    label=button_template.format(
-                        type=utype,
-                        insufficient=insufficient,
-                        name=_upgrade.name,
-                        cost=_upgrade.cost
-                    ),
-                    value=str(_upgrade.id)
-                )
-            return currency
-
-        # Populate the initial page of upgrades
-        currency = populate_select_options(page, unit_req, rec_points)
-
-        # Add previous page button if there are previous pages
-        if paginator.has_previous():
-            previous_button.disabled = False
-
-        @uses_db(CustomClient().sessionmaker)
-        async def previous_button_callback(interaction: Interaction, session: Session):
-            """Callback for navigating to the previous page of upgrades"""
-            # Get fresh data from database
-            unit_name, unit_req = session.query(Unit.name, Unit.unit_req).filter(Unit.id == unit_id).first()
-            rec_points = session.query(Player.rec_points).filter(Player.id == player_id).scalar()
-
-            log.triage(f"Navigating to previous page of upgrades for unit {unit_name}")
-            await interaction.response.defer(thinking=False, ephemeral=True)
-
-            # Update page and repopulate options
-            nonlocal page, select, previous_button, next_button
-            page = paginator.previous()
-            currency = populate_select_options(page, unit_req, rec_points)
-
-            # Update button states based on pagination
-            previous_button.disabled = not paginator.has_previous()
-            if next_button:
-                next_button.disabled = not paginator.has_next()
-
-            await message_manager.update_message(embed=embed)
-            #await interaction.response.defer(thinking=False, ephemeral=True)
-            log.triage(f"Deferred response for previous page navigation for unit {unit_name}")
-
-        previous_button.callback = previous_button_callback
-        view.add_item(previous_button)
-
-        if not select.options:
-            log.error(f"No options found for select menu for unit {unit_name}")
-            select.add_option(label="There's nothing here, You might not be allowed to buy the upgrades that would have been on this page", value="0")
-            select.disabled = True
-
-        # Add the main upgrade selection dropdown
-        view.add_item(select)
-
-        # Add next page button if there are more pages
-        if paginator.has_next():
-            next_button.disabled = False
-
-            @error_reporting(False)
-            @uses_db(CustomClient().sessionmaker)
-            async def next_button_callback(interaction: Interaction, session: Session):
-                """
-                Callback when the user clicks the next-page button. Loads
-                fresh data and sends the next page of upgrades.
-                """
-
-                log.debug(f"Next button callback triggered by user {interaction.user.global_name}")
-
-                # Get fresh data from database
-                unit_name, unit_req = session.query(Unit.name, Unit.unit_req).filter(Unit.id == unit_id).first()
-                log.debug(f"Retrieved unit data: name={unit_name}, unit_req={unit_req}")
-
-                rec_points = session.query(Player.rec_points).filter(Player.id == player_id).scalar()
-                log.debug(f"Retrieved player rec_points: {rec_points}")
-
-                log.triage(f"Navigating to next page of upgrades for unit {unit_name}")
-                await interaction.response.defer(thinking=False, ephemeral=True)
-                log.triage(f"Deferred response for next page navigation for unit {unit_name}")
-
-                # Update page and repopulate options
-                nonlocal page, select, previous_button, next_button
-                old_page = page
-                page = paginator.next()
-                log.debug(f"Page navigation: {old_page} -> {page}")
-
-                currency = populate_select_options(page, unit_req, rec_points)
-                log.debug(f"Populated select options with currency: {currency}")
-
-                # Update button states based on pagination
-                if previous_button:
-                    previous_button.disabled = not paginator.has_previous()
-                    log.debug(f"Previous button disabled: {previous_button.disabled}")
-                next_button.disabled = not paginator.has_next()
-                log.debug(f"Next button disabled: {next_button.disabled}")
-
-                log.debug("Updating message with new view")
-                await message_manager.update_message(view=view)
-                log.debug("Message update completed")
-
-            next_button.callback = next_button_callback
-        view.add_item(next_button)
-
-        # Set the embed description with currency information
-        embed.description = tmpl.select_upgrade_to_buy.format(
-            req_points=currency,
-            req_type=("unit " if _unit.unit_req > 0 else "") + tmpl.MAIN_CURRENCY.lower()
-        )
-
-        @error_reporting()
-        @uses_db(CustomClient().sessionmaker)
-        async def select_callback(interaction: Interaction, session: Session):
-            """
-            Callback function for when a user selects an upgrade to purchase.
-
-            This function handles:
-            - Validation of upgrade availability and affordability
-            - Checking required upgrades
-            - Processing different upgrade types (refit vs regular upgrades)
-            - Handling non-purchaseable upgrades
-            - Database updates and player notification
-            """
-            nonlocal embed
-
-            # Get the selected upgrade ID from the dropdown
-            upgrade_id = int(select.values[0])
-            log.triage(f"Selected upgrade ID: {upgrade_id}")
-
-            # Fetch the upgrade details from database
-            upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == upgrade_id).first()
-            if not upgrade:
-                log.triage(f"Upgrade with ID {upgrade_id} not found")
-                embed.description = tmpl.upgrade_not_found
-                embed.color = 0xff0000  # Red for error
-                await message_manager.update_message()
-                await interaction.response.defer(thinking=False, ephemeral=True)
-                log.triage(f"Deferred response for upgrade not found error for upgrade ID {upgrade_id}")
+    async def upgrade_select_callback(self, interaction: Interaction, session: Session):
+        upgrade_id = int(interaction.data['values'][0])
+        unit = session.query(Unit).filter(Unit.id == self.unit_id).first()
+        currency = unit.unit_req if unit.unit_req > 0 else unit.player.rec_points
+        if unit is None:
+            await interaction.response.send_message(tmpl.unit_not_found, ephemeral=True)
+            return
+        upgrade = session.query(ShopUpgrade).filter(ShopUpgrade.id == upgrade_id).first()
+        if upgrade is None:
+            await interaction.response.send_message(tmpl.upgrade_not_found, ephemeral=True)
+            return
+        if upgrade.upgrade_type.non_purchaseable:
+            await interaction.response.send_message(tmpl.upgrade_non_purchaseable, ephemeral=True)
+            return
+        if upgrade.disabled:
+            await interaction.response.send_message(tmpl.upgrade_disabled, ephemeral=True)
+            return
+        if upgrade.cost > currency:
+            await interaction.response.send_message(tmpl.not_enough_req_points_upgrade, ephemeral=True)
+            return
+        if upgrade.repeatable != 0:
+            owned_count = sum(1 for _upgrade in unit.upgrades if _upgrade.shop_upgrade_id == upgrade.id)
+            if owned_count >= upgrade.repeatable:
+                await interaction.response.send_message(tmpl.already_have_upgrade, ephemeral=True)
                 return
-
-            # Get fresh player and unit data for validation
-            _player = session.query(Player).filter(Player.id == player_id).first()
-            _unit = session.query(Unit).filter(Unit.id == unit_id).first()
-            log.triage(f"Processing upgrade purchase for player {_player.name} and unit {_unit.name}")
-
-            # Check if player has enough currency to purchase the upgrade
-            if upgrade.cost > (_unit.unit_req if _unit.unit_req > 0 else _player.rec_points):
-                log.triage(f"Player {interaction.user.name} does not have enough requisition points. Required: {upgrade.cost}, Available: {_unit.unit_req if _unit.unit_req > 0 else _player.rec_points}")
-                embed.description = tmpl.not_enough_req_points_upgrade
-                embed.color = 0xff0000  # Red for error
-                await message_manager.update_message()
-                await interaction.response.defer(thinking=False, ephemeral=True)
-                log.triage(f"Deferred response for insufficient RP error for upgrade {upgrade.name}")
+        if upgrade.required_upgrade_id:
+            required_upgrade = session.query(PlayerUpgrade).filter(PlayerUpgrade.unit_id == unit.id, PlayerUpgrade.shop_upgrade_id == upgrade.required_upgrade_id).first()
+            if required_upgrade is None:
+                await interaction.response.send_message(tmpl.dont_have_required_upgrade, ephemeral=True)
                 return
-
-            # Check if upgrade has required prerequisites
-            if upgrade.required_upgrade_id:
-                required_upgrade = session.query(PlayerUpgrade).filter(
-                    PlayerUpgrade.unit_id == _unit.id,
-                    PlayerUpgrade.shop_upgrade_id == upgrade.required_upgrade_id
-                ).first()
-                if not required_upgrade:
-                    log.triage(f"Player {interaction.user.name} does not have the required upgrade: {upgrade.required_upgrade_id}")
-                    embed.description = tmpl.dont_have_required_upgrade
-                    embed.color = 0xff0000  # Red for error
-                    await message_manager.update_message()
-                    await interaction.response.defer(thinking=False, ephemeral=True)
-                    log.triage(f"Deferred response for missing required upgrade error for upgrade {upgrade.name}")
-                    return
-
-            # Handle non-purchaseable upgrades (e.g., free upgrades, campaign rewards)
-            if upgrade.upgrade_type.non_purchaseable:
-                log.triage(f"Upgrade {upgrade.name} is non-purchaseable")
-                embed.description = tmpl.upgrade_non_purchaseable
-                embed.color = 0xff0000  # Red for error
-                await message_manager.update_message()
-                await interaction.response.defer(thinking=False, ephemeral=True)
-                log.triage(f"Deferred response for non-purchaseable upgrade error for upgrade {upgrade.name}")
-                return
-
-            # Handle refit upgrades (change unit type)
-            if upgrade.upgrade_type.is_refit:
-                log.triage(f"Starting refit purchase workflow for unit {_unit.name} to {upgrade.refit_target}")
-                refit_target = upgrade.refit_target
-                refit_cost = upgrade.cost
-
-                # Get current upgrades on the unit
-                current_upgrades: list[PlayerUpgrade] = _unit.upgrades
-                log.triage(f"Current upgrades for unit: {[upgrade.name for upgrade in current_upgrades]}")
-
-                # Determine which upgrades are incompatible with the new unit type
-                current_upgrade_set: set[ShopUpgrade] = {upgrade.shop_upgrade for upgrade in current_upgrades}
-                compatible_upgrades: set[ShopUpgrade] = set(upgrade.target_type_info.compatible_upgrades)
-                incompatible_upgrades = current_upgrade_set - compatible_upgrades
-                log.triage(f"Incompatible upgrades that will be moved to stockpile: {[upgrade.name for upgrade in incompatible_upgrades]}")
-
-                # Get player's stockpile unit for storing incompatible upgrades
-                stockpile = _player.stockpile
-                if not stockpile:
-                    log.triage(f"Player {interaction.user.name} does not have a stockpile unit")
-                    await interaction.response.send_message(tmpl.dont_have_stockpile, ephemeral=True)
-                    return
-                log.triage(f"Found stockpile unit: {stockpile.name}")
-
-                # Move incompatible upgrades to stockpile
-                for _upgrade in current_upgrades:
-                    if _upgrade.shop_upgrade in incompatible_upgrades:
-                        log.triage(f"Moving upgrade {_upgrade.name} to stockpile")
-                        _upgrade.unit_id = stockpile.id
-
-                # Change unit type and deduct cost
-                log.triage(f"Changing unit type from {_unit.unit_type} to {refit_target}")
-
-                # if original_type is None, set it to the current unit type
-                if _unit.original_type is None:
-                    _unit.original_type = _unit.unit_type
-                
-
-                _unit.unit_type = refit_target
-                _unit.unit_req = upgrade.target_type_info.unit_req
-                _player.rec_points -= refit_cost
-                log.triage(f"Deducted {refit_cost} RP from player. New balance: {_player.rec_points}")
-
-                # Add free upgrades that come with the new unit type
-                if upgrade.target_type_info.free_upgrade_1:
-                    log.triage(f"Adding free upgrade 1: {upgrade.target_type_info.free_upgrade_1_info.name}")
-                    free_upgrade_1 = PlayerUpgrade(
-                        unit_id=_unit.id,
-                        name=upgrade.target_type_info.free_upgrade_1_info.name,
-                        type=upgrade.target_type_info.free_upgrade_1_info.type,
-                        original_price=0,
-                        non_transferable=True,
-                        shop_upgrade_id=upgrade.target_type_info.free_upgrade_1
-                    )
-                    session.add(free_upgrade_1)
-                if upgrade.target_type_info.free_upgrade_2:
-                    log.triage(f"Adding free upgrade 2: {upgrade.target_type_info.free_upgrade_2_info.name}")
-                    free_upgrade_2 = PlayerUpgrade(
-                        unit_id=_unit.id,
-                        name=upgrade.target_type_info.free_upgrade_2_info.name,
-                        type=upgrade.target_type_info.free_upgrade_2_info.type,
-                        original_price=0,
-                        non_transferable=True,
-                        shop_upgrade_id=upgrade.target_type_info.free_upgrade_2
-                    )
-                    session.add(free_upgrade_2)
-
-                # Commit changes and update player
-                session.commit()
-                log.triage("Committed changes to database")
-                self.bot.queue.put_nowait((1, _player, 0))
-                log.triage("Added player update to queue")
-                await interaction.response.defer(thinking=False, ephemeral=True)
-                log.triage(f"Deferred response for refit purchase workflow for unit {_unit.name}")
-
-                # Update interface and show success message
-                view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager, shop_log=shop_log)
-                embed.description = tmpl.you_have_bought_refit.format(refit_target=refit_target, refit_cost=refit_cost) + (tmpl.refit_unit_req.format(unit_req=_unit.unit_req) if _unit.unit_req > 0 else "")
-                embed.color = 0x00ff00  # Green for success
-                await message_manager.update_message(view=view, embed=embed)
-                if not interaction.response.is_done():
-                    await interaction.response.defer(thinking=False, ephemeral=True)
-                log.triage(f"Deferred response for successful refit purchase for unit {_unit.name}")
-                return
-
-            # Handle regular upgrades (non-refit)
-            # Reject if at max per-unit limit (repeatable 0 = unlimited, else max count)
-            existing_count = session.query(PlayerUpgrade).filter(
-                PlayerUpgrade.unit_id == _unit.id,
-                PlayerUpgrade.shop_upgrade_id == upgrade.id
-            ).count()
-            log.triage(f"Checking upgrade repeatable limit: {upgrade.repeatable}, current count: {existing_count}")
-            if upgrade.repeatable != 0 and existing_count >= upgrade.repeatable:
-                log.triage(f"Player {interaction.user.name} at limit for upgrade: {upgrade.name}")
-                embed.description = tmpl.already_have_upgrade
-                embed.color = 0xff0000  # Red for error
-                await message_manager.update_message()
-                await interaction.response.defer(thinking=False, ephemeral=True)
-                log.triage(f"Deferred response for duplicate upgrade error for upgrade {upgrade.name}")
-                return
-
-            # Create the new player upgrade record
+        if not upgrade.upgrade_type.is_refit:
             new_upgrade = PlayerUpgrade(
-                unit_id=_unit.id,
+                unit_id=unit.id,
                 shop_upgrade_id=upgrade.id,
                 type=upgrade.type,
                 name=upgrade.name,
-                original_price=upgrade.cost
+                original_price=upgrade.cost if unit.unit_req > 0 else 0,
+                non_transferable=unit.unit_req > 0
             )
             session.add(new_upgrade)
-            log.triage(f"Player {interaction.user.name} bought upgrade: {upgrade.name} for {upgrade.cost} Req")
-
-            # Store values for success message
-            upgrade_name = upgrade.name
-            upgrade_cost = upgrade.cost
-
-            # Deduct cost from appropriate currency source
-            if _unit.unit_req > 0:
-                # Use unit requisition if available
-                _unit.unit_req -= upgrade_cost
-                new_upgrade.original_price = 0  # Mark as free since unit_req is free currency
+            if unit.unit_req > 0:
+                unit.unit_req -= upgrade.cost
             else:
-                # Use player requisition points
-                _player.rec_points -= upgrade_cost
-
-            # Commit changes and update player
+                unit.player.rec_points -= upgrade.cost
             session.commit()
-            self.bot.queue.put_nowait((1, _player, 0))
+            CustomClient().queue.put_nowait((1, unit.player, 0))
+            await interaction.response.send_message(tmpl.you_have_bought_upgrade.format(upgrade_name=upgrade.name, upgrade_cost=upgrade.cost), ephemeral=False)
+        else:
+            refit_target = upgrade.refit_target
+            refit_cost = upgrade.cost
+            current_upgrades = unit.upgrades
+            current_upgrade_set = {upgrade.shop_upgrade for upgrade in current_upgrades}
+            compatible_upgrades = set(upgrade.target_type_info.compatible_upgrades) | {None,}
+            incompatible_upgrades = current_upgrade_set - compatible_upgrades
+            stockpile = unit.player.stockpile
+            if not stockpile:
+                await interaction.response.send_message(tmpl.dont_have_stockpile, ephemeral=True)
+                return
+            for _upgrade in current_upgrades:
+                if _upgrade.shop_upgrade in incompatible_upgrades:
+                    _upgrade.unit_id = stockpile.id
+            if unit.original_type is None:
+                unit.original_type = unit.unit_type
+            unit.unit_type = refit_target
+            unit.unit_req = upgrade.target_type_info.unit_req
+            unit.player.rec_points -= refit_cost
 
-            # Update interface and show success message
-            view, embed = await self.shop_unit_view_factory(_unit.id, _player.id, message_manager, shop_log=shop_log)
-            embed.description = tmpl.you_have_bought_upgrade.format(upgrade_name=upgrade_name, upgrade_cost=upgrade_cost)
-            embed.color = 0x00ff00  # Green for success
-            await message_manager.update_message(view=view, embed=embed)
-            await interaction.response.defer(thinking=False, ephemeral=True)
-            log.triage(f"Deferred response for successful upgrade purchase {upgrade_name}")
+            if upgrade.target_type_info.free_upgrade_1:
+                free_upgrade_1 = PlayerUpgrade(
+                    unit_id=unit.id,
+                    shop_upgrade_id=upgrade.target_type_info.free_upgrade_1,
+                    type=upgrade.target_type_info.free_upgrade_1_info.type,
+                    name=upgrade.target_type_info.free_upgrade_1_info.name,
+                    original_price=0,
+                    non_transferable=True
+                )
+                session.add(free_upgrade_1)
+            if upgrade.target_type_info.free_upgrade_2:
+                free_upgrade_2 = PlayerUpgrade(
+                    unit_id=unit.id,
+                    shop_upgrade_id=upgrade.target_type_info.free_upgrade_2,
+                    type=upgrade.target_type_info.free_upgrade_2_info.type,
+                    name=upgrade.target_type_info.free_upgrade_2_info.name,
+                    original_price=0,
+                    non_transferable=True
+                )
+                session.add(free_upgrade_2)
+            session.commit()
+            CustomClient().queue.put_nowait((1, unit.player, 0))
+            await interaction.response.send_message(tmpl.you_have_bought_refit.format(refit_target=refit_target, refit_cost=refit_cost), ephemeral=False)
+            layout_view = ShopInactiveUnitLayoutView(unit.player.discord_id, unit.id)
+            await interaction.message.edit(view=layout_view)
 
+        layout_view = ShopInactiveUnitLayoutView(unit.player.discord_id, unit.id)
+        await interaction.message.edit(view=layout_view)
 
-        select.callback = select_callback
-        return view, embed
-
-    @ac.command(name="replace_stockpile", description="Create a new stockpile unit if you don't have one")
+class ShopProposedUnitLayoutView(AuthorizedUserLayoutView):
     @uses_db(CustomClient().sessionmaker)
-    async def replace_stockpile(self, interaction: Interaction, session: Session):
-        """
-        Command to create a stockpile unit for players who don't have one.
-
-        Stockpile units are used to store incompatible upgrades when units are refitted.
-        Each player can only have one stockpile unit.
-        """
-        # Get player information
-        _player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-        if not _player:
-            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=self.bot.use_ephemeral)
+    def __init__(self, discord_id: int, unit_id: int, session: Session):
+        super().__init__(timeout=None)
+        self.discord_id = discord_id
+        self.unit_id = unit_id
+        unit = session.query(Unit).filter(Unit.id == unit_id).first()
+        if unit is None:
+            self.add_item(ui.TextDisplay(content=tmpl.unit_not_found))
             return
-
-        # Check if player already has a stockpile unit
-        stockpile = session.query(Unit).filter(Unit.player_id == _player.id, Unit.unit_type == "STOCKPILE").first()
-        if stockpile:
-            await interaction.response.send_message(tmpl.already_have_stockpile, ephemeral=self.bot.use_ephemeral)
+        container = ui.Container(
+            ui.TextDisplay(content=tmpl.shop_unit_title.format(unit_name=unit.name)),
+            ui.TextDisplay(content=f"Player {tmpl.MAIN_CURRENCY_SHORT}: {unit.player.rec_points}"),
+            ui.TextDisplay(content=f"{tmpl.UNIT_CURRENCY}: {unit.unit_req}"))
+        self.add_item(container)
+        buy_button = ui.Button(label=tmpl.shop_buy_unit_button, style=ButtonStyle.success, disabled=unit.player.rec_points < 1)
+        buy_button.callback = self.buy_button_callback
+        self.add_item(ui.ActionRow(buy_button))
+        
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def buy_button_callback(self, interaction: Interaction, session: Session):
+        unit = session.query(Unit).filter(Unit.id == self.unit_id).first()
+        if unit is None:
+            await interaction.response.send_message(tmpl.unit_not_found, ephemeral=True)
             return
+        if unit.player.rec_points < 1:
+            await interaction.response.send_message(tmpl.not_enough_req_points_unit, ephemeral=True)
+            return
+        unit.status = UnitStatus.INACTIVE
+        unit.player.rec_points -= 1
+        session.commit()
+        await interaction.response.send_message(tmpl.you_have_bought_unit.format(unit_name=unit.name), ephemeral=False)
+        layout_view = ShopInactiveUnitLayoutView(unit.player.discord_id, unit.id)
+        await interaction.message.edit(view=layout_view)
 
-        # Create new stockpile unit
-        new_stockpile = Unit(
-            name="Stockpile",
-            player_id=_player.id,
-            status=UnitStatus.INACTIVE,
-            unit_type="STOCKPILE"
-        )
-        session.add(new_stockpile)
-        await interaction.response.send_message(tmpl.created_stockpile_unit, ephemeral=self.bot.use_ephemeral)
 
-
+class ShopDeadUnitLayoutView(AuthorizedUserLayoutView):
+    @uses_db(CustomClient().sessionmaker)
+    def __init__(self, discord_id: int, unit_id: int, session: Session):
+        super().__init__(timeout=None)
+        self.discord_id = discord_id
+        self.unit_id = unit_id
+        unit = session.query(Unit).filter(Unit.id == unit_id).first()
+        if unit is None:
+            self.add_item(ui.TextDisplay(content=tmpl.unit_not_found))
+            return
+        container = ui.Container(
+            ui.TextDisplay(content=tmpl.shop_unit_title.format(unit_name=unit.name)),
+            ui.TextDisplay(content=f"Player {tmpl.MAIN_CURRENCY_SHORT}: {unit.player.rec_points}"),
+            ui.TextDisplay(content=f"{tmpl.UNIT_CURRENCY}: {unit.unit_req}"),
+            ui.TextDisplay(content=tmpl.unit_is_dead))
+        self.add_item(container)
+        
 async def setup(_bot: CustomClient):
-    logger.triage("Setting up Shop cog")
     await _bot.add_cog(Shop(_bot))
 
 
 async def teardown(_bot: CustomClient):
-    logger.triage("Tearing down Shop cog")
     _bot.remove_cog(Shop.__name__)  # remove_cog takes a string, not a class

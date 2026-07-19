@@ -870,6 +870,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
 
         # Start Prometheus metrics server
         import aioprom
+        logging.getLogger("aioprom.aioprom").setLevel(logging.WARNING)
         prom_host = EnvironHelpers.get_str("PROM_HOST", "127.0.0.1")
         prom_port = EnvironHelpers.get_int("PROM_PORT", 9098)
         asyncio.create_task(aioprom.start_server(prom_host, prom_port))

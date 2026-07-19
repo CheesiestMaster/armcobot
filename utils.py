@@ -949,7 +949,7 @@ class EnvironHelpers:
 
     @staticmethod
     def _bool(value: str) -> bool:
-        return value.lower() in ["true", "1", "yes", "y"]
+        return value.lower() in {"true", "1", "yes", "y"}
 
     @staticmethod
     def _parse_size_bytes(size_str: str) -> int:

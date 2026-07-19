@@ -78,7 +78,6 @@ asyncio.set_event_loop(loop)
 
 logging.addLevelName(9, "TRIAGE")
 
-
 def triage(self, message, *args, **kwargs):
     """
     Log a message at TRIAGE level (custom level 9). Patched onto logging.Logger.
