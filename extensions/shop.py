@@ -6,7 +6,7 @@ from discord.ext.commands import GroupCog
 from sqlalchemy.orm import Session
 
 from customclient import CustomClient
-from models import Player, PlayerUpgrade, ShopUpgrade, Unit, UnitStatus
+from models import Player, PlayerUpgrade, ShopUpgrade, Unit, UnitStatus, Campaign
 from utils import RecordingLayoutView, error_reporting, uses_db
 import templates as tmpl
 
