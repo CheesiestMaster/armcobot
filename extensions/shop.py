@@ -26,7 +26,7 @@ class Shop(GroupCog, description="View and purchase upgrades for units."):
     @ac.command(name="open", description="View the shop")
     async def open(self, interaction: Interaction):
         layout_view = ShopUnitSelectLayoutView(interaction.user.id)
-        await interaction.response.send_message(view=layout_view, ephemeral=False)
+        await interaction.response.send_message(view=layout_view, ephemeral=True)
 
 class AuthorizedUserLayoutView(RecordingLayoutView):
     discord_id: int
@@ -100,7 +100,7 @@ class ShopUnitSelectLayoutView(AuthorizedUserLayoutView):
         else:
             await interaction.response.send_message(tmpl.unit_not_inactive, ephemeral=True)
             return
-        await interaction.response.send_message(view=layout_view, ephemeral=False)
+        await interaction.response.send_message(view=layout_view, ephemeral=True)
 
 class ShopInactiveUnitLayoutView(AuthorizedUserLayoutView):
     @uses_db(CustomClient().sessionmaker)
@@ -209,7 +209,7 @@ class ShopInactiveUnitLayoutView(AuthorizedUserLayoutView):
                 unit.player.rec_points -= upgrade.cost
             session.commit()
             CustomClient().queue.put_nowait((1, unit.player, 0))
-            await interaction.response.send_message(tmpl.you_have_bought_upgrade.format(upgrade_name=upgrade.name, upgrade_cost=upgrade.cost), ephemeral=False)
+            await interaction.response.send_message(tmpl.you_have_bought_upgrade.format(upgrade_name=upgrade.name, upgrade_cost=upgrade.cost), ephemeral=True)
         else:
             refit_target = upgrade.refit_target
             refit_cost = upgrade.cost
@@ -252,7 +252,7 @@ class ShopInactiveUnitLayoutView(AuthorizedUserLayoutView):
                 session.add(free_upgrade_2)
             session.commit()
             CustomClient().queue.put_nowait((1, unit.player, 0))
-            await interaction.response.send_message(tmpl.you_have_bought_refit.format(refit_target=refit_target, refit_cost=refit_cost), ephemeral=False)
+            await interaction.response.send_message(tmpl.you_have_bought_refit.format(refit_target=refit_target, refit_cost=refit_cost), ephemeral=True)
             layout_view = ShopInactiveUnitLayoutView(unit.player.discord_id, unit.id)
             await interaction.message.edit(view=layout_view)
 
@@ -291,7 +291,7 @@ class ShopProposedUnitLayoutView(AuthorizedUserLayoutView):
         unit.status = UnitStatus.INACTIVE
         unit.player.rec_points -= 1
         session.commit()
-        await interaction.response.send_message(tmpl.you_have_bought_unit.format(unit_name=unit.name), ephemeral=False)
+        await interaction.response.send_message(tmpl.you_have_bought_unit.format(unit_name=unit.name), ephemeral=True)
         layout_view = ShopInactiveUnitLayoutView(unit.player.discord_id, unit.id)
         await interaction.message.edit(view=layout_view)
 

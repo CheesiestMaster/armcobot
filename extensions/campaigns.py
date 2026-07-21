@@ -50,7 +50,7 @@ class Campaign2(GroupCog, description="Campaign commands: list, view, and manage
 
     @ac.command(name="menu", description="Display a menu of campaigns")
     async def menu(self, interaction: Interaction):
-        await interaction.response.send_message(view=CampaignSelectLayoutView(interaction.user, await self.is_management(interaction)))
+        await interaction.response.send_message(view=CampaignSelectLayoutView(interaction.user, await self.is_management(interaction)), ephemeral=True)
 
     @ac.command(name="list", description="List all campaigns")
     @uses_db(CustomClient().sessionmaker)
