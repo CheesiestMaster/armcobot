@@ -94,7 +94,8 @@ class ShopUnitSelectLayoutView(AuthorizedUserLayoutView):
         if unit.status == UnitStatus.INACTIVE:
             layout_view = ShopInactiveUnitLayoutView(interaction.user.id, unit.id)
         elif unit.status == UnitStatus.ACTIVE:
-            if unit.campaign.open:
+            campaign = session.query(Campaign).filter(unit.campgain_id == select.values[0]).first()
+            if campaign.open
                 layout_view = ShopInactiveUnitLayoutView(interaction.user.id, unit.id)
             else:
                 await interaction.response.send_message(tmpl.unit_not_inactive, ephemeral=True)
