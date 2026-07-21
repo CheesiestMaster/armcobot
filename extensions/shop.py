@@ -6,7 +6,7 @@ from discord.ext.commands import GroupCog
 from sqlalchemy.orm import Session
 
 from customclient import CustomClient
-from models import Player, PlayerUpgrade, ShopUpgrade, Unit, UnitStatus, Campaign
+from models import Player, PlayerUpgrade, ShopUpgrade, Unit, UnitStatus
 from utils import RecordingLayoutView, error_reporting, uses_db
 import templates as tmpl
 
@@ -94,8 +94,7 @@ class ShopUnitSelectLayoutView(AuthorizedUserLayoutView):
         if unit.status == UnitStatus.INACTIVE:
             layout_view = ShopInactiveUnitLayoutView(interaction.user.id, unit.id)
         elif unit.status == UnitStatus.ACTIVE:
-            campaign = session.query(Campaign).filter(Campaign.id == unit.campgain_id).first()
-            if campaign.open
+            if unit.campaign.open
                 layout_view = ShopInactiveUnitLayoutView(interaction.user.id, unit.id)
             else:
                 await interaction.response.send_message(tmpl.unit_not_inactive, ephemeral=True)
