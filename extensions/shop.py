@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from customclient import CustomClient
 from models import Player, PlayerUpgrade, ShopUpgrade, Unit, UnitStatus
-from utils import RecordingLayoutView, error_reporting, uses_db
+from utils import RecordingLayoutView, error_reporting, uses_db, EnvironHelpers
 import templates as tmpl
 
 logger = getLogger(__name__)
@@ -93,6 +93,12 @@ class ShopUnitSelectLayoutView(AuthorizedUserLayoutView):
             return
         if unit.status == UnitStatus.INACTIVE:
             layout_view = ShopInactiveUnitLayoutView(interaction.user.id, unit.id)
+        elif (unit.status == UnitStatus.ACTIVE) and (EnvironHelpers.get_bool("ALLOW_SHOPPING_IN_OPEN_CAMPAIGN")):
+            if unit.campaign.open
+                layout_view = ShopInactiveUnitLayoutView(interaction.user.id, unit.id)
+            else:
+                await interaction.response.send_message(tmpl.unit_not_inactive, ephemeral=True)
+                return
         elif unit.status == UnitStatus.PROPOSED:
             layout_view = ShopProposedUnitLayoutView(interaction.user.id, unit.id)
         elif unit.status in {UnitStatus.MIA, UnitStatus.KIA}:
