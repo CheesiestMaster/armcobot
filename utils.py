@@ -757,6 +757,8 @@ def error_reporting(verbose: None | bool = None):
 
                 if interaction:
                     if interaction.response.is_done():
+                        if isinstance(e, discord.errors.NotFound):
+                            raise # TODO: Remove this, it's a temporary fix for the false negative issue in shop.py and management.py
                         await interaction.followup.send(error_msg, ephemeral=True)
                     else:
                         await interaction.response.send_message(error_msg, ephemeral=True)
