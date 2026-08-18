@@ -175,7 +175,7 @@ class CampaignCreateLayoutView(RecordingLayoutView):
     def __init__(self, name: str, user: User | Member, management: bool):
         super().__init__()
         self.name = name
-        self.select = UserSelect(placeholder="Select a GM", default=user)
+        self.select = UserSelect(placeholder="Select a GM", default_values=[user])
         self.management = management
         self.select.callback = self.select_callback
         self.add_item(ActionRow(self.select))
