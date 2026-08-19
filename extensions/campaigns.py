@@ -16,7 +16,7 @@ from utils import EnvironHelpers, RecordingModal, error_reporting, maybe_decorat
 
 logger = getLogger(__name__)
 
-class Campaign2(GroupCog, description="Campaign commands: list, view, and manage campaigns."):
+class Campaign(GroupCog, description="Campaign commands: list, view, and manage campaigns."):
     """
     Campaign commands: list, view, and manage campaigns.
     """
@@ -35,18 +35,27 @@ class Campaign2(GroupCog, description="Campaign commands: list, view, and manage
 
     @staticmethod
     @check_notify(message="You are not a Game Master, and cannot run this command")
-    async def is_gm(interaction: Interaction):
+    async def is_gm_interaction(interaction: Interaction):
         logger.debug(f"Checking if {interaction.user.name} is GM")
         if await is_dm(interaction):
             await interaction.response.send_message("This command cannot be run in a DM", ephemeral=True)
             return False
-        is_management = await Campaign2.is_management(interaction)
+        is_management = await Campaign.is_management(interaction)
         is_gm = interaction.guild.get_role(CustomClient().gm_role) in interaction.user.roles
         logger.info(f"{interaction.user.name} is management: {is_management}, is gm: {is_gm}")
         valid = is_gm or is_management
         if not valid:
             await interaction.response.send_message("You don't have permission to run this command", ephemeral=True)
         return valid
+
+    @staticmethod
+    @check_notify(message="You are not a Game Master, and cannot run this command")
+    async def is_gm_member(member: Member):
+        logger.debug(f"Checking if {member.name} is GM")
+        is_management = any(role in member.roles for role in [member.guild.get_role(role_id) for role_id in CustomClient().mod_roles])
+        is_gm = member.guild.get_role(CustomClient().gm_role) in member.roles
+        logger.info(f"{member.name} is GM: {is_gm}")
+        return is_gm or is_management
 
     @ac.command(name="menu", description="Display a menu of campaigns")
     async def menu(self, interaction: Interaction):
@@ -99,7 +108,7 @@ class Campaign2(GroupCog, description="Campaign commands: list, view, and manage
         await interaction.response.send_message(f"Unit {callsign} killed" + (" as MIA" if is_mia else ""), ephemeral=True)
 
     @maybe_decorate(EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND"), ac.command(name="notify_group", description="Notify a group of players within a campaign"))
-    @maybe_decorate(EnvironHelpers.get_bool("RESTRICT_NOTIFY_GROUP_COMMAND"), ac.check(is_gm))
+    @maybe_decorate(EnvironHelpers.get_bool("RESTRICT_NOTIFY_GROUP_COMMAND"), ac.check(is_gm_interaction))
     @ac.autocomplete(campaign=fuzzy_autocomplete(CampaignModel.name), group=fuzzy_autocomplete(Unit.battle_group))
     @ac.describe(campaign="The campaign that the group is in", group="The group to notify")
     @uses_db(CustomClient().sessionmaker)
@@ -167,7 +176,7 @@ class CampaignCreateModal(RecordingModal):
         self.add_item(TextInput(label="Name", style=TextStyle.short, custom_id="name", required=True))
 
     async def on_submit(self, interaction: Interaction):
-        view = CampaignCreateLayoutView(name=self.children[0].value, user=interaction.user, management=await Campaign2.is_management(interaction))
+        view = CampaignCreateLayoutView(name=self.children[0].value, user=interaction.user, management=await Campaign.is_management(interaction))
         await interaction.response.send_message(view=view, ephemeral=True)
 
 class CampaignCreateLayoutView(RecordingLayoutView):
@@ -175,7 +184,7 @@ class CampaignCreateLayoutView(RecordingLayoutView):
     def __init__(self, name: str, user: User | Member, management: bool):
         super().__init__()
         self.name = name
-        self.select = UserSelect(placeholder="Select a GM", default_values=[user])
+        self.select = UserSelect(placeholder="Select a GM")
         self.management = management
         self.select.callback = self.select_callback
         self.add_item(ActionRow(self.select))
@@ -183,10 +192,11 @@ class CampaignCreateLayoutView(RecordingLayoutView):
     @uses_db(CustomClient().sessionmaker)
     async def select_callback(self, interaction: Interaction, session: Session):
         gm = self.select.values[0] # already a single User|Member
+        logger.debug(type(interaction))
         if not self.management and gm.id != interaction.user.id:
             await interaction.response.send_message("You do not have permission to create a campaign for someone else", ephemeral=True)
             return
-        if not await Campaign2.is_gm(gm):
+        if not await Campaign.is_gm_member(gm):
             await interaction.response.send_message("The selected user is not a Game Master", ephemeral=True)
             return
         session.add(CampaignModel(name=self.name, gm=str(gm.id)))
@@ -300,7 +310,7 @@ class CampaignDeleteConfirmLayoutView(RecordingLayoutView):
             remove_logger.error(f"Campaign {self.campaign_name} not found")
             await interaction.response.send_message("Campaign not found", ephemeral=True)
             return
-        if not await Campaign2.is_management(interaction) and interaction.user.id != int(campaign.gm):
+        if not await Campaign.is_management(interaction) and interaction.user.id != int(campaign.gm):
             remove_logger.error(f"{interaction.user.name} does not have permission to remove campaign {self.campaign_name}")
             await interaction.response.send_message("You don't have permission to remove this campaign", ephemeral=True)
             return
@@ -344,7 +354,7 @@ class CampaignPayoutModal(RecordingModal):
             payout_logger.error(f"Campaign {self.campaign_name} not found")
             await interaction.response.send_message("Campaign not found", ephemeral=True)
             return
-        if not await Campaign2.is_management(interaction) and interaction.user.id != int(campaign.gm):
+        if not await Campaign.is_management(interaction) and interaction.user.id != int(campaign.gm):
             payout_logger.error(f"{interaction.user.name} does not have permission to payout campaign {self.campaign_name}")
             await interaction.response.send_message("You don't have permission to payout this campaign", ephemeral=True)
             return
@@ -591,8 +601,8 @@ class CampaignEditPlayerLimitCustomModal(RecordingModal):
         await self.edit_callback(view=CampaignInfoLayoutView(campaign, self.edit_callback))
 
 async def setup(_bot: CustomClient):
-    await _bot.add_cog(Campaign2(_bot))
+    await _bot.add_cog(Campaign(_bot))
 
 
 async def teardown(_bot: CustomClient):
-    await _bot.remove_cog(Campaign2.__name__)
+    await _bot.remove_cog(Campaign.__name__)
