@@ -413,7 +413,7 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
 
         if len(active_units) == 1:
             # Single active unit - deactivate it directly
-            unit = active_units[0]
+            unit = list(active_units)[0]
             logger.debug(f"Single active unit found, deactivating directly: unit_id={unit.id}, callsign={unit.callsign}")
 
             original_callsign = self._deactivate_unit_by_id(unit.id, session, cmd_log=logger)
