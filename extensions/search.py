@@ -83,4 +83,4 @@ async def teardown(_bot: CustomClient):
     Asynchronous teardown function to remove the Search cog from the bot.
     """
     logger.info("Tearing down Search cog")
-    _bot.remove_cog(Search.__name__)  # remove_cog takes a string, not a class
+    await _bot.remove_cog(Search.__name__)  # remove_cog takes a string, not a class

@@ -716,4 +716,4 @@ async def teardown(_bot: CustomClient):
     """
 
     logger.info("Tearing down Admin cog")
-    _bot.remove_cog(Admin.__name__)  # remove_cog takes a string, not a class
+    await _bot.remove_cog(Admin.__name__)  # remove_cog takes a string, not a class

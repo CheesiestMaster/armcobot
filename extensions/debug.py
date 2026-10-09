@@ -648,6 +648,6 @@ async def setup(_bot: CustomClient):
     await _bot.add_cog(Debug(_bot))
 
 
-def teardown(_bot: CustomClient):
+async def teardown(_bot: CustomClient):
     logger.debug("Tearing down Debug cog")
-    _bot.remove_cog(Debug.__name__)  # remove_cog takes a string, not a class
+    await _bot.remove_cog(Debug.__name__)  # remove_cog takes a string, not a class

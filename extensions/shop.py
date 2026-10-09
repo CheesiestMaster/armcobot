@@ -334,4 +334,4 @@ async def setup(_bot: CustomClient):
 
 
 async def teardown(_bot: CustomClient):
-    _bot.remove_cog(Shop.__name__)  # remove_cog takes a string, not a class
+    await _bot.remove_cog(Shop.__name__)  # remove_cog takes a string, not a class

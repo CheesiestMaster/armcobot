@@ -43,4 +43,4 @@ async def setup(_bot: CustomClient):
 
 async def teardown(_bot: CustomClient):
     logger.info("Tearing down Updater")
-    _bot.remove_cog(Updater.__name__)  # remove_cog takes a string, not a class
+    await _bot.remove_cog(Updater.__name__)  # remove_cog takes a string, not a class
