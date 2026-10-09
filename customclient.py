@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from os import unlink
 from typing import Any, Callable, overload
 
-from discord import Interaction, Intents, Status, Activity, ActivityType, Member, TextChannel, app_commands, NotFound
+from discord import Interaction, Intents, Status, Activity, ActivityType, Member, TextChannel, app_commands, NotFound, ui
 from discord.ext.commands import Bot
 from discord.ext import tasks
 from prometheus_client import Counter, Gauge
@@ -35,7 +35,7 @@ import templates as tmpl
 from singleton import Singleton
 
 from models import Config, Dossier, Extension, Medals, Player, PlayerUpgrade, Statistic, Unit
-from utils import EnvironHelpers, LastErrorRecord, RatelimitError, UserSemaphore, uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator, error_counter, fuzzy_autocomplete_caches
+from utils import EnvironHelpers, LastErrorRecord, RatelimitError, UserSemaphore, uses_db, RollingCounterDict, callback_listener, toggle_command_ban, is_management_no_notify, on_error_decorator, error_counter, fuzzy_autocomplete_caches, RecordingLayoutView
 
 use_ephemeral = EnvironHelpers.get_bool("EPHEMERAL", False)
 
@@ -379,7 +379,6 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 logger.debug(f"Created dossier for player {player.id} with message ID {dossier_message.id}")
 
         if self.config.get("statistics_channel_id"):
-            unit_message = await self.generate_unit_message(player)  # type: ignore
             _player = session.merge(player)
             discord_id = _player.discord_id
             mention = await self.fetch_user(int(discord_id))
@@ -404,7 +403,7 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                 return
 
             statistics_message = await self.get_channel(self.config["statistics_channel_id"]).send( # type: ignore
-                tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message)
+                view=await self.generate_statistics_view(_player, mention)
             )
             statistics = Statistic(player_id=_player.id, message_id=statistics_message.id)
             session.add(statistics)
@@ -476,22 +475,25 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                     try:
                         message = await channel.fetch_message(statistics.message_id) # type: ignore
                         discord_id = player.discord_id
-                        unit_message = await self.generate_unit_message(player)  # type: ignore
                         _player = session.merge(player)
                         _statistics = session.merge(statistics)
                         mention = await self.fetch_user(int(discord_id))
                         mention = mention.mention if mention else ""
-                        await message.edit(content=tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
+                        await message.edit(
+                            content=None,
+                            view=await self.generate_statistics_view(_player, mention),
+                        )
                         logger.debug(f"Updated statistics for player {_player.id} with message ID {_statistics.message_id}")
                     except NotFound:
                         logger.warning(f"Failed to fetch statistics message {statistics.message_id} for player {player.id}: message not found, sending new message")
                         discord_id = player.discord_id
-                        unit_message = await self.generate_unit_message(player)  # type: ignore
                         _player = session.merge(player)
                         _statistics = session.merge(statistics)
                         mention = await self.fetch_user(int(discord_id))
                         mention = mention.mention if mention else ""
-                        new_message = await channel.send(tmpl.Statistics_Player.format(mention=mention, player=_player, units=unit_message))
+                        new_message = await channel.send(
+                            view=await self.generate_statistics_view(_player, mention)
+                        )
                         _statistics.message_id = str(new_message.id)
                         logger.debug(f"Created new statistics message for player {_player.id} with message ID {new_message.id}")
                 else:
@@ -575,15 +577,15 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
         except Exception as e:
             logger.error(f"Error keeping alive: {e}")
 
-    async def generate_unit_message(self, player: Player, session: Session):
+    async def generate_unit_message(self, player: Player, session: Session) -> ui.Container:
         """
-        Creates a message detailing a player's units, both active and inactive.
+        Create the Components V2 display describing all of a player's units.
 
         Args:
             player (Player): The player instance for whom the message is generated.
 
         Returns:
-            str: Formatted unit messages for the player, grouped by status.
+            ui.Container: The formatted unit details.
         """
 
         logger.debug(f"Generating unit message for player: {player.id}")
@@ -596,12 +598,36 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
             upgrade_list = ", ".join([upgrade.name for upgrade in upgrades])
             logger.debug(f"Unit {unit.name} of type {unit.unit_type} has status {unit.status.name}")
             logger.debug(f"Unit {unit.id} has upgrades: {upgrade_list}")
-            unit_messages.append(tmpl.Statistics_Unit.format(unit=unit, upgrades=upgrade_list, callsign=('\"' + unit.callsign + '\"') if unit.callsign else "", campaign_name=f"In {unit.campaign.name}" if unit.campaign else ""))
+            unit_messages.append(tmpl.Statistics_Unit.format(
+                unit=unit,
+                upgrades=upgrade_list or "None",
+                callsign=('\"' + unit.callsign + '\"') if unit.callsign else "",
+                campaign_name=f"In {unit.campaign.name}" if unit.campaign else "",
+            ))
 
-        # Combine all unit messages into a single string
-        combined_message = "\n".join(unit_messages)
+        combined_message = "\n".join(unit_messages) or tmpl.no_units
         logger.debug(f"Generated unit message for player {player.id}: {combined_message}")
-        return combined_message
+        return ui.Container(
+            ui.TextDisplay(content="## Units"),
+            ui.TextDisplay(content=combined_message),
+        )
+
+    async def generate_statistics_view(
+        self,
+        player: Player,
+        mention: str = "",
+    ) -> RecordingLayoutView:
+        """Create the Components V2 view used by persistent statistics messages."""
+        view = RecordingLayoutView(timeout=None)
+        view.add_item(ui.Container(
+            ui.TextDisplay(content=f"{mention}\n# {player.name}".strip()),
+            ui.TextDisplay(content=(
+                f"**{tmpl.MAIN_CURRENCY}:** {player.rec_points}\n"
+                f"**{tmpl.SECONDARY_CURRENCY}:** {player.bonus_pay}"
+            )),
+        ))
+        view.add_item(await self.generate_unit_message(player))  # type: ignore
+        return view
 
     async def load_extensions(self, extensions: list[str]):
         """

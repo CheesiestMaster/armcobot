@@ -1,26 +1,104 @@
 import io
-import os
-import logging
 from logging import getLogger
 from typing import Tuple
 
 import discord
-from discord import Interaction, app_commands as ac, ui, ButtonStyle, SelectOption, User
+from discord import ButtonStyle, Interaction, SelectOption, app_commands as ac, ui
 from discord.ext.commands import GroupCog
 from sqlalchemy import exists, func
 from sqlalchemy.orm import Session
 import templates as tmpl
 
 from customclient import CustomClient
-from models import Player, Unit as Unit_model, UnitStatus, Campaign, CampaignInvite, UnitType
-from utils import EnvironHelpers, fuzzy_autocomplete, hide_arg, maybe_decorate, uses_db, is_management, error_reporting, with_log_level, RecordingView
+from models import Campaign, CampaignInvite, Player, Unit as Unit_model, UnitStatus, UnitType
+from utils import EnvironHelpers, RecordingLayoutView, RecordingModal, error_reporting, fuzzy_autocomplete, hide_arg, maybe_decorate, uses_db
 
 logger = getLogger(__name__)
 
-class Unit(GroupCog, description="Unit commands: create, activate, deactivate, remove, rename, transfer, list."):
+ALLOW_BATTLE_GROUPS = EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND", False)
+MAX_PROPOSED_UNITS = 3
+MAX_UNITS = 25
+
+STATUS_EMOJI = {
+    UnitStatus.ACTIVE: "✅",
+    UnitStatus.INACTIVE: "💤",
+    UnitStatus.PROPOSED: "📝",
+    UnitStatus.MIA: "❓",
+    UnitStatus.KIA: "☠️",
+    UnitStatus.LEGACY: "📜",
+}
+
+def unit_emoji(unit: Unit_model) -> str | None:
+    return "📦" if unit.unit_type == "STOCKPILE" else STATUS_EMOJI.get(unit.status)
+
+def unit_name_error(unit_name: str) -> str | None:
+    """Return the template to show the user if the name is unusable, else None."""
+    if len(unit_name) > 30:
+        return tmpl.unit_name_too_long
+    if any(char in unit_name for char in EnvironHelpers.get_str("BANNED_CHARS", "") + ":"): # : is banned to disable urls
+        return tmpl.unit_name_invalid
+    if not unit_name.isascii():
+        return tmpl.unit_name_ascii
+    return None
+
+def callsign_error(callsign: str) -> str | None:
+    """Return the template to show the user if the callsign is unusable, else None."""
+    if len(callsign) > 7:
+        return tmpl.callsign_too_long
+    if any(char in callsign for char in EnvironHelpers.get_str("BANNED_CHARS", "")):
+        return tmpl.callsign_invalid
+    if not callsign.isascii():
+        return tmpl.callsign_ascii
+    return None
+
+def unit_creation_error(unit_name: str, player_id: int, session: Session) -> str | None:
+    """Validate a new unit name against the player's existing units and limits."""
+    error = unit_name_error(unit_name)
+    if error:
+        return error
+    if session.query(exists().where(Unit_model.name == unit_name, Unit_model.player_id == player_id)).scalar():
+        return tmpl.unit_name_exists
+    proposed_count = session.query(func.count(Unit_model.id)).filter(Unit_model.player_id == player_id, Unit_model.status == UnitStatus.PROPOSED).scalar()
+    if proposed_count >= MAX_PROPOSED_UNITS:
+        return tmpl.player_max_proposed_units
+    unit_count = session.query(func.count(Unit_model.id)).filter(Unit_model.player_id == player_id, Unit_model.unit_type != "STOCKPILE").scalar()
+    if unit_count >= MAX_UNITS:
+        return tmpl.player_max_units
+    return None
+
+def member_role_ids(interaction: Interaction) -> frozenset[int]:
+    return frozenset(role.id for role in getattr(interaction.user, "roles", []))
+
+def campaign_eligibility(campaign: Campaign, player: Player, role_ids: frozenset[int], session: Session) -> Tuple[bool, str]:
+    """Return whether the player may join the campaign, and the emoji explaining why."""
+    if campaign.gm == player.discord_id:
+        return False, "🧙"
+    if campaign.player_limit and campaign.player_limit <= len(campaign.units):
+        return False, "📦"
+    if campaign.required_role and campaign.required_role not in role_ids:
+        return False, "🛡️"
+    if session.query(CampaignInvite).filter(CampaignInvite.campaign_id == campaign.id, CampaignInvite.player_id == player.id).first():
+        return True, "✉"
+    if not campaign.open:
+        return False, "🔒"
+    return True, "✅"
+
+def deactivate_unit(unit: Unit_model, session: Session) -> str:
+    """Deactivate a unit, returning the callsign it held."""
+    original_callsign = unit.callsign
+    logger.debug(f"Deactivating unit {unit.id} ({unit.name}), callsign {original_callsign}, campaign {unit.campaign_id}")
+    unit.active = False
+    unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
+    unit.callsign = None
+    unit.campaign_id = None
+    unit.battle_group = None
+    session.commit()
+    return original_callsign
+
+class Unit(GroupCog, description="Unit commands: menu, create, rename, activate, deactivate, remove."):
     """
-    Cog for unit-related slash commands: create, activate, deactivate,
-    remove, rename, transfer, and list units. Also provides counts by type.
+    Cog for unit-related slash commands. All flows are driven by the unit menu;
+    the create, rename, and activate commands are shortcuts into its submenus.
     """
 
     def __init__(self, bot: CustomClient):
@@ -28,603 +106,89 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
 
         self.bot = bot
 
-    def _deactivate_unit_by_id(self, unit_id: int, session: Session, *, cmd_log=None) -> str:
-        """
-        Helper function to deactivate a unit by its ID.
-        Returns the original callsign of the deactivated unit.
-        """
-
-        log = cmd_log if cmd_log is not None else logger
-        log.debug(f"Deactivating unit by ID: unit_id={unit_id}")
-
-        # Find the unit by ID
-        unit = session.query(Unit_model).filter(Unit_model.id == unit_id).first()
-        if not unit:
-            log.warning(f"Unit not found by ID: unit_id={unit_id}")
-            raise ValueError("Unit not found")
-
-        log.debug(f"Found unit: id={unit.id}, name={unit.name}, callsign={unit.callsign}, player_id={unit.player.discord_id}, active={unit.active}, status={unit.status}")
-
-        # Check if the unit is active
-        if not unit.active:
-            log.warning(f"Attempted to deactivate already inactive unit: unit_id={unit.id}, callsign={unit.callsign}")
-            raise ValueError("Unit is not active")
-
-        original_callsign = unit.callsign
-        original_status = unit.status
-        original_campaign_id = unit.campaign_id
-
-        log.debug(f"Deactivating unit: id={unit.id}, name={unit.name}, callsign={original_callsign}, status={original_status} -> INACTIVE, campaign_id={original_campaign_id} -> None")
-
-        unit.active = False
-        unit.status = UnitStatus.INACTIVE if unit.status == UnitStatus.ACTIVE else unit.status
-        unit.callsign = None
-        unit.campaign_id = None
-        unit.battle_group = None
-        session.commit()
-        log.debug(f"Successfully deactivated unit: id={unit.id}, name={unit.name}, original_callsign={original_callsign}")
-
-        return original_callsign
+    @ac.command(name="menu", description="Show your units")
+    @error_reporting()
+    async def menu(self, interaction: Interaction):
+        await interaction.response.send_message(view=UnitMenuLayoutView(interaction.user.id), ephemeral=True)
 
     @ac.command(name="create", description="Create a new unit for a player")
     @ac.describe(unit_name="The name of the unit to create")
+    @error_reporting()
     @uses_db(CustomClient().sessionmaker)
     async def createunit(self, interaction: Interaction, unit_name: str, session: Session):
-        logger = getLogger(f"{__name__}.create")
-        logger.triage(f"Unit creation initiated by {interaction.user.global_name} with name: {unit_name}")
-        class UnitSelect(ui.Select):
-            def __init__(self):
-                unit_types = session.query(UnitType.unit_type).filter(UnitType.is_base == True).all()
-                logger.triage(f"Found {len(unit_types)} base unit types: {[t[0] for t in unit_types]}")
-                options = [SelectOption(label=unit_type[0], value=unit_type[0]) for unit_type in unit_types]
-                super().__init__(placeholder=tmpl.unit_select_type_placeholder, options=options)
+        player_id = session.query(Player.id).filter(Player.discord_id == interaction.user.id).scalar()
+        if not player_id:
+            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=True)
+            return
+        error = unit_creation_error(unit_name, player_id, session)
+        if error:
+            await interaction.response.send_message(error, ephemeral=True)
+            return
+        await interaction.response.send_message(view=UnitCreateLayoutView(interaction.user.id, unit_name), ephemeral=True)
 
-            async def callback(self, interaction: Interaction):
-                logger.triage(f"Unit type selected: {self.values[0]}")
-                await interaction.response.defer(ephemeral=True)
-
-        class CreateUnitView(RecordingView):
-            def __init__(self):
-                super().__init__()
-                self.add_item(UnitSelect())
-                logger.triage("Created unit creation view with type selector")
-
-            @ui.button(label=tmpl.unit_create_button_label, style=ButtonStyle.primary)
-            @error_reporting(False)
-            @with_log_level("sqlalchemy.engine") # temporarily set the level to debug because of an issue in this function
-            @uses_db(CustomClient().sessionmaker)
-            async def create_unit_callback(self, interaction: Interaction, button: ui.Button, session: Session):
-                logger.triage(f"Create unit button pressed by {interaction.user.global_name}")
-                player_id = session.query(Player.id).filter(Player.discord_id == interaction.user.id).scalar()
-                if not player_id:
-                    logger.triage(f"Player lookup failed for {interaction.user.global_name}")
-                    await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=CustomClient().use_ephemeral)
-                    return
-                logger.triage("Found player")
-
-                proposed_count = session.query(Unit_model).filter(Unit_model.player_id == player_id, Unit_model.status == "PROPOSED").count()
-                logger.triage(f"Found {proposed_count} proposed units for player")
-                if proposed_count >= 3:
-                    logger.triage("Player already has maximum proposed units")
-                    await interaction.response.send_message(tmpl.player_max_proposed_units, ephemeral=CustomClient().use_ephemeral)
-                    return
-
-                unit_count = session.query(Unit_model).filter(Unit_model.player_id == player_id, Unit_model.unit_type != "STOCKPILE").count()
-                logger.triage(f"Found {unit_count} units for player")
-                if unit_count >= 25:
-                    logger.triage("Player already has maximum units")
-                    await interaction.response.send_message(tmpl.player_max_units, ephemeral=CustomClient().use_ephemeral)
-                    return
-
-                unit_type = self.children[1].values[0]
-                logger.triage(f"Selected unit type: {unit_type}")
-
-                unit_exists = session.query(exists().where(Unit_model.name == unit_name, Unit_model.player_id == player_id)).scalar()
-                if unit_exists:
-                    logger.triage("Unit name already exists for player")
-                    await interaction.response.send_message(tmpl.unit_name_exists, ephemeral=CustomClient().use_ephemeral)
-                    return
-
-                logger.triage("Validating unit name")
-                if len(unit_name) > 30:
-                    logger.triage(f"Unit name is too long ({len(unit_name)} chars)")
-                    await interaction.response.send_message(tmpl.unit_name_too_long, ephemeral=CustomClient().use_ephemeral)
-                    return
-                if any(char in unit_name for char in EnvironHelpers.get_str("BANNED_CHARS", "")+":"):
-                    logger.triage("Unit name contains banned characters")
-                    await interaction.response.send_message(tmpl.unit_name_invalid, ephemeral=CustomClient().use_ephemeral)
-                    return
-                if not unit_name.isascii():
-                    logger.triage("Unit name contains non-ASCII characters")
-                    await interaction.response.send_message(tmpl.unit_name_ascii, ephemeral=CustomClient().use_ephemeral)
-                    return
-
-                logger.triage("Creating unit")
-                unit = Unit_model(player_id=player_id, name=unit_name, unit_type=unit_type, active=False)
-
-                unit_type_req: int | None = session.query(UnitType.unit_req).filter(UnitType.unit_type == unit_type).scalar()
-                if unit_type_req is None: # can't use not because 0 is falsy
-                    logger.triage("Unit type not found in database")
-                    await interaction.response.send_message(tmpl.unit_invalid_type, ephemeral=CustomClient().use_ephemeral)
-                    return
-                logger.triage("Found unit type info")
-
-                unit.unit_req = unit_type_req
-                session.add(unit)
-                logger.triage("Added unit to session")
-
-                await interaction.response.defer(thinking=True, ephemeral=True)
-                logger.triage("Deferred response")
-
-                session.commit()
-                logger.triage("Committed unit creation to database")
-
-                # Guard check: verify no unexpected PlayerUpgrade records were created
-                created_unit = session.query(Unit_model).filter(Unit_model.player_id == player_id, Unit_model.name == unit_name).first()
-                if created_unit and len(created_unit.upgrades) > 0:
-                    logger.error(f"Unexpected PlayerUpgrade records created for unit {unit_name}: {[up.name for up in created_unit.upgrades]}")
-                    raise RuntimeError(f"Unexpected PlayerUpgrade records created during unit creation: {[up.name for up in created_unit.upgrades]}")
-
-                await interaction.followup.send(tmpl.unit_created.format(unit=unit), ephemeral=True)
-                logger.triage("Sent success message to user")
-
-                player = session.query(Player).filter(Player.id == player_id).first()
-                CustomClient().queue.put_nowait((1, player, 0))
-                logger.triage("Added player update to queue")
-
-                button.disabled = True
-                logger.triage("Disabled create button")
-
-
-        view = CreateUnitView()
-        logger.triage(f"Sending unit creation view to {interaction.user.global_name}")
-        await interaction.response.send_message(tmpl.unit_select_type_and_name, view=view, ephemeral=CustomClient().use_ephemeral)
+    @ac.command(name="rename", description="Rename a unit")
+    @error_reporting()
+    async def rename(self, interaction: Interaction):
+        await interaction.response.send_message(view=UnitRenamePickerLayoutView(interaction.user.id), ephemeral=True)
 
     @ac.command(name="activate", description="Activate a unit")
     @ac.describe(callsign="The callsign of the unit to activate, must be globally unique")
     @maybe_decorate(
-        (not EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND", False)),
+        (not ALLOW_BATTLE_GROUPS),
         hide_arg("group", None))
     @maybe_decorate(
-        (EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND", False)),
+        ALLOW_BATTLE_GROUPS,
         ac.describe(group="The group to activate the unit in"))
     @maybe_decorate(
-        (EnvironHelpers.get_bool("ALLOW_NOTIFY_GROUP_COMMAND", False)),
+        ALLOW_BATTLE_GROUPS,
         ac.autocomplete(group=fuzzy_autocomplete(Unit_model.battle_group, not_null=True)))
     @uses_db(CustomClient().sessionmaker)
     async def activateunit(self, interaction: Interaction, callsign: str, group: str, session: Session):
         """
-        Activate a unit with the given callsign in the specified campaign.
-        Presents a campaign selector if needed, then marks the unit as active
-        and updates its status and campaign.
+        Activate one of the player's inactive units under the given callsign.
+        Presents the unit selector, then the campaign selector.
         """
 
-        logger = getLogger(f"{__name__}.activate")
-        logger.triage(f"Activate unit command initiated by {interaction.user.global_name} with callsign {callsign}")
-        if len(callsign) > 7:
-            logger.warning(f"Callsign {callsign} from {interaction.user.global_name} is too long")
-            await interaction.response.send_message(tmpl.callsign_too_long, ephemeral=CustomClient().use_ephemeral)
+        error = callsign_error(callsign)
+        if error:
+            logger.warning(f"Callsign {callsign} from {interaction.user.global_name} is invalid: {error}")
+            await interaction.response.send_message(error, ephemeral=True)
             return
-        if any(char in callsign for char in EnvironHelpers.get_str("BANNED_CHARS", "")):
-            logger.warning(f"Callsign {callsign} from {interaction.user.global_name} contains banned characters")
-            await interaction.response.send_message(tmpl.callsign_invalid, ephemeral=CustomClient().use_ephemeral)
-            return
-        if not callsign.isascii():
-            logger.warning(f"Callsign {callsign} from {interaction.user.global_name} is not ASCII")
-            await interaction.response.send_message(tmpl.callsign_ascii, ephemeral=CustomClient().use_ephemeral)
-            return
-
-        logger.triage(f"Checking if callsign {callsign} is already in use")
-        callsign_exists = session.query(exists().where(Unit_model.callsign == callsign)).scalar()
-        if callsign_exists:
+        if session.query(exists().where(Unit_model.callsign == callsign)).scalar():
             logger.warning(f"Callsign {callsign} from {interaction.user.global_name} is already in use")
-            await interaction.response.send_message(tmpl.callsign_taken, ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message(tmpl.callsign_taken, ephemeral=True)
             return
-
-        logger.triage(f"Querying player for {interaction.user.global_name}")
-        player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-        if not player:
-            logger.triage(f"No player found for {interaction.user.global_name}")
+        if not session.query(exists().where(Player.discord_id == interaction.user.id)).scalar():
             await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=True)
             return
-
-        # get the list of campaigns from the database
-        logger.triage("Querying all campaigns")
-        campaigns = session.query(Campaign).all()
-        def is_valid(campaign: Campaign, player: Player) -> Tuple[bool, str]:
-            logger.triage(f"Checking validity of campaign {campaign.name} for player {player.name}")
-            if campaign.gm == player.discord_id:
-                return False, "🧙"
-            if campaign.player_limit and campaign.player_limit <= len(campaign.units):
-                return False, "📦"
-            if campaign.required_role and not any(role.id == campaign.required_role for role in interaction.user.roles):
-                return False, "🛡️"
-            if session.query(CampaignInvite).filter(CampaignInvite.campaign_id == campaign.id, CampaignInvite.player_id == player.id).first():
-                return True, "✉"
-            if not campaign.open:
-                return False, "🔒"
-            return True, "✅"
-
-        view = RecordingView(timeout=None)
-        select = ui.Select(placeholder=tmpl.unit_select_campaign_placeholder)
-        logger.triage(f"Creating campaign select with {len(campaigns)} options")
-        for campaign in campaigns:
-            _, emojis = is_valid(campaign, player)
-            select.add_option(label=campaign.name, value=str(campaign.id), emoji=emojis)
-        view.add_item(select)
-
-        @uses_db(CustomClient().sessionmaker)
-        async def on_select(interaction: Interaction, session: Session):
-            logger.triage(f"Campaign selection made by {interaction.user.global_name}: {select.values[0]}")
-            campaign = session.query(Campaign).filter(Campaign.id == select.values[0]).first()
-            if not campaign:
-                logger.warning(f"Invalid campaign {select.values[0]} from {interaction.user.global_name}")
-                await interaction.response.send_message(tmpl.unit_campaign_invalid, ephemeral=True)
-                return
-
-            logger.triage(f"Re-querying player for {interaction.user.global_name}")
-            _player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-            if not _player:
-                logger.warning(f"Player {interaction.user.global_name} does not have a Company")
-                await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=True)
-                return
-
-            valid, _ = is_valid(campaign, _player)
-            if not valid:
-                logger.warning(f"Player {interaction.user.global_name} is not eligible to join campaign {campaign.name}")
-                await interaction.response.send_message(tmpl.unit_not_eligible, ephemeral=True)
-                return
-
-            unit_select = ui.Select(placeholder=tmpl.unit_select_unit_placeholder)
-            unit_view = RecordingView(timeout=None)
-            logger.triage(f"Querying inactive units for player {_player.name}")
-            units = session.query(Unit_model).filter(Unit_model.player_id == _player.id, Unit_model.status == "INACTIVE", Unit_model.unit_type != "STOCKPILE").all()
-
-            if not units:
-                logger.warning(f"Player {interaction.user.global_name} has no units available")
-                unit_select.disabled = True
-                unit_select.add_option(label=tmpl.unit_no_units_option_label, value="no_units", emoji="🛑")
-            else:
-                logger.triage(f"Found {len(units)} inactive units for player {_player.name}")
-                for unit in units:
-                    unit_select.add_option(label=f"{unit.name} ({unit.unit_type})", value=str(unit.id))
-            unit_view.add_item(unit_select)
-
-            campaign_id = campaign.id
-            campaign_name = campaign.name
-
-            @uses_db(CustomClient().sessionmaker)
-            async def on_unit_select(interaction: Interaction, session: Session):
-                logger.triage(f"Unit selection made by {interaction.user.global_name}: {unit_select.values[0]}")
-                unit = session.query(Unit_model).filter(Unit_model.id == unit_select.values[0]).first()
-                if not unit:
-                    logger.warning(f"Invalid unit {unit_select.values[0]} from {interaction.user.global_name}")
-                    await interaction.response.send_message(tmpl.unit_not_found, ephemeral=True)
-                    return
-                _player = session.query(Player).filter(Player.id == unit.player_id).first()
-                if not _player:
-                    logger.warning(f"Player {unit.player_id} not found for unit {unit.name}")
-                    await interaction.response.send_message(tmpl.player_not_found, ephemeral=True)
-                    return
-
-                logger.triage(f"Checking if player {_player.name} has any active units")
-                max_active_units = EnvironHelpers.required_int("MAX_ACTIVE_UNITS")
-                if len(_player.active_units) >= max_active_units:
-                    logger.warning(f"{interaction.user.global_name} already has {len(_player.active_units)} active unit(s) (max: {max_active_units})")
-                    await interaction.response.send_message(tmpl.unit_already_active_count.format(active_count=len(_player.active_units), max_active=max_active_units), ephemeral=True)
-                    return
-
-                if unit.status != UnitStatus.INACTIVE:
-                    logger.warning(f"{interaction.user.global_name} tried to select a unit with status {unit.status}")
-                    await interaction.response.send_message(tmpl.unit_not_inactive, ephemeral=True)
-                    return
-
-                existing_callsign = session.query(exists().where(Unit_model.callsign == callsign)).scalar()
-                if existing_callsign:
-                    logger.warning(f"Callsign {callsign} is already in use (Race condition second check)")
-                    await interaction.response.send_message(tmpl.callsign_taken, ephemeral=True)
-                    return
-
-                logger.triage(f"Activating unit {unit.name} for player {_player.name} in campaign {campaign_name}")
-                unit.status = UnitStatus.ACTIVE
-                unit.active = True
-                unit.campaign_id = campaign_id
-                unit.callsign = callsign
-                unit.battle_group = group
-                logger.triage("Committing unit activation changes")
-                session.commit()
-                logger.info(f"Unit {unit.name} selected for campaign {campaign_name} by {interaction.user.global_name}")
-                await interaction.response.send_message(tmpl.unit_selected_for_campaign.format(unit=unit, campaign_name=campaign_name), ephemeral=True)
-                logger.triage("Adding player update to queue")
-                CustomClient().queue.put_nowait((1, player, 0))
-
-            unit_select.callback = on_unit_select
-            await interaction.response.send_message(tmpl.unit_select_unit, view=unit_view, ephemeral=True)
-
-        select.callback = on_select
-        await interaction.response.send_message(tmpl.unit_select_campaign, view=view, ephemeral=True)
-
-    @ac.command(name="remove_unit", description="Remove a proposed unit from your company")
-    @uses_db(CustomClient().sessionmaker)
-    async def remove_unit(self, interaction: Interaction, session: Session):
-        logger = getLogger(f"{__name__}.remove_unit")
-        player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-        if not player:
-            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=CustomClient().use_ephemeral)
-            return
-        units = session.query(Unit_model).filter(Unit_model.player_id == player.id, Unit_model.status == UnitStatus.PROPOSED).all()
-        if not units:
-            await interaction.response.send_message(tmpl.unit_no_proposed_units, ephemeral=CustomClient().use_ephemeral)
-            return
-
-        class UnitSelect(ui.Select):
-            def __init__(self):
-                options = [SelectOption(label=unit.name, value=unit.name) for unit in units]
-                super().__init__(placeholder=tmpl.unit_select_remove_placeholder, options=options)
-                self.player_id = player.id
-                session.expunge(player)
-                for unit in units:
-                    session.expunge(unit)
-
-            @error_reporting(False)
-            @uses_db(CustomClient().sessionmaker)
-            async def callback(self, interaction: Interaction, session: Session):
-                await interaction.response.defer(ephemeral=CustomClient().use_ephemeral)
-                unit: Unit_model = session.query(Unit_model).filter(Unit_model.name == self.values[0], Unit_model.player_id == self.player_id).first()
-                if unit.unit_type == "STOCKPILE":
-                    await interaction.followup.send(tmpl.stockpile_cannot_remove, ephemeral=CustomClient().use_ephemeral)
-                    return
-                logger.debug(f"Removing unit {unit.name}")
-                session.delete(unit)
-                session.commit()
-                CustomClient().queue.put_nowait((1, player, 0)) # this is a nested class, so we have to invoke the singleton instead of using self.bot.queue
-                await interaction.followup.send(tmpl.unit_removed.format(unit=unit), ephemeral=CustomClient().use_ephemeral)
-
-        view = RecordingView()
-        try:
-            view.add_item(UnitSelect())
-        except Exception as e:
-            logger.error(f"Error adding unit select to view: {e}")
-            await interaction.response.send_message(tmpl.unexpected_error, ephemeral=CustomClient().use_ephemeral)
-            return
-        await interaction.response.send_message(tmpl.unit_select_to_remove, view=view, ephemeral=CustomClient().use_ephemeral)
+        await interaction.response.send_message(
+            view=UnitActivatePickerLayoutView(interaction.user.id, callsign, group, member_role_ids(interaction)),
+            ephemeral=True
+        )
 
     @ac.command(name="deactivate", description="Deactivate a unit")
+    @error_reporting()
     @uses_db(CustomClient().sessionmaker)
-    @error_reporting(False)
     async def deactivateunit(self, interaction: Interaction, session: Session):
-        logger = getLogger(f"{__name__}.deactivate")
-        logger.debug(f"Deactivate unit request: user_id={interaction.user.id}, user_name={interaction.user.global_name}")
-
-        # Find the player and their active units
-        player = session.query(Player).filter(Player.discord_id == str(interaction.user.id)).first()
+        player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
         if not player:
-            logger.warning(f"Player not found: user_id={interaction.user.id}")
-            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=True)
             return
-
-        active_units = player.active_units
-        logger.debug(f"Found {len(active_units)} active units for player: player_id={player.id}")
-
+        active_units = list(player.active_units)
         if not active_units:
-            logger.warning(f"No active units found for player: player_id={player.id}")
-            await interaction.response.send_message(tmpl.unit_no_active_units, ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message(tmpl.unit_no_active_units, ephemeral=True)
             return
-
         if len(active_units) == 1:
-            # Single active unit - deactivate it directly
-            unit = list(active_units)[0]
-            logger.debug(f"Single active unit found, deactivating directly: unit_id={unit.id}, callsign={unit.callsign}")
-
-            original_callsign = self._deactivate_unit_by_id(unit.id, session, cmd_log=logger)
-            await interaction.response.send_message(tmpl.unit_deactivated.format(original_callsign=original_callsign), ephemeral=CustomClient().use_ephemeral)
-
-            # Queue notification
+            original_callsign = deactivate_unit(active_units[0], session)
             self.bot.queue.put_nowait((1, player, 0))
-            logger.debug(f"Queued notification for deactivated unit: player_id={player.discord_id}, unit_callsign={original_callsign}")
-        else:
-            # Multiple active units - show dropdown
-            logger.debug(f"Multiple active units found, showing dropdown: count={len(active_units)}")
-            cog = self
-
-            class UnitDeactivateSelect(ui.Select):
-                def __init__(self, units: list[Unit_model]):
-                    options = [
-                        SelectOption(
-                            label=f"{unit.name} ({unit.callsign})",
-                            value=str(unit.id),
-                            description=f"Unit Type: {unit.unit_type}"
-                        ) for unit in units
-                    ]
-                    super().__init__(placeholder=tmpl.unit_select_deactivate_placeholder, options=options)
-
-                @error_reporting(False)
-                @uses_db(CustomClient().sessionmaker)
-                async def callback(self, interaction: Interaction, session: Session):
-                    unit_id = int(self.values[0])
-                    logger.debug(f"Unit selected for deactivation: unit_id={unit_id}")
-
-                    # Use closure scoping to access the parent cog
-                    original_callsign = cog._deactivate_unit_by_id(unit_id, session, cmd_log=logger)
-                    await interaction.response.send_message(tmpl.unit_deactivated.format(original_callsign=original_callsign), ephemeral=CustomClient().use_ephemeral)
-
-                    # Queue notification
-                    player = session.query(Player).filter(Player.discord_id == str(interaction.user.id)).first()
-                    if player:
-                        cog.bot.queue.put_nowait((1, player, 0))
-                        logger.debug(f"Queued notification for deactivated unit: player_id={player.discord_id}, unit_callsign={original_callsign}")
-
-            class DeactivateUnitView(RecordingView):
-                def __init__(self, units: list[Unit_model]):
-                    super().__init__()
-                    select = UnitDeactivateSelect(units)
-                    self.add_item(select)
-
-            view = DeactivateUnitView(active_units)
-            await interaction.response.send_message(
-                tmpl.unit_multiple_active_units.format(count=len(active_units)),
-                view=view,
-                ephemeral=CustomClient().use_ephemeral
-            )
-
-    #@ac.command(name="units", description="Display a list of all Units for a Player")
-    @ac.describe(player="The player to deliver results for")
-    @uses_db(CustomClient().sessionmaker)
-    async def units(self, interaction: Interaction, player: User, session: Session):
-        player = session.query(Player).filter(Player.discord_id == player.id).first()
-        if not player:
-            await interaction.response.send_message(tmpl.unit_user_no_company, ephemeral=CustomClient().use_ephemeral)
+            await interaction.response.send_message(tmpl.unit_deactivated.format(original_callsign=original_callsign), ephemeral=True)
             return
+        await interaction.response.send_message(view=UnitDeactivatePickerLayoutView(interaction.user.id), ephemeral=True)
 
-        units = session.query(Unit_model).filter(Unit_model.player_id == player.id).all()
-        if not units:
-            await interaction.response.send_message(tmpl.player_no_units, ephemeral=CustomClient().use_ephemeral)
-            return
-
-        # Create a table with unit details
-        # The {str : {padding}^ int} format allows you to pad both sides of the string using padding until the desired width of (int) characters is achieved
-        # ``` is used to use discord markdown to turn it into a codeblock, for monospaced font.
-
-        unit_table = f"```| {'Unit Name':^30} | {'Callsign':^8} | {'Unit Type':^10} | {'Status':^8} |\n"
-        unit_table += f"|-{'-' * 30}-|-{'-' * 8}-|-{'-' * 10}-|-{'-' * 8}-|\n"
-        for unit in units:
-            unit_table += f"| {unit.name:^30} | {str(unit.callsign):^8} | {unit.unit_type:^10} | {unit.status.name:^8} |\n"
-        unit_table += "```"
-
-        # Send the table to the user
-        await interaction.response.send_message(tmpl.unit_player_units_display.format(player=player, unit_table=unit_table), ephemeral=CustomClient().use_ephemeral)
-
-    @ac.command(name="rename", description="Rename a unit")
-    @uses_db(CustomClient().sessionmaker)
-    async def rename(self, interaction: Interaction, session: Session):
-        logger = getLogger(f"{__name__}.rename")
-        logger.info("rename command invoked")
-        player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-        if not player:
-            logger.error("Player not found for rename command")
-            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=CustomClient().use_ephemeral)
-            return
-        units = session.query(Unit_model).filter(Unit_model.player_id == player.id).all()
-        if not units:
-            logger.error("No units found for rename command")
-            await interaction.response.send_message(tmpl.player_no_units, ephemeral=CustomClient().use_ephemeral)
-            return
-
-        class UnitSelect(ui.Select):
-            def __init__(self):
-                options = [SelectOption(label=unit.name, value=unit.name) for unit in units]
-                super().__init__(placeholder=tmpl.unit_select_rename_placeholder, options=options)
-
-            @uses_db(CustomClient().sessionmaker)
-            async def callback(self, interaction: Interaction, session: Session):
-                unit: Unit_model = session.query(Unit_model).filter(Unit_model.name == self.values[0]).first()
-                if not unit:
-                    logger.error("Unit not found for rename command")
-                    await interaction.response.send_message(tmpl.unit_not_found, ephemeral=CustomClient().use_ephemeral)
-                    return
-                if unit.unit_type == "STOCKPILE":
-                    logger.error("Stockpile units cannot be renamed")
-                    await interaction.response.send_message(tmpl.stockpile_cannot_rename, ephemeral=CustomClient().use_ephemeral)
-                    return
-                @uses_db(CustomClient().sessionmaker)
-                @staticmethod
-                async def rename_modal_callback(interaction: Interaction, session: Session):
-                    nonlocal player
-                    new_name = interaction.data["components"][0]["components"][0]["value"]
-                    player = session.merge(player)
-                    _unit = session.merge(unit)
-                    logger.debug(f"New name: {new_name}")
-                    if session.query(Unit_model).filter(Unit_model.name == new_name, Unit_model.player_id == player.id).first():
-                        logger.error(f"Unit with name {new_name} already exists for rename command")
-                        await interaction.response.send_message(tmpl.unit_name_exists, ephemeral=CustomClient().use_ephemeral)
-                        return
-                    if len(new_name) > 30:
-                        logger.error("Unit name is too long for rename command")
-                        await interaction.response.send_message(tmpl.unit_name_too_long, ephemeral=CustomClient().use_ephemeral)
-                        return
-                    if any(char in new_name for char in EnvironHelpers.get_str("BANNED_CHARS", "")+":"): # : is banned to disable urls
-                        logger.error("Unit name contains banned characters for rename command")
-                        await interaction.response.send_message(tmpl.unit_name_invalid, ephemeral=CustomClient().use_ephemeral)
-                        return
-                    if not new_name.isascii():
-                        logger.error("Unit name is not ASCII for rename command")
-                        await interaction.response.send_message(tmpl.unit_name_ascii, ephemeral=CustomClient().use_ephemeral)
-                        return
-                    _unit.name = new_name
-                    session.commit()
-                    CustomClient().queue.put_nowait((1, player, 0))
-
-                    logger.info(f"Unit renamed to {new_name}")
-                    await interaction.response.send_message(tmpl.unit_renamed.format(new_name=new_name), ephemeral=CustomClient().use_ephemeral)
-
-
-                modal = ui.Modal(title=tmpl.unit_rename_modal_title, custom_id="rename_unit")
-                modal.add_item(ui.TextInput(label=tmpl.unit_rename_new_name_label, custom_id="new_name", placeholder=unit.name, max_length=32))
-                modal.on_submit = rename_modal_callback
-                await interaction.response.send_modal(modal)
-
-
-
-        view = RecordingView()
-        view.add_item(UnitSelect())
-        await interaction.response.send_message(tmpl.unit_select_to_rename, view=view, ephemeral=CustomClient().use_ephemeral)
-
-    #@ac.command(name="transfer_unit", description="Transfer a proposed unit from your company")
-    @ac.check(is_management)  # only management can transfer units
-    @uses_db(CustomClient().sessionmaker)
-    async def transfer_unit(self, interaction: Interaction, campaign: str, session: Session):
-        logger = getLogger(f"{__name__}.transfer_unit")
-        _campaign = session.query(Campaign).filter(Campaign.name == campaign).first()
-        if _campaign is None:
-            await interaction.response.send_message(tmpl.campaign_not_found, ephemeral=True)
-            return
-        player = session.query(Player).filter(Player.discord_id == interaction.user.id).first()
-        if not player:
-            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=CustomClient().use_ephemeral)
-            return
-        units = session.query(Unit_model).filter(Unit_model.player_id == player.id, Unit_model.status == UnitStatus.PROPOSED).all()
-        if not units:
-            await interaction.response.send_message(tmpl.unit_no_proposed_units, ephemeral=CustomClient().use_ephemeral)
-            return
-
-        class UnitSelect(ui.Select):
-            def __init__(self):
-                options = [SelectOption(label=unit.name, value=unit.name) for unit in units]
-                super().__init__(placeholder=tmpl.unit_select_transfer_placeholder, options=options)
-                self.player_id = player.id
-                session.expunge(player)
-                for unit in units:
-                    session.expunge(unit)
-
-            @uses_db(CustomClient().sessionmaker)
-            async def callback(self, interaction: Interaction, session: Session):
-                unit: Unit_model = session.query(Unit_model).filter(Unit_model.name == self.values[0], Unit_model.player_id == self.player_id).first()
-                if unit.unit_type == "STOCKPILE":
-                    await interaction.response.send_message(tmpl.stockpile_cannot_remove, ephemeral=CustomClient().use_ephemeral)
-                    return
-                await interaction.response.send_message(tmpl.unit_transfer_mention_player, ephemeral=CustomClient().use_ephemeral)
-
-                def check(m):
-                    return m.author == interaction.user and m.mentions
-
-                msg = await self.bot.wait_for('message', check=check, timeout=60.0)
-                target_player = session.query(Player).filter(Player.discord_id == msg.mentions[0].id).first()
-                if not target_player:
-                    await interaction.followup.send(tmpl.unit_transfer_target_no_company, ephemeral=CustomClient().use_ephemeral)
-                    return
-                unit.player_id = target_player.id
-                session.commit()
-                await interaction.followup.send(tmpl.unit_transfer_success.format(unit=unit, target_player=target_player), ephemeral=CustomClient().use_ephemeral)
-
-
-        view = RecordingView()
-        try:
-            view.add_item(UnitSelect())
-        except Exception as e:
-            logger.error(f"Error adding unit select to view: {e}")
-            await interaction.response.send_message(tmpl.unexpected_error, ephemeral=CustomClient().use_ephemeral)
-            return
-        await interaction.response.send_message(tmpl.unit_select_to_transfer, view=view, ephemeral=CustomClient().use_ephemeral)
+    @ac.command(name="remove_unit", description="Remove a proposed unit from your company")
+    @error_reporting()
+    async def remove_unit(self, interaction: Interaction):
+        await interaction.response.send_message(view=UnitRemovePickerLayoutView(interaction.user.id), ephemeral=True)
 
     #@ac.command(name="counts_by_unit_type", description="Display the number of units by unit type, made just for Frenchboi")
     @uses_db(CustomClient().sessionmaker)
@@ -635,6 +199,502 @@ class Unit(GroupCog, description="Unit commands: create, activate, deactivate, r
             counts_tsv += f"{count[0]}\t {count[1]}\n"
         file = discord.File(io.BytesIO(counts_tsv.encode()), filename="counts_by_unit_type.tsv")
         await interaction.response.send_message(file=file, ephemeral=True)
+
+class UnitOwnerLayoutView(RecordingLayoutView):
+    """Base layout view that only the player who opened the menu may use."""
+
+    def __init__(self, discord_id: int):
+        super().__init__(timeout=None)
+        self.discord_id = discord_id
+
+    @error_reporting(True)
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        if interaction.user.id != int(self.discord_id):
+            logger.warning(f"User {interaction.user.id} tried to interact with view owned by {self.discord_id}")
+            await interaction.response.send_message("You are not the owner of this menu", ephemeral=True)
+            return False
+        return True
+
+    def add_back_button(self):
+        back_button = ui.Button(label="Back", style=ButtonStyle.secondary)
+        back_button.callback = self.back_button_callback
+        self.add_item(ui.ActionRow(back_button))
+
+    @error_reporting(True)
+    async def back_button_callback(self, interaction: Interaction):
+        await interaction.response.edit_message(view=UnitMenuLayoutView(self.discord_id))
+
+class UnitPickerLayoutView(UnitOwnerLayoutView):
+    """
+    Lists a filtered set of the player's units in select menus. Subclasses choose
+    which units are listed and what happens once one is picked.
+    """
+
+    placeholder = tmpl.unit_select_unit_placeholder
+    empty_message = tmpl.no_units
+
+    @uses_db(CustomClient().sessionmaker)
+    def __init__(self, discord_id: int, session: Session):
+        super().__init__(discord_id)
+        player = session.query(Player).filter(Player.discord_id == discord_id).first()
+        if player is None:
+            self.add_item(ui.TextDisplay(content=tmpl.no_meta_campaign_company))
+            return
+        self.add_header(player)
+        options = [
+            SelectOption(
+                label=unit.name,
+                value=str(unit.id),
+                description=f"{unit.unit_type} ({unit.status.name})"[:100],
+                emoji=unit_emoji(unit)
+            ) for unit in self.filter_units(player)
+        ]
+        chunks = [options[i:i+25] for i in range(0, len(options), 25)]
+        if not chunks:
+            self.add_item(ui.TextDisplay(content=self.empty_message))
+        elif len(chunks) > 19:
+            self.add_item(ui.TextDisplay(content=tmpl.too_many_units))
+        else:
+            for chunk in chunks:
+                select = ui.Select(placeholder=self.placeholder, options=chunk)
+                select.callback = self.unit_select_callback
+                self.add_item(ui.ActionRow(select))
+        self.add_footer(player)
+
+    def filter_units(self, player: Player) -> list[Unit_model]:
+        return list(player.units)
+
+    def add_header(self, player: Player) -> None:
+        """Hook for content shown above the unit selects."""
+
+    def add_footer(self, player: Player) -> None:
+        """Hook for content shown below the unit selects."""
+        self.add_back_button()
+
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def unit_select_callback(self, interaction: Interaction, session: Session):
+        unit = session.query(Unit_model).filter(Unit_model.id == int(interaction.data["values"][0])).first()
+        if unit is None or int(unit.player.discord_id) != int(self.discord_id):
+            await interaction.response.send_message(tmpl.unit_not_found, ephemeral=True)
+            return
+        await self.on_unit_selected(interaction, unit, session)
+
+    async def on_unit_selected(self, interaction: Interaction, unit: Unit_model, session: Session):
+        await interaction.response.edit_message(view=UnitInfoLayoutView(self.discord_id, unit.id))
+
+class UnitMenuLayoutView(UnitPickerLayoutView):
+    """Root menu: every unit the player owns, plus unit creation."""
+
+    def add_header(self, player: Player) -> None:
+        units = [unit for unit in player.units if unit.unit_type != "STOCKPILE"]
+        max_active = EnvironHelpers.required_int("MAX_ACTIVE_UNITS")
+        self.add_item(ui.Container(
+            ui.TextDisplay(content=f"# {player.name}"),
+            ui.TextDisplay(content=(
+                f"**Active:** {sum(1 for unit in units if unit.active)}/{max_active}\n"
+                f"**Proposed:** {sum(1 for unit in units if unit.status == UnitStatus.PROPOSED)}/{MAX_PROPOSED_UNITS}\n"
+                f"**Units:** {len(units)}/{MAX_UNITS}"
+            ))
+        ))
+
+    def add_footer(self, player: Player) -> None:
+        units = [unit for unit in player.units if unit.unit_type != "STOCKPILE"]
+        at_limit = (
+            sum(1 for unit in units if unit.status == UnitStatus.PROPOSED) >= MAX_PROPOSED_UNITS
+            or len(units) >= MAX_UNITS
+        )
+        create_button = ui.Button(label=tmpl.unit_create_button_label, style=ButtonStyle.success, disabled=at_limit)
+        create_button.callback = self.create_button_callback
+        self.add_item(ui.ActionRow(create_button))
+
+    @error_reporting(True)
+    async def create_button_callback(self, interaction: Interaction):
+        await interaction.response.send_modal(UnitCreateNameModal(self.discord_id))
+
+class UnitRenamePickerLayoutView(UnitPickerLayoutView):
+    """Shortcut view for /unit rename."""
+
+    placeholder = tmpl.unit_select_rename_placeholder
+    empty_message = tmpl.no_units
+
+    def filter_units(self, player: Player) -> list[Unit_model]:
+        return [unit for unit in player.units if unit.unit_type != "STOCKPILE"]
+
+    async def on_unit_selected(self, interaction: Interaction, unit: Unit_model, session: Session):
+        await interaction.response.send_modal(UnitRenameModal(self.discord_id, unit.id, unit.name))
+
+class UnitDeactivatePickerLayoutView(UnitPickerLayoutView):
+    """Shortcut view for /unit deactivate when several units are active."""
+
+    placeholder = tmpl.unit_select_deactivate_placeholder
+    empty_message = tmpl.unit_no_active_units
+
+    def filter_units(self, player: Player) -> list[Unit_model]:
+        return [unit for unit in player.units if unit.active]
+
+    async def on_unit_selected(self, interaction: Interaction, unit: Unit_model, session: Session):
+        if not unit.active:
+            await interaction.response.send_message(tmpl.unit_not_active, ephemeral=True)
+            return
+        player = unit.player
+        original_callsign = deactivate_unit(unit, session)
+        CustomClient().queue.put_nowait((1, player, 0))
+        await interaction.response.edit_message(view=UnitInfoLayoutView(self.discord_id, unit.id))
+        await interaction.followup.send(tmpl.unit_deactivated.format(original_callsign=original_callsign), ephemeral=True)
+
+class UnitRemovePickerLayoutView(UnitPickerLayoutView):
+    """Shortcut view for /unit remove_unit."""
+
+    placeholder = tmpl.unit_select_remove_placeholder
+    empty_message = tmpl.unit_no_proposed_units
+
+    def filter_units(self, player: Player) -> list[Unit_model]:
+        return [unit for unit in player.units if unit.status == UnitStatus.PROPOSED]
+
+    async def on_unit_selected(self, interaction: Interaction, unit: Unit_model, session: Session):
+        if unit.unit_type == "STOCKPILE":
+            await interaction.response.send_message(tmpl.stockpile_cannot_remove, ephemeral=True)
+            return
+        if unit.status != UnitStatus.PROPOSED:
+            await interaction.response.send_message("Only proposed units can be removed", ephemeral=True)
+            return
+        player = unit.player
+        confirmation = tmpl.unit_removed.format(unit=unit)
+        logger.debug(f"Removing unit {unit.id} ({unit.name})")
+        session.delete(unit)
+        session.commit()
+        CustomClient().queue.put_nowait((1, player, 0))
+        await interaction.response.edit_message(view=UnitMenuLayoutView(self.discord_id))
+        await interaction.followup.send(confirmation, ephemeral=True)
+
+class UnitActivatePickerLayoutView(UnitPickerLayoutView):
+    """Shortcut view for /unit activate: pick the unit that takes the callsign."""
+
+    placeholder = tmpl.unit_select_unit_placeholder
+    empty_message = tmpl.unit_no_units_available
+
+    def __init__(self, discord_id: int, callsign: str, group: str | None, role_ids: frozenset[int]):
+        super().__init__(discord_id)
+        self.callsign = callsign
+        self.group = group
+        self.role_ids = role_ids
+
+    def filter_units(self, player: Player) -> list[Unit_model]:
+        return [unit for unit in player.units if unit.status == UnitStatus.INACTIVE and unit.unit_type != "STOCKPILE"]
+
+    async def on_unit_selected(self, interaction: Interaction, unit: Unit_model, session: Session):
+        await interaction.response.edit_message(
+            view=UnitActivateCampaignLayoutView(self.discord_id, unit.id, self.callsign, self.group, self.role_ids)
+        )
+
+class UnitInfoLayoutView(UnitOwnerLayoutView):
+    """Details for a single unit, with the actions available for its status."""
+
+    @uses_db(CustomClient().sessionmaker)
+    def __init__(self, discord_id: int, unit_id: int, session: Session):
+        super().__init__(discord_id)
+        self.unit_id = unit_id
+        unit = session.query(Unit_model).filter(Unit_model.id == unit_id).first()
+        if unit is None:
+            self.add_item(ui.TextDisplay(content=tmpl.unit_not_found))
+            self.add_back_button()
+            return
+        self.unit_name = unit.name
+        upgrades = ", ".join(upgrade.name for upgrade in unit.upgrades)
+        details = (
+            f"**Type:** {unit.unit_type}\n"
+            f"**Status:** {unit.status.name}\n"
+            f"**Callsign:** {unit.callsign or '—'}\n"
+            f"**Campaign:** {unit.campaign.name if unit.campaign else '—'}\n"
+        )
+        if ALLOW_BATTLE_GROUPS:
+            details += f"**Battle Group:** {unit.battle_group or '—'}\n"
+        details += f"**{tmpl.UNIT_CURRENCY}:** {unit.unit_req}"
+        self.add_item(ui.Container(
+            ui.TextDisplay(content=f"# {unit_emoji(unit) or ''} {unit.name}".strip()),
+            ui.TextDisplay(content=details),
+            ui.TextDisplay(content=f"**Upgrades:** {upgrades or 'None'}")
+        ))
+        if unit.unit_type != "STOCKPILE":
+            buttons = []
+            rename_button = ui.Button(label="Rename", style=ButtonStyle.primary)
+            rename_button.callback = self.rename_button_callback
+            buttons.append(rename_button)
+            if unit.status == UnitStatus.INACTIVE:
+                activate_button = ui.Button(label="Activate", style=ButtonStyle.success)
+                activate_button.callback = self.activate_button_callback
+                buttons.append(activate_button)
+            if unit.active:
+                deactivate_button = ui.Button(label="Deactivate", style=ButtonStyle.secondary)
+                deactivate_button.callback = self.deactivate_button_callback
+                buttons.append(deactivate_button)
+            if unit.status == UnitStatus.PROPOSED:
+                remove_button = ui.Button(label="Remove", style=ButtonStyle.danger)
+                remove_button.callback = self.remove_button_callback
+                buttons.append(remove_button)
+            self.add_item(ui.ActionRow(*buttons))
+        self.add_back_button()
+
+    @error_reporting(True)
+    async def rename_button_callback(self, interaction: Interaction):
+        await interaction.response.send_modal(UnitRenameModal(self.discord_id, self.unit_id, self.unit_name))
+
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def activate_button_callback(self, interaction: Interaction, session: Session):
+        unit = session.query(Unit_model).filter(Unit_model.id == self.unit_id).first()
+        if unit is None:
+            await interaction.response.send_message(tmpl.unit_not_found, ephemeral=True)
+            return
+        if unit.status != UnitStatus.INACTIVE:
+            await interaction.response.send_message(tmpl.unit_not_inactive, ephemeral=True)
+            return
+        await interaction.response.send_modal(UnitActivateModal(self.discord_id, self.unit_id))
+
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def deactivate_button_callback(self, interaction: Interaction, session: Session):
+        unit = session.query(Unit_model).filter(Unit_model.id == self.unit_id).first()
+        if unit is None:
+            await interaction.response.send_message(tmpl.unit_not_found, ephemeral=True)
+            return
+        if not unit.active:
+            await interaction.response.send_message(tmpl.unit_not_active, ephemeral=True)
+            return
+        player = unit.player
+        original_callsign = deactivate_unit(unit, session)
+        CustomClient().queue.put_nowait((1, player, 0))
+        await interaction.response.edit_message(view=UnitInfoLayoutView(self.discord_id, self.unit_id))
+        await interaction.followup.send(tmpl.unit_deactivated.format(original_callsign=original_callsign), ephemeral=True)
+
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def remove_button_callback(self, interaction: Interaction, session: Session):
+        unit = session.query(Unit_model).filter(Unit_model.id == self.unit_id).first()
+        if unit is None:
+            await interaction.response.send_message(tmpl.unit_not_found, ephemeral=True)
+            return
+        if unit.status != UnitStatus.PROPOSED:
+            await interaction.response.send_message("Only proposed units can be removed", ephemeral=True)
+            return
+        player = unit.player
+        confirmation = tmpl.unit_removed.format(unit=unit)
+        logger.debug(f"Removing unit {unit.id} ({unit.name})")
+        session.delete(unit)
+        session.commit()
+        CustomClient().queue.put_nowait((1, player, 0))
+        await interaction.response.edit_message(view=UnitMenuLayoutView(self.discord_id))
+        await interaction.followup.send(confirmation, ephemeral=True)
+
+class UnitCreateLayoutView(UnitOwnerLayoutView):
+    """Type selection for a new unit, whose name has already been validated."""
+
+    @uses_db(CustomClient().sessionmaker)
+    def __init__(self, discord_id: int, unit_name: str, session: Session):
+        super().__init__(discord_id)
+        self.unit_name = unit_name
+        self.add_item(ui.Container(
+            ui.TextDisplay(content=f"## {tmpl.unit_create_button_label}: {unit_name}")
+        ))
+        unit_types = session.query(UnitType.unit_type).filter(UnitType.is_base == True).all()
+        options = [SelectOption(label=unit_type, value=unit_type) for (unit_type,) in unit_types]
+        chunks = [options[i:i+25] for i in range(0, len(options), 25)]
+        if not chunks:
+            self.add_item(ui.TextDisplay(content="There are no unit types available, please contact a moderator"))
+        else:
+            for chunk in chunks:
+                select = ui.Select(placeholder=tmpl.unit_select_type_placeholder, options=chunk)
+                select.callback = self.type_select_callback
+                self.add_item(ui.ActionRow(select))
+        self.add_back_button()
+
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def type_select_callback(self, interaction: Interaction, session: Session):
+        unit_type = interaction.data["values"][0]
+        player_id = session.query(Player.id).filter(Player.discord_id == self.discord_id).scalar()
+        if not player_id:
+            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=True)
+            return
+        error = unit_creation_error(self.unit_name, player_id, session)
+        if error:
+            await interaction.response.send_message(error, ephemeral=True)
+            return
+        unit_type_req: int | None = session.query(UnitType.unit_req).filter(UnitType.unit_type == unit_type).scalar()
+        if unit_type_req is None: # can't use not because 0 is falsy
+            await interaction.response.send_message(tmpl.unit_invalid_type, ephemeral=True)
+            return
+        unit = Unit_model(player_id=player_id, name=self.unit_name, unit_type=unit_type, active=False, unit_req=unit_type_req)
+        session.add(unit)
+        session.commit()
+        logger.debug(f"Created unit {unit.id} ({unit.name}) of type {unit_type} for player {player_id}")
+
+        # Guard check: verify no unexpected PlayerUpgrade records were created
+        if unit.upgrades:
+            logger.error(f"Unexpected PlayerUpgrade records created for unit {unit.name}: {[upgrade.name for upgrade in unit.upgrades]}")
+            raise RuntimeError(f"Unexpected PlayerUpgrade records created during unit creation: {[upgrade.name for upgrade in unit.upgrades]}")
+
+        confirmation = tmpl.unit_created.format(unit=unit)
+        CustomClient().queue.put_nowait((1, unit.player, 0))
+        await interaction.response.edit_message(view=UnitInfoLayoutView(self.discord_id, unit.id))
+        await interaction.followup.send(confirmation, ephemeral=True)
+
+class UnitActivateCampaignLayoutView(UnitOwnerLayoutView):
+    """Campaign selection for a unit that is being activated."""
+
+    @uses_db(CustomClient().sessionmaker)
+    def __init__(self, discord_id: int, unit_id: int, callsign: str, group: str | None, role_ids: frozenset[int], session: Session):
+        super().__init__(discord_id)
+        self.unit_id = unit_id
+        self.callsign = callsign
+        self.group = group
+        self.role_ids = role_ids
+        unit = session.query(Unit_model).filter(Unit_model.id == unit_id).first()
+        if unit is None:
+            self.add_item(ui.TextDisplay(content=tmpl.unit_not_found))
+            self.add_back_button()
+            return
+        self.add_item(ui.Container(
+            ui.TextDisplay(content=f"## {unit.name}"),
+            ui.TextDisplay(content=f"**Callsign:** {callsign}" + (f"\n**Battle Group:** {group}" if group else "")),
+            ui.TextDisplay(content=tmpl.unit_select_campaign)
+        ))
+        campaigns = session.query(Campaign).all()
+        options = []
+        for campaign in campaigns:
+            _, emoji = campaign_eligibility(campaign, unit.player, role_ids, session)
+            options.append(SelectOption(label=campaign.name, value=str(campaign.id), emoji=emoji))
+        chunks = [options[i:i+25] for i in range(0, len(options), 25)]
+        if not chunks:
+            self.add_item(ui.TextDisplay(content=tmpl.campaign_not_found))
+        else:
+            for chunk in chunks:
+                select = ui.Select(placeholder=tmpl.unit_select_campaign_placeholder, options=chunk)
+                select.callback = self.campaign_select_callback
+                self.add_item(ui.ActionRow(select))
+        self.add_back_button()
+
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def campaign_select_callback(self, interaction: Interaction, session: Session):
+        campaign = session.query(Campaign).filter(Campaign.id == int(interaction.data["values"][0])).first()
+        if campaign is None:
+            await interaction.response.send_message(tmpl.unit_campaign_invalid, ephemeral=True)
+            return
+        unit = session.query(Unit_model).filter(Unit_model.id == self.unit_id).first()
+        if unit is None:
+            await interaction.response.send_message(tmpl.unit_not_found, ephemeral=True)
+            return
+        player = unit.player
+        eligible, _ = campaign_eligibility(campaign, player, self.role_ids, session)
+        if not eligible:
+            logger.warning(f"Player {player.name} is not eligible to join campaign {campaign.name}")
+            await interaction.response.send_message(tmpl.unit_not_eligible, ephemeral=True)
+            return
+        max_active_units = EnvironHelpers.required_int("MAX_ACTIVE_UNITS")
+        if len(player.active_units) >= max_active_units:
+            await interaction.response.send_message(
+                tmpl.unit_already_active_count.format(active_count=len(player.active_units), max_active=max_active_units),
+                ephemeral=True
+            )
+            return
+        if unit.unit_type == "STOCKPILE" or unit.status != UnitStatus.INACTIVE:
+            await interaction.response.send_message(tmpl.unit_not_inactive, ephemeral=True)
+            return
+        if session.query(exists().where(Unit_model.callsign == self.callsign)).scalar():
+            logger.warning(f"Callsign {self.callsign} is already in use (race condition second check)")
+            await interaction.response.send_message(tmpl.callsign_taken, ephemeral=True)
+            return
+
+        unit.status = UnitStatus.ACTIVE
+        unit.active = True
+        unit.campaign_id = campaign.id
+        unit.callsign = self.callsign
+        unit.battle_group = self.group
+        session.commit()
+        logger.info(f"Unit {unit.name} activated in campaign {campaign.name} as {self.callsign}")
+        confirmation = tmpl.unit_selected_for_campaign.format(unit=unit, campaign_name=campaign.name)
+        CustomClient().queue.put_nowait((1, player, 0))
+        await interaction.response.edit_message(view=UnitInfoLayoutView(self.discord_id, unit.id))
+        await interaction.followup.send(confirmation, ephemeral=True)
+
+class UnitCreateNameModal(RecordingModal):
+    def __init__(self, discord_id: int):
+        super().__init__(title=tmpl.unit_create_button_label)
+        self.discord_id = discord_id
+        self.add_item(ui.TextInput(label="Name", placeholder="Enter the unit name", max_length=30, required=True))
+
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def on_submit(self, interaction: Interaction, session: Session):
+        unit_name = self.children[0].value.strip()
+        player_id = session.query(Player.id).filter(Player.discord_id == self.discord_id).scalar()
+        if not player_id:
+            await interaction.response.send_message(tmpl.no_meta_campaign_company, ephemeral=True)
+            return
+        error = unit_creation_error(unit_name, player_id, session)
+        if error:
+            await interaction.response.send_message(error, ephemeral=True)
+            return
+        await interaction.response.edit_message(view=UnitCreateLayoutView(self.discord_id, unit_name))
+
+class UnitRenameModal(RecordingModal):
+    def __init__(self, discord_id: int, unit_id: int, current_name: str):
+        super().__init__(title=tmpl.unit_rename_modal_title)
+        self.discord_id = discord_id
+        self.unit_id = unit_id
+        self.add_item(ui.TextInput(label=tmpl.unit_rename_new_name_label, default=current_name, max_length=30, required=True))
+
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def on_submit(self, interaction: Interaction, session: Session):
+        new_name = self.children[0].value.strip()
+        unit = session.query(Unit_model).filter(Unit_model.id == self.unit_id).first()
+        if unit is None:
+            await interaction.response.send_message(tmpl.unit_not_found, ephemeral=True)
+            return
+        if unit.unit_type == "STOCKPILE":
+            await interaction.response.send_message(tmpl.stockpile_cannot_rename, ephemeral=True)
+            return
+        error = unit_name_error(new_name)
+        if error:
+            await interaction.response.send_message(error, ephemeral=True)
+            return
+        if new_name != unit.name and session.query(exists().where(Unit_model.name == new_name, Unit_model.player_id == unit.player_id)).scalar():
+            await interaction.response.send_message(tmpl.unit_name_exists, ephemeral=True)
+            return
+        unit.name = new_name
+        session.commit()
+        logger.info(f"Unit {unit.id} renamed to {new_name}")
+        CustomClient().queue.put_nowait((1, unit.player, 0))
+        await interaction.response.edit_message(view=UnitInfoLayoutView(self.discord_id, self.unit_id))
+        await interaction.followup.send(tmpl.unit_renamed.format(new_name=new_name), ephemeral=True)
+
+class UnitActivateModal(RecordingModal):
+    def __init__(self, discord_id: int, unit_id: int):
+        super().__init__(title="Activate Unit")
+        self.discord_id = discord_id
+        self.unit_id = unit_id
+        self.add_item(ui.TextInput(label="Callsign", placeholder="Must be globally unique", max_length=7, required=True))
+        if ALLOW_BATTLE_GROUPS:
+            self.add_item(ui.TextInput(label="Battle Group", placeholder="Enter the group to activate the unit in", max_length=30, required=False))
+
+    @error_reporting(True)
+    @uses_db(CustomClient().sessionmaker)
+    async def on_submit(self, interaction: Interaction, session: Session):
+        callsign = self.children[0].value.strip()
+        group = (self.children[1].value.strip() or None) if ALLOW_BATTLE_GROUPS else None
+        error = callsign_error(callsign)
+        if error:
+            await interaction.response.send_message(error, ephemeral=True)
+            return
+        if session.query(exists().where(Unit_model.callsign == callsign)).scalar():
+            await interaction.response.send_message(tmpl.callsign_taken, ephemeral=True)
+            return
+        await interaction.response.edit_message(
+            view=UnitActivateCampaignLayoutView(self.discord_id, self.unit_id, callsign, group, member_role_ids(interaction))
+        )
 
 async def setup(_bot: CustomClient):
     logger.info("Setting up Unit cog")

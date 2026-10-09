@@ -39,6 +39,15 @@ class AuthorizedUserLayoutView(RecordingLayoutView):
             return False
         return True
 
+    def add_back_button(self):
+        back_button = ui.Button(label="Back", style=ButtonStyle.secondary)
+        back_button.callback = self.back_button_callback
+        self.add_item(ui.ActionRow(back_button))
+
+    @error_reporting(True)
+    async def back_button_callback(self, interaction: Interaction):
+        await interaction.response.edit_message(view=ShopUnitSelectLayoutView(self.discord_id))
+
 class ShopUnitSelectLayoutView(AuthorizedUserLayoutView):
     @uses_db(CustomClient().sessionmaker)
     def __init__(self, discord_id: int, session: Session):
@@ -80,9 +89,9 @@ class ShopUnitSelectLayoutView(AuthorizedUserLayoutView):
         player.bonus_pay -= 10
         player.rec_points += 1
         session.commit()
-        await interaction.response.send_message("You have converted your bonus pay to requisition points", ephemeral=True)
         layout_view = self.__class__(player.discord_id)
-        await interaction.message.edit(view=layout_view)
+        await interaction.response.edit_message(view=layout_view)
+        await interaction.followup.send("You have converted your bonus pay to requisition points", ephemeral=True)
 
     @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
@@ -100,7 +109,7 @@ class ShopUnitSelectLayoutView(AuthorizedUserLayoutView):
         else:
             await interaction.response.send_message(tmpl.unit_not_inactive, ephemeral=True)
             return
-        await interaction.response.send_message(view=layout_view, ephemeral=True)
+        await interaction.response.edit_message(view=layout_view)
 
 class ShopInactiveUnitLayoutView(AuthorizedUserLayoutView):
     @uses_db(CustomClient().sessionmaker)
@@ -111,6 +120,7 @@ class ShopInactiveUnitLayoutView(AuthorizedUserLayoutView):
         unit = session.query(Unit).filter(Unit.id == unit_id).first()
         if unit is None:
             self.add_item(ui.TextDisplay(content=tmpl.unit_not_found))
+            self.add_back_button()
             return
         container = ui.Container(
             ui.TextDisplay(content=tmpl.shop_unit_title.format(unit_name=unit.name)),
@@ -120,17 +130,20 @@ class ShopInactiveUnitLayoutView(AuthorizedUserLayoutView):
         upgrades, currency = self.populate_select_options(unit.available_upgrades, unit)
         if not upgrades:
             self.add_item(ui.TextDisplay(content=tmpl.no_upgrades_available))
+            self.add_back_button()
             return
         options = [discord.SelectOption(label=upgrade["label"], value=upgrade["value"]) for upgrade in upgrades]
         chunks = [options[i:i+25] for i in range(0, len(options), 25)]
         if len(chunks) >=19:
             self.add_item(ui.TextDisplay(content=tmpl.too_many_upgrades))
+            self.add_back_button()
             return
         for chunk in chunks:
             select = ui.Select(placeholder=tmpl.shop_select_upgrade_placeholder, options=chunk)
             select.callback = self.upgrade_select_callback
             action_row = ui.ActionRow(select)
             self.add_item(action_row)
+        self.add_back_button()
 
     def populate_select_options(self, upgrades: list[ShopUpgrade], unit: Unit):
         """
@@ -209,7 +222,7 @@ class ShopInactiveUnitLayoutView(AuthorizedUserLayoutView):
                 unit.player.rec_points -= upgrade.cost
             session.commit()
             CustomClient().queue.put_nowait((1, unit.player, 0))
-            await interaction.response.send_message(tmpl.you_have_bought_upgrade.format(upgrade_name=upgrade.name, upgrade_cost=upgrade.cost), ephemeral=True)
+            confirmation = tmpl.you_have_bought_upgrade.format(upgrade_name=upgrade.name, upgrade_cost=upgrade.cost)
         else:
             refit_target = upgrade.refit_target
             refit_cost = upgrade.cost
@@ -252,12 +265,11 @@ class ShopInactiveUnitLayoutView(AuthorizedUserLayoutView):
                 session.add(free_upgrade_2)
             session.commit()
             CustomClient().queue.put_nowait((1, unit.player, 0))
-            await interaction.response.send_message(tmpl.you_have_bought_refit.format(refit_target=refit_target, refit_cost=refit_cost), ephemeral=True)
-            layout_view = ShopInactiveUnitLayoutView(unit.player.discord_id, unit.id)
-            await interaction.message.edit(view=layout_view)
+            confirmation = tmpl.you_have_bought_refit.format(refit_target=refit_target, refit_cost=refit_cost)
 
         layout_view = ShopInactiveUnitLayoutView(unit.player.discord_id, unit.id)
-        await interaction.message.edit(view=layout_view)
+        await interaction.response.edit_message(view=layout_view)
+        await interaction.followup.send(confirmation, ephemeral=True)
 
 class ShopProposedUnitLayoutView(AuthorizedUserLayoutView):
     @uses_db(CustomClient().sessionmaker)
@@ -268,6 +280,7 @@ class ShopProposedUnitLayoutView(AuthorizedUserLayoutView):
         unit = session.query(Unit).filter(Unit.id == unit_id).first()
         if unit is None:
             self.add_item(ui.TextDisplay(content=tmpl.unit_not_found))
+            self.add_back_button()
             return
         container = ui.Container(
             ui.TextDisplay(content=tmpl.shop_unit_title.format(unit_name=unit.name)),
@@ -277,6 +290,7 @@ class ShopProposedUnitLayoutView(AuthorizedUserLayoutView):
         buy_button = ui.Button(label=tmpl.shop_buy_unit_button, style=ButtonStyle.success, disabled=unit.player.rec_points < 1)
         buy_button.callback = self.buy_button_callback
         self.add_item(ui.ActionRow(buy_button))
+        self.add_back_button()
         
     @error_reporting(True)
     @uses_db(CustomClient().sessionmaker)
@@ -291,9 +305,9 @@ class ShopProposedUnitLayoutView(AuthorizedUserLayoutView):
         unit.status = UnitStatus.INACTIVE
         unit.player.rec_points -= 1
         session.commit()
-        await interaction.response.send_message(tmpl.you_have_bought_unit.format(unit_name=unit.name), ephemeral=True)
         layout_view = ShopInactiveUnitLayoutView(unit.player.discord_id, unit.id)
-        await interaction.message.edit(view=layout_view)
+        await interaction.response.edit_message(view=layout_view)
+        await interaction.followup.send(tmpl.you_have_bought_unit.format(unit_name=unit.name), ephemeral=True)
 
 
 class ShopDeadUnitLayoutView(AuthorizedUserLayoutView):
@@ -305,6 +319,7 @@ class ShopDeadUnitLayoutView(AuthorizedUserLayoutView):
         unit = session.query(Unit).filter(Unit.id == unit_id).first()
         if unit is None:
             self.add_item(ui.TextDisplay(content=tmpl.unit_not_found))
+            self.add_back_button()
             return
         container = ui.Container(
             ui.TextDisplay(content=tmpl.shop_unit_title.format(unit_name=unit.name)),
@@ -312,6 +327,7 @@ class ShopDeadUnitLayoutView(AuthorizedUserLayoutView):
             ui.TextDisplay(content=f"{tmpl.UNIT_CURRENCY}: {unit.unit_req}"),
             ui.TextDisplay(content=tmpl.unit_is_dead))
         self.add_item(container)
+        self.add_back_button()
         
 async def setup(_bot: CustomClient):
     await _bot.add_cog(Shop(_bot))
