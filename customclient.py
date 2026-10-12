@@ -479,11 +479,13 @@ class CustomClient(Bot): # need to inherit from Bot to use Cogs
                         _statistics = session.merge(statistics)
                         mention = await self.fetch_user(int(discord_id))
                         mention = mention.mention if mention else ""
+                        pid = _player.id
+                        sid = _statistics.message_id
                         await message.edit(
-                            content=None,
+                            content=None, 
                             view=await self.generate_statistics_view(_player, mention),
                         )
-                        logger.debug(f"Updated statistics for player {_player.id} with message ID {_statistics.message_id}")
+                        logger.debug(f"Updated statistics for player {pid} with message ID {sid}")
                     except NotFound:
                         logger.warning(f"Failed to fetch statistics message {statistics.message_id} for player {player.id}: message not found, sending new message")
                         discord_id = player.discord_id

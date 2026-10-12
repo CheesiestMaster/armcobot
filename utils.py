@@ -21,7 +21,6 @@ import pandas as pd
 from prometheus_client import Counter, Gauge
 from sqlalchemy import ColumnElement, true
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import scoped_session
 
 if TYPE_CHECKING:
     from customclient import CustomClient
@@ -129,10 +128,11 @@ def fqn(func: Callable) -> str:
 
 def uses_db(sessionmaker):
     """
-    Decorator that injects a SQLAlchemy scoped session as the `session` keyword
-    argument to the wrapped function. Commits on success, rolls back on
-    RollbackException or other exceptions. Handles MySQL error 4031 by
-    notifying the bot owner.
+    Decorator that injects a SQLAlchemy session as the `session` keyword
+    argument to the wrapped function. Each call opens its own session, so
+    nested or concurrent calls do not share one. Commits on success, rolls
+    back on RollbackException or other exceptions. Handles MySQL error 4031
+    by notifying the bot owner.
 
     Args:
         sessionmaker: A callable that returns a Session (e.g. sessionmaker()
@@ -143,7 +143,6 @@ def uses_db(sessionmaker):
         session. The wrapped function must accept a `session` keyword argument.
     """
 
-    session_scope = scoped_session(sessionmaker)
     def decorator(func):
         logger.debug(f"decorating {func.__name__}")
         original_signature = Signature.from_callable(func)
@@ -152,7 +151,7 @@ def uses_db(sessionmaker):
         if inspect.iscoroutinefunction(func):
             @wraps(func)
             async def wrapper(*args, **kwargs):
-                with session_scope() as session:
+                with sessionmaker() as session:
                     try:
                         logger.debug(f"calling {fqn(func)}")
                         created_sessions.labels(scope=fqn(func)).inc()
@@ -198,7 +197,7 @@ def uses_db(sessionmaker):
         else:
             @wraps(func)
             def wrapper(*args, **kwargs):
-                with session_scope() as session:
+                with sessionmaker() as session:
                     try:
                         logger.debug(f"calling {fqn(func)}")
                         created_sessions.labels(scope=fqn(func)).inc()
